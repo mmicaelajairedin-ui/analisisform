@@ -111,22 +111,20 @@ jobs:
 
           echo "fixes=$FIXES_COUNT" >> $GITHUB_OUTPUT
           echo "pending=$PENDING_COUNT" >> $GITHUB_OUTPUT
-        # DESARMADO A PROPOSITO: aqui iba `ANTHROPIC_API_KEY`. Sin ella,
-        # `generateFix()` sale por su primera guarda y devuelve null ANTES de la
-        # llamada de red, asi que `applyFix()` no se ejecuta nunca y no se toca ni
-        # un fichero. El paso SIGUE corriendo: clasifica y escribe
-        # `pending-issues.json`, asi que los issues se siguen creando. Y como
-        # `fixes-applied.json` queda vacio, el paso que abre el PR no se dispara.
-        #
-        # Por que esta desarmado: el reparador de este repositorio manda 4.000
-        # caracteres del HTML de produccion a la API, aplica lo que el modelo
-        # devuelva sin validar el contenido, elige el fichero con una regex sobre
-        # el texto del error —«indexOf» selecciona formulario.html— y NO vuelve a
-        # ejecutar el test antes de empujar. No hay lista blanca, ni rojo previo,
-        # ni revalidacion, ni reversion.
-        #
-        # Se rearma devolviendo estas dos lineas, y la intencion es hacerlo junto
-        # con la version que ya tiene esas cuatro puertas, no antes.
+        env:
+          # La clave vuelve: ESTO es la activacion. Se quito en el PR #1300 porque el
+          # reparador de entonces no tenia ninguna puerta. Vuelve ahora, y solo ahora,
+          # porque `tests/auto-fixer.js` ya trae las cuatro:
+          #   1. lista blanca de UN patron, `toHaveTitle`, sobre 7 ficheros;
+          #   2. rojo previo demostrado antes de tocar nada, y falla cerrada si la
+          #      bateria no se puede ejecutar (0 tests descubiertos cuenta como FALLO);
+          #   3. el parche solo puede tocar el titulo, comprobado sobre el search/replace
+          #      real y no sobre lo que declare el modelo;
+          #   4. revalidacion obligatoria —verde despues, sin regresiones nuevas, un solo
+          #      fichero— y REVERSION del fichero ante cualquier duda.
+          # Y deja manifiesto: el commit se dirige por `fixed-files.json`, no por un
+          # `git add` global. PR siempre, auto-merge nunca.
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
 
       - name: "🔀 Crear PR con auto-fixes"
         id: create-pr
@@ -137,18 +135,30 @@ jobs:
           DATE=$(date +'%Y-%m-%d')
           BRANCH="auto-fix/${DATE}"
 
-          # Verificar si hay cambios reales
-          if [ -z "$(git status --porcelain -- '*.html' '*.js' '*.css' ':!tests/' ':!.github/' ':!package.json')" ]; then
-            echo "No hay cambios en archivos de la plataforma"
+          # Solo se commitean los ficheros del MANIFIESTO que deja el auto-fixer tras
+          # revalidarlos, y solo si no hay ningun otro fichero modificado. Sustituye al
+          # `git add` global, que podia arrastrar cualquier .html/.js/.css del repo.
+          FICHEROS=$(python3 -c "import json;print(' '.join(json.load(open('tests/results/fixed-files.json'))))" 2>/dev/null || echo "")
+          if [ -z "$FICHEROS" ]; then
+            echo "El auto-fixer no dejo ningun fichero revalidado"
             echo "pr_created=false" >> $GITHUB_OUTPUT
             exit 0
           fi
+
+          TOCADOS=$(git status --porcelain | sed 's/^...//' | grep -v '^tests/results/' | tr '\n' ' ')
+          EXTRA=$(python3 -c "import sys,json;m=set(json.load(open('tests/results/fixed-files.json')));print(' '.join(sorted(set(sys.argv[1].split())-m)))" "$TOCADOS")
+          if [ -n "$EXTRA" ]; then
+            echo "::error::Ficheros modificados fuera del manifiesto: $EXTRA"
+            echo "pr_created=false" >> $GITHUB_OUTPUT
+            exit 1
+          fi
+          echo "Ficheros revalidados a commitear: $FICHEROS"
 
           # Crear branch y commit
           git config user.name "Testing Agent MJ"
           git config user.email "testing-agent@micaelajairedin.com"
           git checkout -b "$BRANCH"
-          git add -A -- '*.html' '*.js' '*.css' ':!tests/' ':!.github/' ':!package.json'
+          git add -- $FICHEROS
 
           # Generar mensaje del commit con los fixes
           FIXES_DESC=""

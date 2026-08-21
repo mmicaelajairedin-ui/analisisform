@@ -4,7 +4,9 @@
  * 1. Lee los resultados de tests
  * 2. Clasifica cada fallo como SIMPLE o COMPLEJO
  * 3. Para fallos simples: llama a Claude API para generar el fix
- * 4. Aplica los fixes automáticamente
+ * 4. Aplica los fixes SOLO si están en la lista blanca, y los revalida:
+ *    rojo antes → verde después → sin regresiones → un solo fichero.
+ *    Ante cualquier duda, revierte y NO crea PR.
  * 5. Genera un reporte de lo que arregló y lo que necesita revisión manual
  *
  * Uso: node tests/auto-fixer.js
@@ -172,6 +174,135 @@ IMPORTANTE: El "search" debe ser un string EXACTO que exista en el archivo. No u
   }
 }
 
+// ─── LISTA BLANCA DE REPARACIÓN AUTOMÁTICA ──────────────────────
+//
+// Un patrón entra aquí SOLO tras demostrar rojo-antes y verde-después, y con
+// autorización explícita. Empezó vacía; hoy tiene exactamente uno.
+//
+// Todo lo que no esté aquí NO se repara: va a pending-issues.json y espera una
+// decisión humana. Añadir un patrón es una decisión, no un ajuste.
+const WHITELIST = [
+  {
+    patron: /toHaveTitle/,
+    categoria: 'text-content',
+    descripcion: 'Título de página incorrecto',
+    ficheros: ['formulario.html', 'login.html', 'panel-v2.html', 'cliente.html',
+               'cv.html', 'carta.html', 'hub.html'],
+  },
+];
+
+function enListaBlanca(failure, fichero) {
+  const texto = failure.error || '';
+  for (const regla of WHITELIST) {
+    if (regla.patron.test(texto) && regla.ficheros.includes(fichero)) return regla;
+  }
+  return null;
+}
+
+// El parche tiene que tocar el TÍTULO y nada más. Se comprueba sobre el propio
+// search/replace, no sobre la intención que declare el modelo.
+const VETADO = /<script|supabase|apikey|api_key|authorization|bearer|fetch\s*\(|import\s|require\s*\(|localStorage|password|token/i;
+
+function soloCambiaElTitulo(fix) {
+  const s = String(fix.search || '');
+  const r = String(fix.replace || '');
+  if (!s || !r) return { ok: false, motivo: 'parche vacío' };
+  if (VETADO.test(s) || VETADO.test(r)) return { ok: false, motivo: 'el parche toca zonas vetadas' };
+  const esTitulo = (t) => /<title[^>]*>[\s\S]*<\/title>/i.test(t) || /document\.title\s*=/.test(t);
+  if (!esTitulo(s) || !esTitulo(r)) return { ok: false, motivo: 'el parche no se limita al título' };
+  if (s.split('\n').length > 3 || r.split('\n').length > 3) {
+    return { ok: false, motivo: 'el parche abarca demasiadas líneas' };
+  }
+  return { ok: true };
+}
+
+// ─── EJECUCIÓN REAL DE TESTS ────────────────────────────────────
+//
+// FALLA CERRADA: si un test no se puede ejecutar, cuenta como FALLO y se revierte.
+// Sin esta regla, una batería que descubre 0 tests daría "verde" y aprobaría
+// cualquier reparación — que es exactamente el estado del agente el 2026-08-21,
+// cuando reportó "healthy" con total: 0.
+const { spawnSync } = require('child_process');
+
+function contarTests(json) {
+  let n = 0;
+  const rec = (suites) => {
+    for (const s of suites || []) { n += (s.specs || []).length; rec(s.suites); }
+  };
+  rec(json.suites);
+  return n;
+}
+
+function correrPlaywright(grep) {
+  const args = ['playwright', 'test', '--reporter=json'];
+  if (grep) args.push('--grep', grep);
+  const r = spawnSync('npx', args, {
+    encoding: 'utf-8', maxBuffer: 64 * 1024 * 1024, timeout: 10 * 60 * 1000,
+  });
+  const salida = r.stdout || '';
+  const i = salida.indexOf('{');
+  let json = null;
+  try { if (i >= 0) json = JSON.parse(salida.slice(i)); } catch (e) { /* se trata abajo */ }
+
+  if (!json) return { estado: 'inejecutable', motivo: 'la salida de Playwright no es JSON legible' };
+  const total = contarTests(json);
+  if (total === 0) return { estado: 'inejecutable', motivo: '0 tests descubiertos' };
+
+  const fallidos = parseFailures(json).map((f) => f.name);
+  return { estado: fallidos.length ? 'rojo' : 'verde', fallidos, total };
+}
+
+// --grep interpreta expresión regular: el nombre del test se escapa.
+const paraGrep = (nombre) => String(nombre).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+// ¿Hay algún fichero modificado que no sea el que se acaba de reparar?
+// Cierra el hueco entre lo que el reparador escribe y lo que el workflow commitea.
+function otrosFicherosTocados(esperado) {
+  const r = spawnSync('git', ['status', '--porcelain'], { encoding: 'utf-8' });
+  if (r.status !== 0) return ['<git status falló>'];
+  return (r.stdout || '')
+    .split('\n')
+    .map((l) => l.slice(3).trim())
+    .filter(Boolean)
+    .filter((f) => f !== esperado && !f.startsWith('tests/results/'));
+}
+
+// ─── REVALIDACIÓN OBLIGATORIA ───────────────────────────────────
+//
+// Ningún parche llega al PR sin haber demostrado, en este orden:
+//   rojo antes → verde después → sin regresiones → un solo fichero.
+// Si algo no se puede comprobar, se revierte. Que compile no es que funcione (R-18).
+function revalidar({ failure, fichero, rutaCompleta, originalEnMemoria, fallidosPrevios }) {
+  const revertir = () => fs.writeFileSync(rutaCompleta, originalEnMemoria, 'utf-8');
+  const grep = paraGrep(failure.name);
+
+  const despues = correrPlaywright(grep);
+  if (despues.estado !== 'verde') {
+    revertir();
+    return { ok: false, fase: 'verde-despues',
+      motivo: despues.motivo || `el test sigue fallando tras el parche (${despues.estado})` };
+  }
+
+  const regresion = correrPlaywright(null);
+  if (regresion.estado === 'inejecutable') {
+    revertir();
+    return { ok: false, fase: 'regresion', motivo: `no se pudo verificar la regresión: ${regresion.motivo}` };
+  }
+  const nuevos = (regresion.fallidos || []).filter((n) => !fallidosPrevios.includes(n));
+  if (nuevos.length) {
+    revertir();
+    return { ok: false, fase: 'regresion', motivo: `regresión nueva: ${nuevos.slice(0, 3).join(' · ')}` };
+  }
+
+  const otros = otrosFicherosTocados(fichero);
+  if (otros.length) {
+    revertir();
+    return { ok: false, fase: 'aislamiento', motivo: `hay otros ficheros modificados: ${otros.join(', ')}` };
+  }
+
+  return { ok: true, evidencia: { regresion_total: regresion.total, regresion_fallidos: regresion.fallidos.length } };
+}
+
 // ─── Aplicar fix al archivo ────────────────────────────────────
 
 function applyFix(filePath, fix) {
@@ -280,6 +411,10 @@ async function main() {
   const fixesApplied = [];
   const fixesFailed = [];
 
+  // Lo que ya fallaba ANTES de tocar nada: distingue una regresión nueva de un
+  // fallo preexistente.
+  const fallidosPrevios = failures.map((f) => f.name);
+
   for (const failure of simpleFailures) {
     console.log(`\n🔧 Reparando: "${failure.name}"`);
     console.log(`   Categoría: ${failure.classification.desc}`);
@@ -287,6 +422,22 @@ async function main() {
 
     if (!failure.affectedFile) {
       console.log('   ⚠️  No se pudo determinar el archivo afectado → movido a complejos');
+      complexFailures.push(failure);
+      continue;
+    }
+
+    // PUERTA 1 · lista blanca. Lo que no esté autorizado no se toca.
+    const regla = enListaBlanca(failure, failure.affectedFile);
+    if (!regla) {
+      console.log('   🔒 Fuera de la lista blanca → REQUIERE AUTORIZACIÓN');
+      complexFailures.push(failure);
+      continue;
+    }
+
+    // PUERTA 2 · rojo previo. Si no se puede ejecutar, o si no reproduce, no se repara.
+    const antes = correrPlaywright(paraGrep(failure.name));
+    if (antes.estado !== 'rojo') {
+      console.log(`   🔒 Sin rojo previo demostrable (${antes.estado}${antes.motivo ? ': ' + antes.motivo : ''}) → REQUIERE AUTORIZACIÓN`);
       complexFailures.push(failure);
       continue;
     }
@@ -310,17 +461,50 @@ async function main() {
       continue;
     }
 
+    // PUERTA 3 · el parche solo puede tocar el título.
+    const alcance = soloCambiaElTitulo(fix);
+    if (!alcance.ok) {
+      console.log(`   🔒 ${alcance.motivo} → REQUIERE AUTORIZACIÓN`);
+      complexFailures.push(failure);
+      continue;
+    }
+
+    // Copia en memoria: revertir no depende de git.
+    const originalEnMemoria = fileContent;
+
     // Aplicar el fix
     const result = applyFix(failure.affectedFile, fix);
 
     if (result.success) {
-      console.log(`   ✅ Fix aplicado: ${fix.explanation}`);
+      // PUERTA 4 · revalidación obligatoria. Revierte ante cualquier duda.
+      const val = revalidar({
+        failure,
+        fichero: failure.affectedFile,
+        rutaCompleta: filePath,
+        originalEnMemoria,
+        fallidosPrevios,
+      });
+      if (!val.ok) {
+        console.log(`   ↩️  REVERTIDO en ${val.fase}: ${val.motivo}`);
+        fixesFailed.push({ ...failure, fixAttempt: fix.explanation, fixError: `revertido (${val.fase}): ${val.motivo}` });
+        complexFailures.push(failure);
+        continue;
+      }
+
+      console.log(`   ✅ Fix aplicado y REVALIDADO: ${fix.explanation}`);
       fixesApplied.push({
         test: failure.name,
         suite: failure.suite,
         file: failure.affectedFile,
         explanation: fix.explanation,
         category: failure.classification.desc,
+        revalidacion: {
+          rojo_antes: true,
+          verde_despues: true,
+          regresion_total: val.evidencia.regresion_total,
+          regresion_fallidos: val.evidencia.regresion_fallidos,
+          patron: String(regla.patron),
+        },
       });
     } else {
       console.log(`   ❌ No se pudo aplicar: ${result.reason}`);
@@ -338,6 +522,13 @@ async function main() {
   if (!fs.existsSync(outputDir)) fs.mkdirSync(outputDir, { recursive: true });
 
   fs.writeFileSync(FIXES_FILE, JSON.stringify(fixesApplied, null, 2));
+
+  // Manifiesto: los ÚNICOS ficheros que el workflow puede commitear. Sustituye al
+  // `git add` global, que podía arrastrar cualquier .html/.js/.css del repositorio.
+  fs.writeFileSync(
+    path.join(outputDir, 'fixed-files.json'),
+    JSON.stringify([...new Set(fixesApplied.map((f) => f.file))], null, 2),
+  );
   fs.writeFileSync(PENDING_FILE, JSON.stringify(complexFailures.map(f => ({
     test: f.name,
     suite: f.suite,
