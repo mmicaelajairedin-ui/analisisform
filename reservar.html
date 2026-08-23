@@ -439,17 +439,15 @@ function loadBusy(){ BUSY=[]; var em=(''+(EMAIL||'')).trim().toLowerCase(); if(!
 function _slotBusy(ms){
   var buf=((DISP&&DISP.buffer_min)||0)*60000;
   var a=ms, b=ms+DUR*60000, dm=DUR*60000;
-  // Citas ya tomadas en Supabase
-  for(var i=0;i<BUSY.length;i++){ if(a < BUSY[i].e+buf && b > BUSY[i].s-buf) return true; }
-  // Citas tomadas localmente
+  // Citas tomadas localmente EN ESTA visita (una reserva recien hecha). Se mira
+  // siempre, tambien con FREE: FREE es una foto del servidor ANTERIOR a ellas.
   for(var k in TAKEN){ if(!TAKEN.hasOwnProperty(k)) continue; var t=+k; if(isNaN(t)) continue; if(a < t+dm+buf && b > t-buf) return true; }
-  // Eventos en Google Calendar del coach
-  for(var j=0;j<BUSY_SLOTS.length;j++){
-    var slot=BUSY_SLOTS[j]; var slotDate=slot.fecha; var slotStart=slot.horario_inicio; var slotEnd=slot.horario_fin;
-    var slotDateMs=new Date(slotDate+'T'+slotStart+':00Z').getTime();
-    var slotEndMs=new Date(slotDate+' '+slotEnd+':00Z').getTime();
-    if(a<slotEndMs+buf && b>slotDateMs-buf) return true;
-  }
+  // Verdad del servidor: si agenda-availability respondio, manda ella. Ya trae
+  // restadas las citas, los bloqueos y el margen, asi que no hay que repetirlo.
+  if(FREE) return !FREE[ms];
+  // Sin respuesta del servidor: camino anterior (BUSY = iCal del coach; hoy
+  // siempre vacio por el shadowing de loadBusy descrito mas abajo).
+  for(var i=0;i<BUSY.length;i++){ if(a < BUSY[i].e+buf && b > BUSY[i].s-buf) return true; }
   return false;
 }
 function normDisp(d){
@@ -504,7 +502,7 @@ function roleLabelCtx(u){
   return roleLabel(u);
 }
 
-var BUSY_SLOTS=[]; // eventos del coach en Google Calendar
+var FREE=null; // Set {instanteMs:true} de huecos LIBRES segun el servidor. null = sin respuesta.
 function applyCoachRow(u, t){
   CUR=u; ROLE=roleLabelCtx(u);
   COACH=u.nombre||'Pathway'; FIRST=(''+COACH).split(' ')[0]; EMAIL=(u.email||'').trim();
@@ -522,18 +520,55 @@ function applyCoachRow(u, t){
   loadCitas(); // trae los horarios ya tomados
   loadBusy();  // trae los eventos de Google Calendar del coach
 }
+// Huecos LIBRES del coach, segun el servidor (agenda-availability, Agenda Core).
+//
+// ANTES: pedia get-coach-busy-slots, que existe en el repo pero NO esta desplegada
+// (no tiene step en deploy-functions.yml). El fetch fallaba, el .catch lo tragaba
+// en silencio y BUSY_SLOTS quedaba SIEMPRE vacio -> _slotBusy no descartaba nada
+// -> se ofrecian horarios ya ocupados del coach. Es el CASO-04.
+//
+// AHORA agenda-availability resta, del lado servidor: las citas del coach + los
+// bloqueos de agenda_bloques (que hoy no lee nadie) + configuracion.bloqueados +
+// el aviso minimo y el margen entre sesiones.
+//
+// OJO - hay DOS funciones llamadas loadBusy() en este script: la de arriba (iCal
+// del coach via la edge function `calendar`, que llena BUSY) y esta. Como las dos
+// son declaraciones en el mismo ambito, gana la ULTIMA, o sea esta: la de iCal
+// nunca se ha ejecutado y BUSY siempre esta vacio. No se toca aqui a proposito
+// (resucitarla cambiaria que huecos se ofrecen, y eso es otro cambio).
 function loadBusy(){
-  var today=new Date(); today.setHours(0,0,0,0);
-  var endDate=new Date(today); endDate.setDate(endDate.getDate()+28);
-  var startStr=today.toISOString().split('T')[0];
-  var endStr=endDate.toISOString().split('T')[0];
-  fetch(SB+'/functions/v1/get-coach-busy-slots',{method:'POST',headers:{'Content-Type':'application/json',apikey:KEY},body:JSON.stringify({coach_id:CID,start_date:startStr,end_date:endStr})})
-    .then(function(r){return r.ok?r.json():null;})
-    .catch(function(){return null;})
+  FREE=null;
+  if(!CID) return;
+  var desde=new Date();
+  // 29 dias: _coachInstants genera 28, y se pide uno mas para que el corte por
+  // `hasta` del servidor no recorte los huecos del ultimo dia.
+  var hasta=new Date(desde.getTime()+29*86400000);
+  var _abort=new AbortController(); var _tm=setTimeout(function(){ _abort.abort(); }, 8000);
+  fetch(SB+'/functions/v1/agenda-availability',{
+    method:'POST',
+    headers:{'Content-Type':'application/json',apikey:KEY},
+    body:JSON.stringify({coach_id:CID,desde:desde.toISOString(),hasta:hasta.toISOString(),duracion_min:DUR}),
+    signal:_abort.signal
+  })
+    .then(function(r){ clearTimeout(_tm); return r.ok?r.json():null; })
+    .catch(function(){ clearTimeout(_tm); return null; })
     .then(function(d){
-      if(d&&d.ok&&Array.isArray(d.busy_slots)){
-        BUSY_SLOTS=d.busy_slots; renderPicker();
+      if(!d||d.ok!==true||Object.prototype.toString.call(d.libres)!=='[object Array]') return;
+      var S={}, n=0;
+      d.libres.forEach(function(iso){ var t=new Date(iso).getTime(); if(!isNaN(t)){ S[t]=true; n++; } });
+      // GUARDA DE ALINEACION. El servidor y _coachInstants construyen la rejilla
+      // por separado (mismo paso max(DUR,15), misma zona, mismo aviso minimo),
+      // pero si por lo que sea NO coincidiera ni un instante, aplicar el filtro
+      // dejaria TODOS los huecos en gris y la pagina de reserva quedaria muerta.
+      // Ante la duda se descarta la respuesta y se sigue como antes: ofrecer de
+      // mas es malo, no ofrecer nada es peor.
+      if(n){
+        var inst=_coachInstants(), hit=false;
+        for(var i=0;i<inst.length;i++){ if(S[inst[i]]){ hit=true; break; } }
+        if(!hit) return;
       }
+      FREE=S;
+      renderPicker();
     });
 }
 function _rowsOrErr(r){ if(r.ok) return r.json(); return r.text().then(function(t){ return {_err:true,status:r.status,msg:t}; }); }
