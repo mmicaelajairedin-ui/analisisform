@@ -1,3 +1,38 @@
+// ─────────────────────────────────────────────────────────────────────────────
+// PENDIENTE · NO se ejecuta en el testing diario. NO esta resuelto.
+//
+// A diferencia de los otros dos de esta carpeta, este fichero SI carga: no
+// rompia el descubrimiento. Lo que hacia era producir 8 rojos permanentes que
+// ensuciaban el informe diario todos los dias.
+//
+// Por que esta aqui: apunta a `http://127.0.0.1:8000/multicoach.html` y en CI
+// no hay ningun servidor en ese puerto. Los 8 casos fallan con
+// `net::ERR_CONNECTION_REFUSED`.
+//
+// Y no es que se haya roto: NUNCA ha pasado en CI. Entro el 2026-08-05
+// (`2fb7011e`) y `daily-testing-agent.yml` no ha tenido nunca un paso que sirva
+// el puerto 8000 — comprobado con `git log -S"8000"` sobre el workflow, que
+// sale vacio.
+//
+// Que le falta para volver a la bateria — las TRES cosas, no una:
+//   1. Un servidor que sirva la raiz del repositorio en el puerto 8000, o
+//      cambiar `BASE_URL` a la URL desplegada.
+//   2. Actualizar sus anclas. TRES de las cuatro ya no existen en
+//      `multicoach.html`: `data-section="equipo"`, `data-member-row` y
+//      `submitAddPerson` dan 0 apariciones; solo sobrevive `mj_user`.
+//      Levantar el servidor sin esto convierte 8 rojos en otros 8 rojos.
+//   3. Una decision de producto: NO intercepta la red —`page.route` no aparece
+//      en el fichero—, asi que al cargar la pagina haria peticiones reales a
+//      `api.pathwaycareercoach.com` ocho veces al dia. Y sus asserts cuentan
+//      cualquier HTTP >= 400 como error de consola, asi que basta un 401 de RLS
+//      para que fallen igual.
+//
+// Los 8 casos son de SOLO LECTURA —`goto`, comprobar selectores, capturas—: no
+// pulsan ni escriben nada. Pero la cobertura que prometen (alta de miembros,
+// roles, reasignacion de clientes, aislamiento por organizacion) HOY NO EXISTE,
+// y eso tiene que verse. Por eso el fichero se conserva entero.
+// ─────────────────────────────────────────────────────────────────────────────
+
 const { test, expect } = require('@playwright/test');
 const fs = require('fs');
 const path = require('path');

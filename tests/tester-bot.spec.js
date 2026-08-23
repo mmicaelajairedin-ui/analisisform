@@ -255,25 +255,82 @@ test.describe('💳 Selector de plan — cambiar de plan sin salir del panel', (
   });
 });
 
-// Panel multi-coach (gimnasio / consultora): la vista de equipo bajo una marca.
-// Chequeamos que cargue y renderice sin errores. (El recorrido logueado del
-// dueño del gym se suma cuando esté lista su cuenta de empresa.)
-test.describe('🏋️ Panel multi-coach (gym) — carga y renderiza', () => {
-  test('Dueño del gym entra y ve su red (si hay credenciales)', async ({ page }) => {
+// 🏋️ Contrato de handoff del owner — Pathway tiene que ENTREGARLE la sesion a
+// MultiCoach. Este test comprueba ESO y nada mas: no entra en MultiCoach ni
+// valida su contenido, porque una caida de MultiCoach no debe poner en rojo el
+// CI de Pathway. Esa validacion pertenece a la suite de MultiCoach.
+//
+// `login.html:898-917` tiene TRES desenlaces, y el test anterior los confundia
+// todos en el mismo timeout de 25 s:
+//   A · EXITO   -> pathway-handoff devuelve codigo -> pathwayplatforms.com/?handoff=<code>
+//   B · FALLO   -> fallback de :917 -> pathwayplatforms.com/?v=<ts>. La sesion NO
+//                  viaja: quien entra tendra que volver a identificarse. No es exito.
+//   C · CRITICO -> no navega. El `fetch` de :902 NO tiene timeout, asi que si esa
+//                  funcion se cuelga el `await` no vuelve, el `catch` no salta
+//                  —no es un error de red— y se queda en la pantalla de login.
+//
+// Ensanchar el patron a /pathwayplatforms/ daria los tres por buenos. Por eso se
+// afirma el CODIGO, no el dominio.
+//
+// NO se da por hecho que la cuenta TEST_GYM_* sea `rol='owner'`: no consta en
+// ningun sitio del repositorio y su valor es un secreto. Lo unico descartado es
+// que tome el camino de coach/admin, porque ese acaba en panel-v2.html y el test
+// pasaria. Las dos hipotesis vivas —camino de owner, o login que no navega— las
+// separan las aserciones de abajo, cada una con su mensaje.
+test.describe('🏋️ Handoff del owner — Pathway entrega la sesion a MultiCoach', () => {
+  test('el owner sale del login con un codigo de handoff', async ({ page }) => {
     const email = process.env.TEST_GYM_EMAIL;
     const password = process.env.TEST_GYM_PASSWORD;
     test.skip(!email || !password, 'Sin TEST_GYM_EMAIL/PASSWORD — se saltea');
 
     const { errores, correlationId } = capturarErrores(page);
-    await entrar(page, /** @type {string} */(email), /** @type {string} */(password), /multicoach|empresa|panel-v2/i);
-    // Si el login lo dejó en el panel del coach, vamos a su multicoach.
-    if (!/multicoach|empresa/i.test(page.url())) {
-      await page.goto(`${BASE}multicoach.html`, { waitUntil: 'domcontentloaded' });
-    }
-    await verificarRender(page);
-    expect(errores, `Errores de JS en el panel multi-coach [${correlationId}]:\n` + errores.map(e => `${e.error_id}: ${e.message}`).join('\n')).toHaveLength(0);
-  });
 
+    // Se graban las navegaciones: la SPA de MultiCoach consume el ?handoff= y
+    // reescribe la URL, asi que mirar page.url() al final es una carrera.
+    const navegaciones = [];
+    page.on('framenavigated', (f) => { if (f === page.mainFrame()) navegaciones.push(f.url()); });
+
+    await page.goto(`${BASE}login.html`, { waitUntil: 'domcontentloaded' });
+    await page.fill('#email', /** @type {string} */ (email));
+    await page.fill('#password', /** @type {string} */ (password));
+    await page.locator('#password').press('Enter');
+
+    // C · ¿salio del login? Esta asercion es la que separa las dos hipotesis.
+    await expect(
+      page,
+      'El owner no salio de login.html en 25 s. O el login fallo, o el fetch a ' +
+        'pathway-handoff (login.html:902, SIN timeout) no volvio y se queda ' +
+        'plantado en la pantalla de login.',
+    ).toHaveURL(/pathwayplatforms\.com|panel-v2/i, { timeout: 25000 });
+
+    const destino = navegaciones.find((u) => /pathwayplatforms\.com|panel-v2/i.test(u)) || page.url();
+
+    // La cuenta no toma el camino de owner. Lo dice, no pasa en silencio.
+    expect(
+      destino,
+      `La cuenta TEST_GYM_* acabo en "${destino}": no toma el camino de owner. ` +
+        'O le cambiaron el rol, o cambio la condicion de login.html:898.',
+    ).toMatch(/pathwayplatforms\.com/i);
+
+    // B · llego, pero sin sesion.
+    expect(
+      destino,
+      `Llego a "${destino}" SIN ?handoff=. pathway-handoff no devolvio codigo y salto ` +
+        'el fallback de login.html:917: la sesion no viaja y habra que entrar otra vez.',
+    ).toMatch(/[?&]handoff=[^&]+/);
+
+    // Errores de JS del propio login.html, que sigue siendo de Pathway.
+    expect(
+      errores,
+      `Errores de JS en el login del owner [${correlationId}]:\n` +
+        errores.map((e) => `${e.error_id}: ${e.message}`).join('\n'),
+    ).toHaveLength(0);
+  });
+});
+
+// Panel multi-coach (gimnasio / consultora): la vista de equipo bajo una marca.
+// Chequeamos que cargue y renderice sin errores.
+test.describe('🏋️ Panel multi-coach (gym) — carga y renderiza', () => {
   test('multicoach.html carga y renderiza sin errores de JS', async ({ page }) => {
     const { errores, correlationId } = capturarErrores(page);
     await page.goto(`${BASE}multicoach.html`, { waitUntil: 'domcontentloaded' });
