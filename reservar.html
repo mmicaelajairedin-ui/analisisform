@@ -456,8 +456,16 @@ function _videoPlan(){
   return { proveedor:'sala', modalidad:'online', lugar:'' };
 }
 // La Sala es determinista: mismo room para coach y cliente, sin guardar nada.
-function _salaUrlDe(coachId, ms){
-  return 'https://pathwaycareercoach.com/sala.html?room='+encodeURIComponent('Pathway-'+coachId+'-'+ms);
+//
+// El room se deriva del ID DE LA CITA, no de su hora. Antes era
+// `Pathway-<coach>-<epoch_ms_de_inicio>`, y eso tenia dos consecuencias malas:
+// al reprogramar cambiaba el enlace y el correo que el cliente ya tenia llevaba
+// a una sala vacia; y `agenda-list` —que siempre derivo del id— devolvia una
+// sala DISTINTA de la del correo. El id no cambia nunca: una cita, una sala.
+//
+// Misma formula que `_shared/agenda/video.ts::urlSala`, que es la canonica.
+function _salaUrlDe(coachId, citaId){
+  return 'https://pathwaycareercoach.com/sala.html?room='+encodeURIComponent('Pathway-'+coachId+'-'+citaId);
 }
 // El texto de la confirmacion dice el proveedor REAL, nunca uno supuesto.
 function _videoTxt(prov){
@@ -931,8 +939,7 @@ function confirmar(){
   var _coachId=(CID||qp('c')||'');
   var _startMs=start.getTime();
   var _dur=(DUR||60); // minutos (default 60 si no está configurado)
-  var _room=(_coachId?'Pathway-'+_coachId+'-'+_startMs:'');
-  var _link=''; // JULIO 2026: usar solo Google Meet (auto-generado), no sala.html
+  var _link='';
   var _kind=((CUR&&/^(admin|empleado)$/.test(String(CUR.rol||"")))||TEAM)?'demo_pathway':'primera_llamada';
   // render?action=TEMPLATE (no /r/eventedit): así Google SÍ pre-carga el link en el
   // detalle ANTES de guardar (location + description). El link va PRIMERO en el
@@ -978,9 +985,9 @@ function confirmar(){
       b.video_proveedor=_pl.proveedor;
       if(_pl.proveedor==='presencial' && _pl.lugar) b.lugar=_pl.lugar;
       // El enlace propio del coach ya se conoce: se guarda desde el minuto cero.
-      // Meet no, porque necesita el id de la cita para crear el evento.
+      // Meet y Sala no: los dos necesitan el id de la cita, que aun no existe.
+      // Se escriben despues, con `_persistir`, cuando el INSERT lo devuelve.
       if(_pl.proveedor==='zoom' && _pl.url) b.meet_link=_pl.url;
-      if(_pl.proveedor==='sala') b.meet_link=_salaUrlDe(_cid, +start);
     }
     // Idioma del cliente → así el RECORDATORIO automático (que se manda después,
     // del lado servidor) sale en el mismo idioma que la reserva. Va con 'withResp'
@@ -1033,6 +1040,12 @@ function confirmar(){
         }).catch(function(){});
       };
 
+      // El room de la Sala sale del id de la cita, asi que solo se puede
+      // construir cuando el INSERT ya devolvio ese id. Si la cita no llego a
+      // guardarse no hay sala que ofrecer: un enlace a una sala que ninguna
+      // cita referencia es peor que no dar ninguno, y la pantalla ya avisa.
+      var _sala=(saved && citaId) ? _salaUrlDe(_cid, citaId) : '';
+
       if(_plan.proveedor==='presencial'){
         // Presencial: ni enlace, ni boton, ni promesa de videollamada.
         _finalizar('', 'presencial');
@@ -1048,16 +1061,14 @@ function confirmar(){
             var meetLink=(d && d.ok && d.hangoutLink)?d.hangoutLink:'';
             if(meetLink){ _persistir('meet', meetLink); _finalizar(meetLink, 'meet'); return; }
             // Google no dio conferencia: se cae a la Sala, pero DICIENDOLO.
-            var sala=_salaUrlDe(_cid, +start);
-            _persistir('sala', sala); _finalizar(sala, 'sala');
+            _persistir('sala', _sala); _finalizar(_sala, 'sala');
           })
           .catch(function(){
-            var sala=_salaUrlDe(_cid, +start);
-            _persistir('sala', sala); _finalizar(sala, 'sala');
+            _persistir('sala', _sala); _finalizar(_sala, 'sala');
           });
       } else {
-        // Sala de Pathway. El enlace ya quedo escrito en el INSERT.
-        _finalizar(_salaUrlDe(_cid, +start), 'sala');
+        // Sala de Pathway. Se escribe AHORA, que es cuando ya hay id de cita.
+        _persistir('sala', _sala); _finalizar(_sala, 'sala');
       }
       // 1b) Si viene de "reprogramar" (gestionar-cita manda &reprog=<token viejo>),
       //     recién AHORA que la nueva quedó guardada cancelamos la vieja → el cliente

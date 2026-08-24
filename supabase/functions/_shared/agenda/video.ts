@@ -39,16 +39,19 @@ export interface EntradaVideo {
 /**
  * URL de la Sala de Pathway. Determinista: no se almacena en ninguna parte.
  *
- * CAMBIO RESPECTO A LO QUE HAY HOY: el room se deriva de `cita_id`, no de
- * `inicio`. Hoy es `Pathway-<coach_id>-<epoch_ms_de_inicio>`
- * (`panel-v2.html:_agSalaUrl`, `reservar.html:908-912`), así que **al
- * reprogramar una cita el enlace cambia** y el que el cliente tiene en su
- * correo lleva a una sala vacía. Es el mismo error que P7: un identificador
- * que no sobrevive a un cambio.
+ * FÓRMULA CANÓNICA DE LA PLATAFORMA. El room se deriva de `cita_id`, no de
+ * `inicio`, porque un identificador que cambia no sirve: con la hora, al
+ * reprogramar cambiaba el enlace y el que el cliente tenía en su correo
+ * llevaba a una sala vacía. Es el mismo error que P7.
  *
- * El momento de cambiarlo es AHORA y no más tarde: se ha medido que no existe
- * ni una sola cita futura en la tabla, así que no hay ningún correo pendiente
- * cuyo enlace se vaya a romper. Dentro de un mes, sí lo habría.
+ * Desde agosto de 2026 la usan también `reservar.html::_salaUrlDe`,
+ * `panel-v2.html::_agSalaUrl` / `::_salaClientLink` y `recordatorios-citas`.
+ * Antes cada una derivaba del `inicio`, así que `agenda-list` devolvía una
+ * sala distinta de la que iba en el correo. Si aparece una quinta copia de
+ * esta cadena en otro sitio, es un error: debe salir de aquí.
+ *
+ * Se unificó cuando no había ninguna cita futura con enlace de Sala ya
+ * enviado, así que ningún correo pendiente se rompió.
  */
 export function urlSala(
   citaId: number,
