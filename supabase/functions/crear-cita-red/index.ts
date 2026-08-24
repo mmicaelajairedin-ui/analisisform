@@ -180,8 +180,11 @@ Deno.serve(async (req: Request) => {
   }
   try {
     let r = await insert(full);
-    // Reintento SIN columnas opcionales (modalidad/lugar/grupal) si aún no existen.
-    if (r.status === 400) r = await insert(base);
+    // Reintento sin las columnas realmente opcionales. `modalidad` y
+    // `video_proveedor` SE CONSERVAN: existen desde hace meses, y soltarlas hacia
+    // nacer una cita con proveedor NULL — la rama que `recordatorios-citas`
+    // reserva para las citas anteriores al selector.
+    if (r.status === 400) r = await insert({ ...base, modalidad, video_proveedor: proveedor });
     if (!r.ok) return json({ error: "insert_failed", status: r.status }, 502);
     const rows = await r.json().catch(() => []);
     const cita = Array.isArray(rows) && rows[0] ? rows[0] : { coach_id, nombre, tipo, inicio, estado: "confirmada" };

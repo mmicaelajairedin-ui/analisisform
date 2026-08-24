@@ -112,5 +112,51 @@ for (const [n, v] of [['panel', camino2(sinGcal, { gcalOk: false })], ['crear-ci
   console.log(`  ${ok ? ' ' : '✗'} ${n.padEnd(38)}${v}`);
 }
 
+/* ── El reintento no puede fabricar una cita "legacy" ─────────────────────
+ *
+ * `recordatorios-citas` tiene una rama de compatibilidad para las citas sin
+ * `video_proveedor`: las anteriores al selector. Esa rama vuelve a adivinar —
+ * `meet_link || zoom_url || sala`— y es justo lo que estamos quitando de todas
+ * partes. Solo es aceptable si NINGUNA cita nueva puede entrar por ahí.
+ *
+ * Los tres caminos reintentan el INSERT cuando falla, soltando las columnas que
+ * podrían no existir todavía. Si en ese reintento se soltase `video_proveedor`,
+ * un fallo transitorio pariría una cita nueva con proveedor NULL.
+ */
+console.log('\nEl reintento del INSERT conserva la modalidad\n');
+
+const REINTENTOS = [
+  ['reservar.html', leer('reservar.html'),
+    // `video_proveedor` se asigna FUERA de cualquier `if(withResp)`.
+    (src) => {
+      // Sobre el CODIGO: el comentario que explica el arreglo menciona
+      // `if(withResp)` y falsearia la comparacion de posiciones.
+      const cod = src
+        .split('\n')
+        .map((l) => l.replace(/^\s*(\/\/|\*|\/\*).*$/, '').replace(/\s\/\/[^'"`]*$/, ''))
+        .join('\n');
+      const bloque = cod.match(/var b=\{ coach_id:_cid[\s\S]*?return fetch\(SB\+'\/rest\/v1\/citas'/)[0];
+      const asigna = bloque.indexOf('b.video_proveedor=');
+      const guarda = bloque.indexOf('if(withResp)');
+      return asigna > 0 && (guarda < 0 || asigna < guarda);
+    }],
+  ['panel-v2.html', leer('panel-v2.html'),
+    (src) => /_sbw\("citas","POST",Object\.assign\(\{\},_agBody,\{modalidad:_amod,video_proveedor:_aprov\}\)\)/.test(src)],
+  ['crear-cita-red', leer('supabase/functions/crear-cita-red/index.ts'),
+    (src) => /insert\(\{ \.\.\.base, modalidad, video_proveedor: proveedor \}\)/.test(src)],
+];
+
+for (const [nombre, src, comprueba] of REINTENTOS) {
+  const ok = comprueba(src);
+  if (!ok) fallos++;
+  console.log(`  ${ok ? 'PASS ' : 'FALLA'}  ${nombre.padEnd(38)}${ok ? 'el reintento lleva video_proveedor' : '  ← puede parir una cita legacy'}`);
+}
+
+/* Y la rama legacy sigue existiendo — para las citas de verdad antiguas. */
+const rec = leer('supabase/functions/recordatorios-citas/index.ts');
+const tieneLegacy = /Citas anteriores al selector/.test(rec);
+if (!tieneLegacy) fallos++;
+console.log(`  ${tieneLegacy ? 'PASS ' : 'FALLA'}  ${'la rama legacy sigue, para las viejas'.padEnd(38)}${tieneLegacy ? '66 citas la necesitan' : ''}`);
+
 console.log(`\n${fallos === 0 ? '✓ Los tres caminos deciden lo mismo.' : `✗ ${fallos} divergencia(s).`}\n`);
 process.exit(fallos === 0 ? 0 : 1);
