@@ -11,7 +11,14 @@
 // POST body:
 //   { coach_id, op?: "create"|"update"|"cancel",
 //     event_id?,                              // para update/cancel
-//     event: { summary, description?, location?, startISO, endISO, attendeeEmail? } }
+//     event: { summary, description?, location?, startISO, endISO, attendeeEmail?,
+//              conferencia?: boolean } }
+//
+// `conferencia` decide si se le PIDE un Google Meet al evento. Es opt-in, y no
+// por gusto: antes se pedia SIEMPRE, asi que una cita de Sala o de Zoom acababa
+// con un Meet que nadie eligio en el calendario del coach — y peor, quien
+// llamaba guardaba ese enlace encima del real (INC-2). Quien manda la cita sabe
+// su `video_proveedor`; aqui solo se obedece.
 //   → create/update: { ok:true, event_id }
 //   → cancel:        { ok:true }
 //   → sin conexión de escritura: { ok:false, reason:"coach_no_gcal_write" }  (no rompe la reserva)
@@ -105,24 +112,29 @@ Deno.serve(async (req: Request) => {
   const startISO = String(ev.startISO || "");
   const endISO = String(ev.endISO || "");
   if (!startISO || !endISO) return json({ ok: false, reason: "no_dates" });
+  // Solo se pide Meet si quien llama lo pide. Ver la nota de `conferencia` arriba.
+  const conferencia = ev.conferencia === true;
   const gev: Record<string, unknown> = {
     summary: String(ev.summary || "Sesión · Pathway"),
     description: String(ev.description || ""),
     location: String(ev.location || ""),
     start: { dateTime: startISO },
     end: { dateTime: endISO },
-    conferenceData: {
+  };
+  if (conferencia) {
+    gev.conferenceData = {
       createRequest: {
         requestId: `pathway-${Date.now()}-${Math.random().toString(36).slice(2)}`,
         conferenceSolutionKey: { type: "hangoutsMeet" },
       },
-    },
-  };
+    };
+  }
   const att = String(ev.attendeeEmail || "").trim();
   if (att) gev.attendees = [{ email: att }];
 
   try {
-    // conferenceDataVersion=1 va en la URL, NO en el cuerpo.
+    // conferenceDataVersion=1 va en la URL, NO en el cuerpo — y solo cuando de
+    // verdad se pide conferencia.
     //
     // ESTE ERA EL FALLO. Iba como campo de `gev`, y la API de Calendar ignora
     // los campos que no conoce: creaba el evento, devolvia 200, y la respuesta
@@ -132,7 +144,7 @@ Deno.serve(async (req: Request) => {
     //
     // Sin este parametro Google no crea la conferencia y tampoco se queja.
     const url = ((op === "update" && eventId) ? `${base}/${encodeURIComponent(eventId)}` : base)
-      + "?conferenceDataVersion=1";
+      + (conferencia ? "?conferenceDataVersion=1" : "");
     const method = (op === "update" && eventId) ? "PATCH" : "POST";
     const r = await fetch(url, {
       method,
