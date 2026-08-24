@@ -4962,7 +4962,121 @@ function viewCalendario(){
     "<div id='cp-cal-metrics'></div>";
 }
 function _calFail(){ var b=document.getElementById("cp-cal-list"); if(b) b.innerHTML=_agEmpty("No pudimos leer las reservas. Si es la primera vez, aplica la migración citas.sql en Supabase."); }
+// ── Agenda por `agenda-list`, en DOS PASOS ────────────────────────────────
+//
+// El orden es lo que sostiene el aislamiento:
+//
+//   1. `agenda-list` decide QUE citas puede ver quien llama. El alcance lo
+//      resuelve el SERVIDOR a partir del token —owner y admin ven su
+//      organizacion; un coach ve lo suyo mas lo grupal de su red— y el cliente
+//      ya no lo negocia: si un coach pide el coach_id de un companero, recibe
+//      el suyo. Esto sustituye a las TRES ramas de _calLoadDirecto (admin /
+//      coach de red / coach suelto), que eran una regla de seguridad viviendo
+//      en el navegador.
+//
+//   2. Solo para ESOS ids YA AUTORIZADOS se piden las tres columnas que la
+//      agenda pinta y que `agenda-list` no devuelve: email, telefono y origen.
+//      Su contrato las excluye a proposito (INC-025) y NO se toca.
+//
+// El paso 2 no es una puerta de atras: los ids no los elige el cliente, se los
+// dio el servidor; la RLS de `citas` sigue siendo la segunda puerta —si no te
+// deja leer esa fila, no la lees—; y no se pide ni una columna mas de las tres
+// que se pintan. Lo que no se pide no se puede filtrar por accidente.
+function _agListRows(fromIso, toIso){
+  return _hdr({"Content-Type":"application/json"})
+    .then(function(h){
+      return fetch(SB+"/functions/v1/agenda-list",{
+        method:"POST", headers:h,
+        body:JSON.stringify({from:fromIso, to:toIso, incluir_canceladas:true})
+      });
+    })
+    .then(function(r){ return r.ok?r.json():null; })
+    .then(function(d){
+      if(!d || d.ok!==true || Object.prototype.toString.call(d.eventos)!=="[object Array]") return null;
+      return _agSumarDatosPersonales(d.eventos.map(_agEventoAFila));
+    })
+    .catch(function(){ return null; });
+}
+// Un evento de `agenda-list` con la forma de fila de `citas` que el calendario
+// ya sabe pintar. No se inventa ningun campo: lo que no viene, no se pone.
+function _agEventoAFila(e){
+  var v=(e&&e.video)||{};
+  return {
+    // Numerico, igual que la columna: los botones de confirmar/reprogramar
+    // hacen `citas?id=eq.<id>` y con "citas:45" no matchearian ninguna fila.
+    id: e.cita_id,
+    org_id: e.org_id||null,
+    coach_id: e.coach_id||"",
+    nombre: e.cliente_nombre||"",
+    tipo: e.titulo||"",
+    inicio: e.inicio,
+    fin: e.fin||null,
+    estado: e.estado||"pendiente",
+    grupal: e.grupal===true,
+    // `video.url` SIEMPRE trae algo, porque cae a la Sala. Aqui solo se copia
+    // cuando el enlace venia guardado en la fila (Meet o Zoom), que es lo que
+    // tenia `citas.meet_link` y lo que el boton "Entrar" espera. Con la Sala
+    // como respaldo se deja en null, para no cambiar cuando aparece ese boton.
+    meet_link: (v.url && v.proveedor!=="sala" && v.proveedor!=="presencial") ? v.url : null,
+    email:"", telefono:"", origen:""   // los rellena el paso 2
+  };
+}
+// Paso 2. Solo los ids que el servidor ya autorizo, solo las tres columnas que
+// se pintan, y en lotes para no construir una URL enorme.
+function _agSumarDatosPersonales(filas){
+  var ids=filas.map(function(f){ return f.id; }).filter(function(v){ return v!=null && v!==""; });
+  if(!ids.length) return Promise.resolve(filas);
+  var lotes=[]; for(var i=0;i<ids.length;i+=100) lotes.push(ids.slice(i,i+100));
+  return Promise.all(lotes.map(function(lote){
+    return _sb("citas?id=in.("+lote.map(encodeURIComponent).join(",")+")&select=id,email,telefono,origen");
+  })).then(function(res){
+    var por={};
+    res.forEach(function(rows){
+      (Object.prototype.toString.call(rows)==="[object Array]"?rows:[]).forEach(function(x){ por[String(x.id)]=x; });
+    });
+    filas.forEach(function(f){
+      var d=por[String(f.id)];
+      if(d){ f.email=d.email||""; f.telefono=d.telefono||""; f.origen=d.origen||""; }
+    });
+    return filas;
+  }).catch(function(){
+    // Sin los datos personales la agenda se pinta igual: mejor una agenda sin
+    // el email del cliente que ninguna agenda.
+    return filas;
+  });
+}
 function _calLoad(){
+  var box=document.getElementById("cp-cal-list");
+  if(!RME||!RME.id){ if(box) box.innerHTML=_agEmpty("Inicia sesión."); return; }
+  var from=new Date(Date.now()-120*86400000).toISOString();
+  // `agenda-list` exige un `to`; antes no habia tope superior. Un ano cubre
+  // cualquier reserva futura sin traer una ventana absurda.
+  var to=new Date(Date.now()+365*86400000).toISOString();
+
+  var _pintar=function(rows){
+    _CAL_DATA=rows;
+    if(RADMIN){ try{ render(); }catch(e){ _calRenderKpis(); _calRenderList(); } }
+    else { _calRenderKpis(); _calRenderList(); _calRenderMetricsExtra(); }
+    _agAfterCal();
+  };
+
+  // El admin necesita el equipo para los chips de dueno, venga la agenda de
+  // donde venga.
+  var _equipo = RADMIN
+    ? _sb("usuarios?rol=in.(admin,empleado)&activo=eq.true&select=id,nombre,email,rol")
+        .then(function(team){ _CAL_TEAM=(Object.prototype.toString.call(team)==="[object Array]")?team:[]; })
+        .catch(function(){ _CAL_TEAM=[]; })
+    : Promise.resolve();
+
+  _equipo.then(function(){ return _agListRows(from,to); }).then(function(rows){
+    if(rows){ _pintar(rows); return; }
+    // Sin `agenda-list` se cae al camino anterior. Una agenda que no carga es
+    // peor que una agenda con el alcance resuelto en el cliente.
+    _calLoadDirecto();
+  }).catch(function(){ _calLoadDirecto(); });
+}
+// Camino anterior, intacto. Solo se usa si `agenda-list` no responde.
+function _calLoadDirecto(){
   var box=document.getElementById("cp-cal-list");
   if(!RME||!RME.id){ if(box) box.innerHTML=_agEmpty("Inicia sesión."); return; }
   var from=new Date(Date.now()-120*86400000).toISOString();
