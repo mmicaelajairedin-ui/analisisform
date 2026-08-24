@@ -117,13 +117,22 @@ Deno.serve(async (req: Request) => {
         conferenceSolutionKey: { type: "hangoutsMeet" },
       },
     },
-    conferenceDataVersion: 1,
   };
   const att = String(ev.attendeeEmail || "").trim();
   if (att) gev.attendees = [{ email: att }];
 
   try {
-    const url = (op === "update" && eventId) ? `${base}/${encodeURIComponent(eventId)}` : base;
+    // conferenceDataVersion=1 va en la URL, NO en el cuerpo.
+    //
+    // ESTE ERA EL FALLO. Iba como campo de `gev`, y la API de Calendar ignora
+    // los campos que no conoce: creaba el evento, devolvia 200, y la respuesta
+    // llegaba SIN `conferenceData`. O sea que `hangoutLink` salia vacio SIEMPRE
+    // y `citas.meet_link` no se escribia nunca — 1 de 65 citas lo tenia. De ahi
+    // el correo "te enviaremos el link de Google Meet" sin ningun enlace.
+    //
+    // Sin este parametro Google no crea la conferencia y tampoco se queja.
+    const url = ((op === "update" && eventId) ? `${base}/${encodeURIComponent(eventId)}` : base)
+      + "?conferenceDataVersion=1";
     const method = (op === "update" && eventId) ? "PATCH" : "POST";
     const r = await fetch(url, {
       method,

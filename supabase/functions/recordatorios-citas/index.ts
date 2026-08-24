@@ -44,7 +44,7 @@ Deno.serve(async (req: Request) => {
   // con el select base para NO romper TODOS los recordatorios por columnas opcionales.
   const baseSel = `id,nombre,email,tipo,inicio,estado,coach_id,cliente_tz,token,rem_24h_at,rem_1h_at`;
   const winQ = `&inicio=gte.${new Date(now).toISOString()}&inicio=lte.${inWin}&order=inicio.asc&limit=200`;
-  const qFull = `${SB_URL}/rest/v1/citas?select=${baseSel},modalidad,lugar,grupal,lang,meet_link${winQ}`;
+  const qFull = `${SB_URL}/rest/v1/citas?select=${baseSel},modalidad,lugar,grupal,lang,meet_link,video_proveedor${winQ}`;
   const qBase = `${SB_URL}/rest/v1/citas?select=${baseSel}${winQ}`;
   let citas: Cita[] = [];
   try {
@@ -115,6 +115,7 @@ interface Cita {
   estado?: string; coach_id?: string; cliente_tz?: string; token?: string;
   rem_24h_at?: string | null; rem_1h_at?: string | null;
   modalidad?: string | null; lugar?: string | null; grupal?: boolean | null;
+  video_proveedor?: string | null;
   lang?: string | null; meet_link?: string | null;
 }
 interface Coach { nombre?: string; email?: string; tz?: string; }
@@ -159,25 +160,43 @@ async function sendReminder(
     ? (EN ? `Your <strong>${esc(tipo)}</strong> with ${esc(coachName)} is <strong>today at ${esc(hora)}</strong>. See you there!` : `Tu <strong>${esc(tipo)}</strong> con ${esc(coachName)} es <strong>hoy a las ${esc(hora)}</strong>. ¡Te esperamos!`)
     : (EN ? `A reminder about your <strong>${esc(tipo)}</strong> with ${esc(coachName)}: <strong>${esc(cuando)} at ${esc(hora)}</strong>.` : `Te recordamos tu <strong>${esc(tipo)}</strong> con ${esc(coachName)}: <strong>${esc(cuando)} a las ${esc(hora)}</strong>.`);
 
-  // Determinar qué link usar: Zoom → Google Meet → Pathway Sala
+  // El recordatorio NO vuelve a decidir: LEE lo que la reserva ya guardo en la
+  // fila (`video_proveedor` + `meet_link`).
+  //
+  // Antes tenia su propia cascada Zoom -> Meet -> Sala, distinta de la de la
+  // pantalla de reserva. Dos cascadas separadas sobre los mismos datos es como
+  // el cliente acababa viendo "Google Meet" en un sitio y otra cosa en otro. Con
+  // una sola decision persistida, el recordatorio no puede contradecir al correo
+  // de confirmacion.
   const esPresencial = String(c.modalidad || "online") === "presencial";
   const startMs = new Date(c.inicio).getTime();
   const salaRoom = "Pathway-" + (c.coach_id || "x") + "-" + startMs;
   const salaLink = "https://pathwaycareercoach.com/sala.html?room=" + encodeURIComponent(salaRoom);
 
-  // Priority: Zoom → Google Meet → Pathway Sala
+  const ETIQUETA: Record<string, string> = {
+    meet: "Google Meet",
+    zoom: EN ? "Video call" : "Videollamada",
+    sala: EN ? "Pathway video call" : "Videollamada de Pathway",
+  };
+
   let videoLink = "";
   let videoLabel = "";
   if (!esPresencial) {
-    if (zoomUrl) {
-      videoLink = zoomUrl;
-      videoLabel = EN ? "Video call" : "Videollamada";
-    } else if (c.meet_link) {
-      videoLink = c.meet_link;
-      videoLabel = EN ? "Google Meet" : "Google Meet";
+    const prov = String((c as { video_proveedor?: string | null }).video_proveedor || "").toLowerCase();
+    if (prov && ETIQUETA[prov]) {
+      // Proveedor decidido en la reserva. `meet_link` guarda el enlace efectivo
+      // sea de Meet o de un enlace propio; la Sala es determinista y no necesita
+      // estar guardada.
+      videoLink = String(c.meet_link || "") || (prov === "sala" ? salaLink : "");
+      videoLabel = ETIQUETA[prov];
+      // Un proveedor que prometia enlace y no lo tiene NO se disfraza de otro:
+      // sin enlace no hay boton, y el cuerpo del correo no promete nada.
+      if (!videoLink) videoLabel = "";
     } else {
-      videoLink = salaLink;
-      videoLabel = EN ? "Pathway video call" : "Videollamada de Pathway";
+      // Citas anteriores al selector: no traen proveedor. Se respeta lo que haya
+      // guardado y, si no hay nada, la Sala — que es la que siempre funciona.
+      videoLink = String(c.meet_link || "") || zoomUrl || salaLink;
+      videoLabel = c.meet_link ? ETIQUETA.meet : (zoomUrl ? ETIQUETA.zoom : ETIQUETA.sala);
     }
   }
 

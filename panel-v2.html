@@ -3316,7 +3316,36 @@ function _agEmpty(msg){ return "<div style='display:flex;flex-direction:column;a
     "<span style='max-width:300px;line-height:1.55'>"+esc(msg)+"</span></div>"; }
 // Guarda lo que hay escrito en el modal de disponibilidad ANTES de re-renderizar
 // (al togglear un día o tocar los bloqueados), para no perder lo tipeado.
-function _agDispCapture(){ if(!state.ag) return; var f=document.getElementById("ag-disp-from"),t=document.getElementById("ag-disp-to"),n=document.getElementById("ag-disp-notice"),b=document.getElementById("ag-disp-buffer"),z=document.getElementById("ag-disp-tz"); if(f) state.ag.from=f.value; if(t) state.ag.to=t.value; if(n) state.ag.notice=n.value; if(b) state.ag.buffer=b.value; if(z) state.ag.tz=z.value; }
+// ── Modalidad de video del coach ─────────────────────────────────────────────
+// Vive en `usuarios.configuracion.video` = { proveedor, lugar }. El enlace de
+// Zoom sigue donde estaba (`configuracion.zoom_url`), asi que un coach que ya lo
+// tenia no pierde nada.
+function _vidCfg(){ var c=(typeof RCFG!=="undefined"&&RCFG)||{}; return c.video||{}; }
+function _vidZoomUrl(){ var c=(typeof RCFG!=="undefined"&&RCFG)||{}; return (""+(c.zoom_url||"")).trim(); }
+function _vidLugar(){ return (""+(_vidCfg().lugar||"")).trim(); }
+// Google Meet solo se ofrece con conexion real: `configuracion.gcal` es lo que
+// deja el conector OAuth. Sin eso, elegirlo seria prometer un enlace que nunca
+// llega — que es justo el fallo que estamos cerrando.
+function _vidGcalOk(){
+  var c=(typeof RCFG!=="undefined"&&RCFG)||{};
+  var g=c.gcal||{};
+  return !!(g && (g.refresh_token||g.access_token||g.conectado===true));
+}
+function _vidProv(){
+  var p=(""+(_vidCfg().proveedor||"")).toLowerCase();
+  if(p==="meet") return _vidGcalOk()?"meet":"sala";   // sin Google, no se sostiene
+  if(p==="zoom") return _vidZoomUrl()?"zoom":"sala";  // sin URL, tampoco
+  if(p==="presencial"||p==="sala") return p;
+  return _vidZoomUrl()?"zoom":"sala";                 // compatibilidad hacia atras
+}
+// Se captura junto al resto del formulario, en el mismo guardado.
+function _agVideoCapture(){
+  if(!state.ag) return;
+  var sel=document.getElementById("ag-video-prov"); if(sel) state.ag.videoProv=sel.value;
+  var lug=document.getElementById("ag-video-lugar"); if(lug) state.ag.videoLugar=lug.value;
+}
+function _agDispCapture(){
+  _agVideoCapture(); if(!state.ag) return; var f=document.getElementById("ag-disp-from"),t=document.getElementById("ag-disp-to"),n=document.getElementById("ag-disp-notice"),b=document.getElementById("ag-disp-buffer"),z=document.getElementById("ag-disp-tz"); if(f) state.ag.from=f.value; if(t) state.ag.to=t.value; if(n) state.ag.notice=n.value; if(b) state.ag.buffer=b.value; if(z) state.ag.tz=z.value; }
 function _agGcalDiag(){
   // Estado del token (para diagnosticar por qué pide reconectar). Solo admin.
   try{
@@ -4137,7 +4166,32 @@ function viewAgModal(){
         "<div class='cp-form-row'><label class='cp-form-label'>Aviso mínimo (horas)</label><input type='number' min='0' step='1' id='ag-disp-notice' class='cp-form-input' value='"+esc(_notice)+"'><span class='cp-form-hint'>No te reservan con menos de estas horas.</span></div>"+
         "<div class='cp-form-row'><label class='cp-form-label'>Margen entre sesiones (min)</label><input type='number' min='0' step='5' id='ag-disp-buffer' class='cp-form-input' value='"+esc(_buffer)+"'><span class='cp-form-hint'>Descanso antes/después de cada cita.</span></div>"+
       "</div>"+
-      ""+ /* campo "Sala de videollamada" propia removido: Pathway centraliza las llamadas */
+      /* ── Modalidad de la sesion ────────────────────────────────────────────
+         Antes no habia donde elegirlo: la reserva probaba Zoom, luego Meet,
+         luego la Sala, y le decia al cliente "Google Meet" en los tres casos.
+         Ahora lo eliges tu y es lo que ve el cliente.
+         Google Meet solo se puede elegir si conectaste tu Google: ofrecerlo sin
+         conexion seria un boton que promete algo que no va a llegar. */
+      "<div class='cp-form-row'><label class='cp-form-label'>Modalidad de tus sesiones</label>"+
+        "<select id='ag-video-prov' class='cp-form-input'>"+
+          "<option value='sala'"+(_vidProv()==='sala'?" selected":"")+">Sala de Pathway — siempre funciona</option>"+
+          "<option value='meet'"+(_vidProv()==='meet'?" selected":"")+(_vidGcalOk()?"":" disabled")+">Google Meet"+(_vidGcalOk()?"":" — conecta tu Google primero")+"</option>"+
+          (_vidZoomUrl()?("<option value='zoom'"+(_vidProv()==='zoom'?" selected":"")+">Tu enlace de Zoom</option>"):"")+
+          "<option value='presencial'"+(_vidProv()==='presencial'?" selected":"")+">Presencial — sin videollamada</option>"+
+        "</select>"+
+        "<div style='font-size:12px;color:var(--pw-text-soft);margin-top:6px'>"+
+          (_vidProv()==='presencial'
+            ? "El cliente no vera ningun boton de videollamada."
+            : _vidProv()==='meet'
+              ? "Se crea un Google Meet por cita y su enlace va en el correo."
+              : _vidProv()==='zoom'
+                ? esc(_vidZoomUrl())
+                : "Enlace propio de Pathway, sin depender de nadie.")+
+        "</div>"+
+      "</div>"+
+      (_vidProv()==='presencial'
+        ? "<div class='cp-form-row'><label class='cp-form-label'>Lugar de la sesion</label><input id='ag-video-lugar' class='cp-form-input' placeholder='Calle, numero, ciudad' value='"+esc(_vidLugar())+"'></div>"
+        : "")+
       "<div class='cp-form-row'><label class='cp-form-label'>Bloquear días (vacaciones, feriados)</label>"+
         "<div style='display:flex;gap:6px'><input type='date' id='ag-disp-bloq' class='cp-form-input' style='flex:1'><button class='cp-btn cp-btn-ghost' data-act='ag-bloq-add'>Agregar</button></div>"+_bchips+"</div>"+
       "<div style='display:flex;gap:8px;justify-content:flex-end;margin-top:16px'><button class='cp-btn cp-btn-ghost' data-act='ag-close'>Cancelar</button><button class='cp-btn cp-btn-primary' data-act='ag-save-disp'>Guardar</button></div>";
@@ -11338,7 +11392,20 @@ document.addEventListener("click", function(ev){
     // navegador, que ponía Madrid y no dejaba fijar México). Fallback: lo que
     // ya estaba guardado, y recién en último caso el navegador.
     var _tzEl=document.getElementById("ag-disp-tz"); var _tz=(_tzEl&&_tzEl.value)||(state.ag&&state.ag.tz)||(REAL&&RCFG&&RCFG.disponibilidad&&RCFG.disponibilidad.tz)||""; try{ if(!_tz) _tz=Intl.DateTimeFormat().resolvedOptions().timeZone||""; }catch(e){}
-    state.ag=null; saveCfg({disponibilidad:{days:_sd, from:_sf, to:_st, tz:_tz, min_notice_h:_sn, buffer_min:_sbuf, bloqueados:_sbloq, horarios:_shor}}); return;
+    // La modalidad se guarda en el MISMO guardado que el horario: es parte de
+    // "como atiendo", no un ajuste aparte. `_vidProv()` normaliza —si eligio Meet
+    // y no tiene Google conectado, no se guarda Meet— asi que en la fila nunca
+    // queda un proveedor que no se pueda cumplir.
+    var _vp=(state.ag&&state.ag.videoProv)||_vidProv();
+    if(_vp==="meet" && !_vidGcalOk()) _vp="sala";
+    if(_vp==="zoom" && !_vidZoomUrl()) _vp="sala";
+    var _vl=(state.ag&&state.ag.videoLugar!=null)?(""+state.ag.videoLugar).trim():_vidLugar();
+    state.ag=null;
+    saveCfg({
+      disponibilidad:{days:_sd, from:_sf, to:_st, tz:_tz, min_notice_h:_sn, buffer_min:_sbuf, bloqueados:_sbloq, horarios:_shor},
+      video:{ proveedor:_vp, lugar:(_vp==="presencial"?_vl:"") }
+    });
+    return;
   }
   if(act==="ag-evtype"){ state.ag={mode:"evtype", key:(el.getAttribute("data-key")||""), evTitle:(el.getAttribute("data-title")||"")}; render(); return; }
   if(act==="ag-set-evtype"){
