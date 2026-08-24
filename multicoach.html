@@ -400,6 +400,14 @@ html.mc-embed #mc-nswitch{display:none!important}
 .mc-canal-dot{width:9px;height:9px;border-radius:50%;background:#C24545;flex-shrink:0}
 .mc-canal-new{display:flex;align-items:center;justify-content:center;gap:6px;width:100%;margin-top:8px;padding:11px;border:1px dashed var(--pw-border);border-radius:12px;background:none;color:var(--pw-bosque,#2D6A4F);font-family:inherit;font-size:13px;font-weight:700;cursor:pointer}
 .mc-canal-new:hover{background:var(--pw-success-bg,#e7f0ea)}
+.mc-canal-item{display:flex;align-items:center;gap:2px}
+.mc-canal-item .mc-canal-row{flex:1;min-width:0}
+.mc-canal-cog{flex-shrink:0;width:32px;height:32px;border:none;background:none;border-radius:9px;color:var(--pw-text-muted);display:flex;align-items:center;justify-content:center;cursor:pointer;transition:background .13s,color .13s}
+.mc-canal-cog:hover{background:var(--pw-niebla-2);color:var(--pw-carbon)}
+.mc-grp-danger{margin-top:14px;padding-top:12px;border-top:1px solid var(--pw-border)}
+.mc-grp-del{display:flex;align-items:center;justify-content:center;gap:6px;width:100%;padding:10px;border:1px solid rgba(192,117,110,.4);border-radius:10px;background:none;color:var(--pw-danger,#C0756E);font-family:inherit;font-size:13px;font-weight:700;cursor:pointer}
+.mc-grp-del:hover{background:rgba(192,117,110,.08)}
+.mc-grp-warn{font-size:12.5px;color:var(--pw-text-soft);line-height:1.5;margin:0 0 12px}
 .mc-conv{display:flex;flex-direction:column;flex:1;min-height:0}
 .mc-conv-msgs{flex:1;min-height:0;overflow-y:auto;padding:16px 16px 8px;display:flex;flex-direction:column}
 .mc-conv-in{display:flex;gap:8px;padding:12px 14px;border-top:1px solid var(--pw-border);flex-shrink:0}
@@ -2630,9 +2638,15 @@ function _mcRenderList(){
    ? '<svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m3 11 18-5v12L3 14v-3z"/><path d="M11.6 16.8a3 3 0 1 1-5.8-1.6"/></svg>'
    : '<svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/></svg>';
   var sub=c.general?'Toda la red':((c.miembros&&c.miembros.length)?(c.miembros.length+' miembros'):'Toda la red');
-  return '<button class="mc-canal-row" onclick="_mcOpenCanal('+i+')"><span class="mc-canal-ic">'+ic+'</span>'
+  // El General y los canales de sistema (Owners, Coaches, RRHH) no se editan ni
+  // se borran: red_canales_system.sql dice que no pueden eliminarse. Por eso la
+  // rueda solo sale en los grupos que creó el equipo.
+  var cog=(!c.general && !c.is_system && c.id)
+   ? '<button class="mc-canal-cog" onclick="_mcEditarGrupo('+i+')" title="Ajustes del grupo" aria-label="Ajustes de '+_mcEsc(c.nombre)+'">'+PWI.svg('settings',{sm:true})+'</button>'
+   : '';
+  return '<div class="mc-canal-item"><button class="mc-canal-row" onclick="_mcOpenCanal('+i+')"><span class="mc-canal-ic">'+ic+'</span>'
    +'<span class="mc-canal-tx"><b>'+_mcEsc(c.nombre)+'</b><small>'+_mcEsc(sub)+'</small></span>'
-   +(un?'<span class="mc-canal-dot"></span>':'')+'</button>'; }).join('');
+   +(un?'<span class="mc-canal-dot"></span>':'')+'</button>'+cog+'</div>'; }).join('');
  box.innerHTML='<div class="mc-canal-list"><div class="mc-canal-hint">Canal general + grupos de tu equipo</div>'+rows
   +'<button class="mc-canal-new" onclick="_mcNuevoGrupo()"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg> Nuevo grupo</button></div>';
 }
@@ -2717,6 +2731,76 @@ function _mcCrearGrupo(){
    if(!d||!d.ok){ __toast('No se pudo crear'); if(btn){ btn.disabled=false; btn.textContent='Crear grupo'; } return; }
    __toast('Grupo creado ✓'); _mcLoadCanales(function(){ _mcRenderList(); });
   }).catch(function(){ __toast('Error de conexión'); if(btn){ btn.disabled=false; btn.textContent='Crear grupo'; } });
+}
+
+// ── Ajustes de un grupo: renombrar, cambiar miembros, eliminar ──
+// Va por 'group_update' y 'group_delete' de canal-red, que ya existían
+// desplegadas y no las llamaba nadie: el dueño podia crear un grupo y despues
+// no podia ni renombrarlo. Contrato sin tocar — mismos campos, misma respuesta.
+// El General y los de sistema no llegan aqui (ver _mcRenderList).
+function _mcEditarGrupo(i){
+ var c=(_mcChat.canales||[])[i]; if(!c||!c.id||c.general||c.is_system)return;
+ var box=document.getElementById('mc-chat-body'); if(!box)return;
+ var actuales=(c.miembros||[]).map(String);
+ var coaches=((typeof DB!=='undefined'&&DB&&DB.coaches)||[]).filter(function(x){ return x && x.est==='activo' && !x.esOwner; });
+ var opts=coaches.length?coaches.map(function(x){ var on=actuales.indexOf(String(x.id))>=0?' checked':''; return '<label class="mc-mem"><input type="checkbox" value="'+_mcEsc(x.id)+'"'+on+'><span>'+_mcEsc(x.n||x.nombre||'Coach')+'</span></label>'; }).join('')
+   :'<div class="csub" style="padding:6px 2px">Todavía no tienes coaches en la red.</div>';
+ box.innerHTML='<div class="mc-canal-list"><div class="mc-newgrp">'
+  +'<div class="mc-newgrp-ttl">Ajustes del grupo</div>'
+  +'<input id="mc-grp-nombre" class="inp" placeholder="Nombre del grupo" maxlength="60" value="'+_mcEsc(c.nombre)+'">'
+  +'<div class="mc-newgrp-sub">Quiénes lo ven (tú siempre estás):</div>'
+  +'<div class="mc-mems">'+opts+'</div>'
+  +'<div style="display:flex;gap:8px;margin-top:12px"><button class="cp-btn cp-btn-ghost" onclick="_mcRenderList()">Cancelar</button><button class="cp-btn cp-btn-primary" id="mc-grp-guardar" onclick="_mcGuardarGrupo('+i+')">Guardar cambios</button></div>'
+  +'<div class="mc-grp-danger"><button class="mc-grp-del" onclick="_mcBorrarGrupo('+i+')">'+PWI.svg('trash',{sm:true})+' Eliminar grupo</button></div>'
+  +'</div></div>';
+ var n=document.getElementById('mc-grp-nombre'); if(n) n.focus();
+}
+function _mcGuardarGrupo(i){
+ var c=(_mcChat.canales||[])[i]; if(!c||!c.id||c.general||c.is_system)return;
+ var n=document.getElementById('mc-grp-nombre'); var nombre=(n&&n.value||'').trim();
+ if(!nombre){ __toast('Ponele un nombre al grupo'); return; }
+ var miembros=[]; document.querySelectorAll('#mc-chat-body .mc-mem input:checked').forEach(function(x){ miembros.push(x.value); });
+ // Mismo criterio que group_create, que mete al que llama cuando la lista NO
+ // esta vacia. Vacia significa "toda la red", y ahi no hace falta nadie.
+ if(miembros.length && MC_OWNER && MC_OWNER.id && miembros.indexOf(String(MC_OWNER.id))<0) miembros.push(String(MC_OWNER.id));
+ if(!MC_REAL){ c.nombre=nombre; c.miembros=miembros;
+  _MC_GRUPOS_DEMO.forEach(function(g){ if(String(g.id)===String(c.id)){ g.nombre=nombre; g.miembros=miembros; } });
+  __toast('Grupo actualizado ✓ (demo)'); _mcRenderList(); return; }
+ var btn=document.getElementById('mc-grp-guardar'); if(btn){ btn.disabled=true; btn.textContent='Guardando…'; }
+ _hdr({'Content-Type':'application/json'}).then(function(h){ return fetch(SB+'/functions/v1/canal-red',{method:'POST',headers:h,body:JSON.stringify({action:'group_update',org_id:MC_ORG.id,canal_id:c.id,nombre:nombre,miembros:miembros})}); })
+  .then(function(r){ return r.ok?r.json():null; }).then(function(d){
+   if(!d||!d.ok){ __toast('No se pudo guardar'); if(btn){ btn.disabled=false; btn.textContent='Guardar cambios'; } return; }
+   __toast('Grupo actualizado ✓'); _mcLoadCanales(function(){ _mcRenderList(); });
+  }).catch(function(){ __toast('Error de conexión'); if(btn){ btn.disabled=false; btn.textContent='Guardar cambios'; } });
+}
+// Borrar es irreversible y se lleva los mensajes por delante (la FK de
+// mensajes_red_canal.canal_id es ON DELETE CASCADE), asi que lo decimos y
+// pedimos un segundo clic. El modal de la casa no sirve aqui: .modalov es
+// z-index 200 y el drawer del chat es 400, o sea que quedaria por debajo.
+function _mcBorrarGrupo(i){
+ var c=(_mcChat.canales||[])[i]; if(!c||!c.id||c.general||c.is_system)return;
+ var box=document.getElementById('mc-chat-body'); if(!box)return;
+ box.innerHTML='<div class="mc-canal-list"><div class="mc-newgrp">'
+  +'<div class="mc-newgrp-ttl">Eliminar «'+_mcEsc(c.nombre)+'»</div>'
+  +'<p class="mc-grp-warn">Se borra el grupo y <b>todos sus mensajes</b>, para todo el equipo. No se puede deshacer.<br>El canal General y los demás grupos no se tocan.</p>'
+  +'<div style="display:flex;gap:8px"><button class="cp-btn cp-btn-ghost" onclick="_mcEditarGrupo('+i+')">Cancelar</button>'
+  +'<button class="mc-grp-del" id="mc-grp-del" style="flex:1" onclick="_mcBorrarGrupoOk('+i+')">'+PWI.svg('trash',{sm:true})+' Sí, eliminar</button></div>'
+  +'</div></div>';
+}
+function _mcBorrarGrupoOk(i){
+ var c=(_mcChat.canales||[])[i]; if(!c||!c.id||c.general||c.is_system)return;
+ var abierto=_mcChat.cur&&String(_mcChat.cur.id)===String(c.id);
+ if(!MC_REAL){ _MC_GRUPOS_DEMO=_MC_GRUPOS_DEMO.filter(function(g){ return String(g.id)!==String(c.id); });
+  if(abierto){ _mcStopPoll(); _mcChat.cur=null; _mcChat.view='list'; _mcSyncHd(); }
+  __toast('Grupo eliminado (demo)'); _mcLoadCanales(function(){ _mcRenderList(); }); return; }
+ var btn=document.getElementById('mc-grp-del'); if(btn){ btn.disabled=true; btn.textContent='Eliminando…'; }
+ _hdr({'Content-Type':'application/json'}).then(function(h){ return fetch(SB+'/functions/v1/canal-red',{method:'POST',headers:h,body:JSON.stringify({action:'group_delete',org_id:MC_ORG.id,canal_id:c.id})}); })
+  .then(function(r){ return r.ok?r.json():null; }).then(function(d){
+   if(!d||!d.ok){ __toast('No se pudo eliminar'); if(btn){ btn.disabled=false; btn.textContent='Sí, eliminar'; } return; }
+   // Si el grupo borrado era el que estaba abierto, el hilo ya no existe.
+   if(abierto){ _mcStopPoll(); _mcChat.cur=null; _mcChat.msgs=null; _mcChat.view='list'; _mcSyncHd(); }
+   __toast('Grupo eliminado'); _mcLoadCanales(function(){ _mcRenderList(); _mcUpdHeaderDot(); });
+  }).catch(function(){ __toast('Error de conexión'); if(btn){ btn.disabled=false; btn.textContent='Sí, eliminar'; } });
 }
 function esNutriCoach(c){return c.nicho==='nutricion';}
 // Suspender / reactivar / quitar coach. En real va por eliminar-coach-red
