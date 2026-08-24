@@ -2670,6 +2670,12 @@ const RULES = [
         return "canal-red: debe usar service role y gatear la sesión.";
       if (!/esMiembro/.test(fn) || !/org_id/.test(fn))
         return "canal-red: debe permitir solo a los miembros (dueño/coach) de esa org.";
+      // group_delete no comprobaba is_system: borraba un canal de sistema con 200
+      // y se llevaba sus mensajes por el CASCADE. Lo prometía red_canales_system.sql
+      // y no lo sostenía nadie. La prueba de verdad es ejecutable y está en
+      // scripts/probar-canal-red-group-delete.mjs; esto solo evita el revert mudo.
+      if (!/is_system,?[^\n]*limit=1/.test(fn) || !/row\.is_system === true/.test(fn) || !/canal_de_sistema/.test(fn))
+        return "canal-red: group_delete debe pedir is_system y rechazar los canales de sistema.";
       // Deploy.
       const wf = read(".github/workflows/deploy-functions.yml");
       if (wf && !/functions deploy canal-red/.test(wf))
