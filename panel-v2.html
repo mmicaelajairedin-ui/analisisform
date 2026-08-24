@@ -3342,7 +3342,10 @@ function _vidGcalOk(){
 // un enlace que no va a llegar. Eso no es decidir la modalidad — es no dejar
 // guardar una que no se puede cumplir — asi que vive aqui y no en la regla.
 function _vidNormalizar(p){
-  return PWModalidad.modalidadCumplible(p, { gcal:_vidGcalOk(), zoomUrl:!!_vidZoomUrl() });
+  // `zoomUrl` es "¿hay una SALA utilizable?", no "¿hay algo escrito?". Con un
+  // enlace de chat guardado, Zoom deja de poder cumplirse y se atiende en la
+  // Sala — el valor guardado no se toca, solo deja de tratarse como videollamada.
+  return PWModalidad.modalidadCumplible(p, { gcal:_vidGcalOk(), zoomUrl:PWModalidad.zoomEsSala(_vidZoomUrl()) });
 }
 function _vidProv(){ return _vidNormalizar(PWModalidad.modalidadElegida(_vidCfg())); }
 // Se captura junto al resto del formulario, en el mismo guardado.
@@ -14365,8 +14368,11 @@ document.addEventListener("click", function(ev){
   if(act==="integ:zoom-save"){
     var inp = document.getElementById("integ-zoom-input");
     var url = inp ? inp.value.trim() : "";
-    if(!url){ alert("Pega un enlace de Zoom válido."); return; }
-    if(url.indexOf("zoom.us")<0 && url.indexOf("http")<0){ alert("Eso no parece ser un enlace de Zoom."); return; }
+    // Antes la comprobacion era `indexOf("zoom.us")<0 && indexOf("http")<0`: un
+    // `&&`, asi que bastaba con UNA de las dos y entraba casi cualquier cosa.
+    // Por ahi entro un enlace de CHAT que se envio a clientes como videollamada.
+    var _zm=PWModalidad.zoomMotivo(url);
+    if(_zm){ alert(_zm); return; }
     var cfg = RCFG||{};
     cfg.zoom_url = url;
     _sbw("usuarios", ME.id, {configuracion:cfg}, function(){

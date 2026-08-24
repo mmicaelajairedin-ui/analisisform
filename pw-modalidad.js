@@ -137,6 +137,44 @@
     return { proveedor: prov || null, url: url, etiqueta: ETIQUETA[prov] || 'Entrar a la videollamada' };
   }
 
+
+  /**
+   * ¿Esta URL es una SALA de Zoom a la que se puede entrar?
+   *
+   * Existe porque `zoom_url` aceptaba casi cualquier cosa —la comprobacion era
+   * `if(url.indexOf("zoom.us")<0 && url.indexOf("http")<0) rechazar`, un `&&`,
+   * asi que bastaba con UNA de las dos— y por ahi entro un enlace de CHAT
+   * (`/launch/chat`) que se envio a clientes como si fuera la videollamada.
+   *
+   * Se aceptan las tres formas que abren una reunion:
+   *   /j/<id>    reunion programada          /w/<id>   webinar
+   *   /my/<slug> sala personal (PMI)
+   *
+   * Y se rechaza `/s/<id>` a proposito aunque sea de Zoom: es el enlace de
+   * ANFITRION. Compartirlo deja que cualquiera empiece la reunion en tu nombre.
+   */
+  function zoomEsSala(url) {
+    var u = String(url == null ? '' : url).trim();
+    if (!/^https:\/\//i.test(u)) return false;
+    var m = u.match(/^https:\/\/([^/?#]+)(\/[^?#]*)?/i);
+    if (!m) return false;
+    var host = m[1].toLowerCase().replace(/:\d+$/, '');
+    if (!/(^|\.)zoom\.us$/.test(host) && !/(^|\.)zoomgov\.com$/.test(host)) return false;
+    var ruta = m[2] || '';
+    return /^\/(j|w)\/\d{6,}/.test(ruta) || /^\/my\/[A-Za-z0-9._-]+/.test(ruta);
+  }
+
+  /** Por que se rechazo, para poder decirselo a la coach. */
+  function zoomMotivo(url) {
+    var u = String(url == null ? '' : url).trim();
+    if (!u) return 'Pega el enlace de tu sala de Zoom.';
+    if (zoomEsSala(u)) return '';
+    if (/\/launch\/chat|\/chat\//i.test(u)) return 'Ese es tu enlace de CHAT de Zoom, no el de una reunion. El de la sala se copia desde Zoom, en "Reuniones", y contiene /j/ o /my/.';
+    if (/\/s\/\d+/i.test(u)) return 'Ese es el enlace de ANFITRION: quien lo tenga puede empezar la reunion en tu nombre. Copia el enlace para participantes, que contiene /j/.';
+    if (/zoom\.us|zoomgov\.com/i.test(u)) return 'Ese enlace de Zoom no abre una sala. El de la reunion contiene /j/, /w/ o /my/.';
+    return 'Eso no parece un enlace de Zoom.';
+  }
+
   var API = {
     PROVEEDORES: PROVEEDORES,
     POR_DEFECTO: POR_DEFECTO,
@@ -146,6 +184,8 @@
     lugarElegido: lugarElegido,
     ETIQUETA: ETIQUETA,
     videoDeCita: videoDeCita,
+    zoomEsSala: zoomEsSala,
+    zoomMotivo: zoomMotivo,
   };
 
   g.PWModalidad = API;

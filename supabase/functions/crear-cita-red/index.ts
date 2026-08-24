@@ -18,7 +18,7 @@
 // Deploy: supabase functions deploy crear-cita-red --no-verify-jwt
 // ===================================================================
 
-import { modalidadCumplible, modalidadDeCita, modalidadElegida, videoDeCita } from "../_shared/agenda/modalidad.ts";
+import { modalidadCumplible, modalidadDeCita, modalidadElegida, videoDeCita, zoomEsSala } from "../_shared/agenda/modalidad.ts";
 import type { ProveedorVideo } from "../_shared/agenda/tipos.ts";
 
 const SB_URL = Deno.env.get("SUPABASE_URL") || "";
@@ -88,7 +88,8 @@ async function configuracionDeCoach(
     return {
       video: cfg.video,
       gcal: !!(g.refresh_token || g.access_token || g.conectado === true),
-      zoomUrl: /^https?:\/\//i.test(String(cfg.zoom_url || "").trim()),
+      // Utilizable = es una SALA, no cualquier URL: un chat no abre reunion.
+      zoomUrl: zoomEsSala(cfg.zoom_url),
     };
   } catch { return VACIA; }
 }

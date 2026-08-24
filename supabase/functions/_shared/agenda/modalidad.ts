@@ -117,6 +117,31 @@ export function videoDeCita(
   return { proveedor: prov || null, url, etiqueta: ETIQUETA[prov] || 'Entrar a la videollamada' };
 }
 
+/**
+ * ¿Esta URL es una SALA de Zoom a la que se puede entrar?
+ *
+ * Existe porque `zoom_url` aceptaba casi cualquier cosa —la comprobación era
+ * `if(url.indexOf("zoom.us")<0 && url.indexOf("http")<0) rechazar`, un `&&`, así
+ * que bastaba con UNA de las dos— y por ahí entró un enlace de CHAT
+ * (`/launch/chat`) que se envió a clientes como si fuera la videollamada.
+ *
+ * Se aceptan las tres formas que abren una reunión: `/j/<id>`, `/w/<id>` y
+ * `/my/<slug>`. Se rechaza `/s/<id>` a propósito aunque sea de Zoom: es el
+ * enlace de ANFITRIÓN, y compartirlo deja que cualquiera empiece la reunión.
+ *
+ * Gemelo de `zoomEsSala` en `pw-modalidad.js`.
+ */
+export function zoomEsSala(url: unknown): boolean {
+  const u = String(url == null ? '' : url).trim();
+  if (!/^https:\/\//i.test(u)) return false;
+  const m = u.match(/^https:\/\/([^/?#]+)(\/[^?#]*)?/i);
+  if (!m) return false;
+  const host = m[1].toLowerCase().replace(/:\d+$/, '');
+  if (!/(^|\.)zoom\.us$/.test(host) && !/(^|\.)zoomgov\.com$/.test(host)) return false;
+  const ruta = m[2] || '';
+  return /^\/(j|w)\/\d{6,}/.test(ruta) || /^\/my\/[A-Za-z0-9._-]+/.test(ruta);
+}
+
 /** El lugar, solo si la sesión es presencial. */
 export function lugarElegido(cfgVideo: unknown): string {
   if (modalidadElegida(cfgVideo) !== 'presencial') return '';

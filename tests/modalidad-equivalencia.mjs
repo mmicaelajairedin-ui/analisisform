@@ -106,5 +106,34 @@ for (const r of RAROS) {
 }
 linea(`${RAROS.length} entradas hostiles`, barridoOk, 'ninguna lanza, ninguna se sale del contrato');
 
+/* Qué es una sala de Zoom, tambien tiene que ser la misma regla en los dos. */
+console.log('\n`zoomEsSala`: chat NO, sala SI — y lo mismo en navegador y servidor\n');
+const ZOOMS = [
+  ['chat (el caso real)',       'https://us05web.zoom.us/launch/chat?src=direct_chat_link', false],
+  ['reunion /j/',               'https://us05web.zoom.us/j/1234567890',                     true],
+  ['reunion con pwd',           'https://us05web.zoom.us/j/1234567890?pwd=abc',             true],
+  ['sala personal /my/',        'https://zoom.us/my/micaela',                               true],
+  ['webinar /w/',               'https://us05web.zoom.us/w/9876543210',                     true],
+  ['dominio de empresa',        'https://mi-empresa.zoom.us/j/9876543210',                  true],
+  ['zoomgov',                   'https://zoomgov.com/j/1234567890',                         true],
+  ['enlace de ANFITRION /s/',   'https://us05web.zoom.us/s/1234567890',                     false],
+  ['perfil',                    'https://us05web.zoom.us/profile',                          false],
+  ['otro dominio con /j/',      'https://noeszoom.com/j/1234567890',                        false],
+  ['http sin s',                'http://us05web.zoom.us/j/1234567890',                      false],
+  ['dominio que solo TERMINA parecido', 'https://malzoom.us/j/1234567890',                  false],
+  ['vacio',                     '',                                                          false],
+  ['null',                      null,                                                        false],
+  ['numero',                    42,                                                          false],
+];
+for (const [nombre, url, esperado] of ZOOMS) {
+  const a = JS.zoomEsSala(url), b = TS.zoomEsSala(url);
+  linea(nombre, a === esperado && b === esperado && a === b, `js=${a} ts=${b}`);
+}
+
+/* El motivo del rechazo solo lo necesita el navegador (se lo dice a la coach). */
+linea('el chat se explica como chat', /CHAT/.test(JS.zoomMotivo('https://us05web.zoom.us/launch/chat')), '');
+linea('el de anfitrion se explica aparte', /ANFITRION/.test(JS.zoomMotivo('https://us05web.zoom.us/s/123456')), '');
+linea('una sala valida no da motivo', JS.zoomMotivo('https://zoom.us/j/1234567890') === '', '');
+
 console.log(`\n${fallos === 0 ? '✓ Las dos implementaciones son la misma regla.' : `✗ ${fallos} divergencia(s).`}\n`);
 process.exit(fallos === 0 ? 0 : 1);

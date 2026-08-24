@@ -62,7 +62,7 @@ const bloqueRed = red.match(/const proveedor: ProveedorVideo = body\.modalidad =
 if (!bloqueRed) throw new Error('no se encontró el bloque de crear-cita-red');
 const camino3 = (cfg, { modForm = 'online', gcalOk = true, zoomUrl = '' } = {}) => {
   const elegido = TS.modalidadCumplible(TS.modalidadElegida(cfg.video),
-    { gcal: gcalOk, zoomUrl: /^https?:\/\//i.test(String(zoomUrl)) });
+    { gcal: gcalOk, zoomUrl: TS.zoomEsSala(zoomUrl) });
   const src = bloqueRed[0].replace(/: ProveedorVideo/, '').replace(/body\.modalidad/g, 'mod');
   return new Function('mod', 'elegido', src + '\nreturn proveedor;')(modForm, elegido);
 };
@@ -99,6 +99,24 @@ console.log('\nZoom elegido sin URL válida — no se promete lo que no se puede
 const sinUrl = { video: { proveedor: 'zoom' } };
 for (const [n, v] of [['reservar', camino1(sinUrl)], ['panel', camino2(sinUrl, { zoomUrl: '' })], ['crear-cita-red', camino3(sinUrl, { zoomUrl: '' })]]) {
   const ok = v === 'sala';
+  if (!ok) fallos++;
+  console.log(`  ${ok ? ' ' : '✗'} ${n.padEnd(38)}${v}`);
+}
+
+/* Un enlace de CHAT de Zoom no es una sala: elegir Zoom con eso no se puede
+ * cumplir y se atiende en la Sala. Es el caso REAL que se envio a clientes. */
+console.log('\nZoom elegido con un enlace de CHAT — no es una sala\n');
+const conChat = { video: { proveedor: 'zoom' }, zoom_url: ZOOM_CHAT };
+for (const [n, v] of [['reservar', camino1(conChat)], ['panel', camino2(conChat, { zoomUrl: ZOOM_CHAT })], ['crear-cita-red', camino3(conChat, { zoomUrl: ZOOM_CHAT })]]) {
+  const ok = v === 'sala';
+  if (!ok) fallos++;
+  console.log(`  ${ok ? ' ' : '✗'} ${n.padEnd(38)}${v}`);
+}
+/* Y con una sala de verdad, Zoom sigue funcionando: no se ha roto la integracion. */
+console.log('\nZoom con una sala de verdad sigue siendo Zoom\n');
+const conSala = { video: { proveedor: 'zoom' }, zoom_url: ZOOM_SALA };
+for (const [n, v] of [['reservar', camino1(conSala)], ['panel', camino2(conSala, { zoomUrl: ZOOM_SALA })], ['crear-cita-red', camino3(conSala, { zoomUrl: ZOOM_SALA })]]) {
+  const ok = v === 'zoom';
   if (!ok) fallos++;
   console.log(`  ${ok ? ' ' : '✗'} ${n.padEnd(38)}${v}`);
 }
