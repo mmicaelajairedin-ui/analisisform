@@ -109,10 +109,13 @@ const EVENTOS = [
   ['meet',       { proveedor: 'meet', url: MEET, estado: 'ok' },        'meet',       MEET, 'online'],
   ['sala',       { proveedor: 'sala', url: SALA, estado: 'ok' },        'sala',       SALA, 'online'],
   ['zoom',       { proveedor: 'zoom', url: ZOOM, estado: 'ok' },        'zoom',       ZOOM, 'online'],
-  ['presencial', { proveedor: 'presencial', url: null, estado: 'no_aplica' }, 'presencial', null, 'presencial'],
+  ['presencial', { proveedor: 'presencial', url: null, estado: 'no_aplica', lugar: 'C/ Mayor 1' }, 'presencial', null, 'presencial'],
 ];
 for (const [nombre, video, provEsperado, urlEsperada, modEsperada] of EVENTOS) {
   const fila = API._agEventoAFila({ cita_id: 101, coach_id: COACH, inicio: '2026-09-01T09:00:00.000Z', titulo: 'S', video });
+  // `lugar` viaja desde el paso 7: antes este camino lo perdia y una cita
+  // presencial llegaba a la pantalla sin direccion.
+  chk(`${nombre} · lugar sobrevive`, fila.lugar === (video.lugar || ''), `→ ${JSON.stringify(fila.lugar)}`);
   chk(`${nombre} · video_proveedor sobrevive`, fila.video_proveedor === provEsperado, `→ ${fila.video_proveedor}`);
   chk(`${nombre} · meet_link sobrevive`, fila.meet_link === urlEsperada, `→ ${fila.meet_link ?? 'null'}`);
   chk(`${nombre} · modalidad derivada`, fila.modalidad === modEsperada, `→ ${fila.modalidad}`);

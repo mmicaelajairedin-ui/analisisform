@@ -90,7 +90,8 @@ export function resolverVideo(
   origenSala: string = ORIGEN_SALA_POR_DEFECTO,
 ): Video {
   if (e.modalidad === 'presencial') {
-    return { proveedor: 'presencial', url: null, estado: 'no_aplica' };
+    // El lugar viaja con el resto: es el "enlace" de una sesión presencial.
+    return { proveedor: 'presencial', url: null, estado: 'no_aplica', lugar: String(e.lugar || '').trim() };
   }
 
   if (esUrl(e.meet_link)) {
@@ -102,7 +103,7 @@ export function resolverVideo(
     // de Zoom de antes del selector. El enlace guardado sí se sabe y se entrega;
     // el proveedor va `null`, que es lo que el tipo `Video` prevé para «hay
     // videollamada, no sé de quién». Adivinar es lo que estamos quitando.
-    return { proveedor: declarado, url: e.meet_link, estado: 'ok' };
+    return { proveedor: declarado, url: e.meet_link, estado: 'ok', lugar: '' };
   }
 
   // Sin enlace guardado. Si Google quedó pendiente o sin conexión,
@@ -118,5 +119,6 @@ export function resolverVideo(
     proveedor: 'sala',
     url: urlSala(e.cita_id, e.coach_id, e.grupal === true, origenSala),
     estado,
+    lugar: '',
   };
 }
