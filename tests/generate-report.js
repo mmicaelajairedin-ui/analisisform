@@ -124,10 +124,20 @@ function generateReport(results) {
   // INEJECUTABLE manda sobre todo lo demas: si el cargador fallo, o si no se
   // descubrio ni un test, no hay nada que aprobar. Cuenta como CRITICO, nunca
   // como salud, y nunca como "0 fallos". (INC-026, R-33)
-  const inejecutable = runnerErrors.length > 0 || totalTests === 0;
+  //
+  // Y hay un SEGUNDO camino hacia la misma ceguera, que la version anterior no
+  // cubria: que los tests se DESCUBRAN y se OMITAN todos. Ahi totalTests es 78 y
+  // failed es 0, asi que salia `healthy`, el correo decia «78/78 OK» y el paso
+  // «Cerrar Issue si todos los tests pasan» cerraba el issue — con cero tests
+  // ejecutados. Es INC-026/INC-038 con otro disfraz. Basta con que caduque un
+  // secret (`TEST_ACCOUNTS`) para que media bateria se omita.
+  const nadaEjecutado = totalTests > 0 && passed === 0 && failed === 0;
+  const inejecutable = runnerErrors.length > 0 || totalTests === 0 || nadaEjecutado;
   const motivoInejecutable = runnerErrors.length > 0
     ? `Playwright no pudo cargar los tests (${runnerErrors.length} error(es) del cargador)`
-    : 'No se descubrio ni un solo test';
+    : totalTests === 0
+      ? 'No se descubrio ni un solo test'
+      : `Se descubrieron ${totalTests} tests y no se ejecuto ninguno (${skipped} omitidos)`;
 
   const healthStatus = inejecutable
     ? '🔴 BATERÍA INEJECUTABLE'
@@ -318,7 +328,7 @@ function generateReport(results) {
     ? `🔴 Testing diario: ${issueFailures.length} problema(s) necesitan revisión — ${dateStr}`
     : '';
 
-  return { text: report, html: htmlReport, failed, passed, totalTests, issueBody, issueTitle,
+  return { text: report, html: htmlReport, failed, passed, skipped, totalTests, issueBody, issueTitle,
     inejecutable, motivoInejecutable, runnerErrors };
 }
 
@@ -501,7 +511,7 @@ function generateHTMLReport(data) {
 // Main
 async function main() {
   const results = await readResults();
-  const { text, html, failed, totalTests, issueBody, issueTitle,
+  const { text, html, failed, passed, skipped, totalTests, issueBody, issueTitle,
     inejecutable, motivoInejecutable, runnerErrors } = generateReport(results);
 
   // Imprimir reporte en consola
@@ -518,9 +528,15 @@ async function main() {
   const summary = {
     date: new Date().toISOString(),
     totalTests,
-    passed: totalTests - failed,
+    // `totalTests - failed` contaba los OMITIDOS COMO APROBADOS. En el run #176
+    // (24-08) eso publico 75 aprobados cuando habian pasado 74 y 1 se omitio, y
+    // el correo salio con «75/78 tests OK». En el caso extremo —todo omitido—
+    // publicaba «78/78 OK» sin haber ejecutado nada. Se publica lo que de verdad
+    // paso, y los omitidos aparte, para que se puedan ver.
+    passed,
     failed,
-    successRate: totalTests > 0 ? Math.round(((totalTests - failed) / totalTests) * 100) : 0,
+    skipped,
+    successRate: totalTests > 0 ? Math.round((passed / totalTests) * 100) : 0,
     // INC-026 / R-33 · inejecutable ⇒ critical, SIEMPRE. Antes esta linea decia
     // solo `failed === 0 ? 'healthy'`, y con 0 tests descubiertos failed ES 0.
     status: inejecutable ? 'critical' : failed === 0 ? 'healthy' : failed <= 3 ? 'warning' : 'critical',
