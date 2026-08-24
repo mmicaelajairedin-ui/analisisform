@@ -13,8 +13,8 @@ DECLARE
   org_rec RECORD;
   owner_id UUID;
 BEGIN
-  FOR org_rec IN SELECT id, dueno_id FROM organizaciones LOOP
-    owner_id := org_rec.dueno_id;
+  FOR org_rec IN SELECT id, organizaciones.owner_id FROM organizaciones LOOP
+    owner_id := org_rec.owner_id;
 
     -- Crear canal Owners si no existe
     INSERT INTO red_canales (org_id, nombre, creado_por, miembros, is_system)
