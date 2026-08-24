@@ -18,7 +18,7 @@
 // Deploy: supabase functions deploy crear-cita-red --no-verify-jwt
 // ===================================================================
 
-import { modalidadCumplible, modalidadDeCita, modalidadElegida } from "../_shared/agenda/modalidad.ts";
+import { modalidadCumplible, modalidadDeCita, modalidadElegida, videoDeCita } from "../_shared/agenda/modalidad.ts";
 import type { ProveedorVideo } from "../_shared/agenda/tipos.ts";
 
 const SB_URL = Deno.env.get("SUPABASE_URL") || "";
@@ -199,7 +199,7 @@ Deno.serve(async (req: Request) => {
     // Email de confirmación al cliente (best-effort, no bloquea la creación).
     // JULIO 2026: Google Meet links come from Google Calendar sync, not sala.html
     if (EMAIL_RE.test(cliEmail)) {
-      try { await notificarCita(cliEmail, tipo, inicio, modalidad, lugar, cita.meet_link || ""); } catch { /* ignore */ }
+      try { await notificarCita(cliEmail, tipo, inicio, modalidad, lugar, cita.meet_link || "", proveedor); } catch { /* ignore */ }
     }
     return json({ ok: true, cita });
   } catch { return json({ error: "write_failed" }, 502); }
@@ -211,13 +211,20 @@ function fmtFecha(iso: string): string {
   return m ? `${m[3]}/${m[2]}/${m[1]} · ${m[4]}:${m[5]}` : iso;
 }
 // Email de confirmación de la cita al cliente (misma idea que el panel del coach).
-async function notificarCita(to: string, tipo: string, inicio: string, modalidad: string, lugar: string, meetLink: string): Promise<void> {
+async function notificarCita(
+  to: string, tipo: string, inicio: string, modalidad: string, lugar: string,
+  meetLink: string, proveedor: string,
+): Promise<void> {
   const cuando = fmtFecha(inicio);
-  const donde = modalidad === "presencial"
+  // La ETIQUETA sale del proveedor persistido y el ENLACE de la cita. Antes decia
+  // "Entrar a Google Meet" para cualquier enlace —tambien Sala y Zoom— y, sin
+  // enlace, prometia un Meet en el calendario que podia no existir.
+  const v = videoDeCita({ video_proveedor: proveedor, meet_link: meetLink, modalidad });
+  const donde = v.proveedor === "presencial"
     ? `<p style='font-size:15px'>📍 <b>Presencial:</b> ${lugar || "te confirmamos el lugar"}</p>`
-    : meetLink
-      ? `<p style='margin:20px 0'><a href='${meetLink}' target='_blank' rel='noopener' style='background:#1F5740;color:#fff;text-decoration:none;padding:12px 24px;border-radius:10px;font-size:15px;font-weight:600;display:inline-block'>Entrar a Google Meet →</a></p>`
-      : `<p style='margin:20px 0;color:#8A968E'><b>Google Meet:</b> el link aparecerá en tu Google Calendar.</p>`;
+    : v.url
+      ? `<p style='margin:20px 0'><a href='${v.url}' target='_blank' rel='noopener' style='background:#1F5740;color:#fff;text-decoration:none;padding:12px 24px;border-radius:10px;font-size:15px;font-weight:600;display:inline-block'>${v.etiqueta} →</a></p>`
+      : `<p style='margin:20px 0;color:#8A968E'>Te enviaremos el enlace de la sesión.</p>`;
   const html =
     "<p style='font-size:15px'>¡Hola!</p>" +
     "<p style='font-size:15px;line-height:1.6'>Tu sesión quedó agendada:</p>" +

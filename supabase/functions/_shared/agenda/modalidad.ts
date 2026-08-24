@@ -83,6 +83,40 @@ export function modalidadDeCita(proveedor: ProveedorVideo): 'presencial' | 'onli
   return proveedor === 'presencial' ? 'presencial' : 'online';
 }
 
+/** Etiqueta del botón, por proveedor. Presencial no tiene: no es que falte, es
+ *  que no hay videollamada. Gemelo de `ETIQUETA` en `pw-modalidad.js`. */
+export const ETIQUETA: Record<string, string> = {
+  meet: 'Entrar a Google Meet',
+  sala: 'Entrar a la Sala de Pathway',
+  zoom: 'Entrar a la videollamada',
+};
+
+/**
+ * El vídeo de UNA CITA YA CREADA: qué proveedor, qué enlace y cómo se llama el
+ * botón. Todo sale de la fila; nada se vuelve a decidir.
+ *
+ * Vive aquí y no repetido en cada superficie porque la etiqueta se derivaba del
+ * ENLACE en cuatro sitios distintos, y por eso una cita de Sala o de Zoom decía
+ * «Entrar a Google Meet». El enlace no dice de quién es; el proveedor sí.
+ *
+ * NO consulta `zoom_url`, ni `gcal`, ni `configuracion.video`: la cita ya tiene
+ * su decisión tomada y reconstruirla sería inventarse otra.
+ */
+export function videoDeCita(
+  cita: { video_proveedor?: string | null; meet_link?: string | null; modalidad?: string | null } | null | undefined,
+): { proveedor: string | null; url: string; etiqueta: string } {
+  const prov = String((cita && cita.video_proveedor) || '').trim().toLowerCase();
+  // `modalidad` vale de respaldo para las citas anteriores al proveedor.
+  if (prov === 'presencial' || (cita && cita.modalidad === 'presencial')) {
+    return { proveedor: 'presencial', url: '', etiqueta: '' };
+  }
+  const url = String((cita && cita.meet_link) || '').trim();
+  if (!/^https?:\/\//i.test(url)) return { proveedor: prov || null, url: '', etiqueta: '' };
+  // Con enlace pero sin proveedor declarado —citas viejas— hay videollamada y no
+  // se sabe de quién: se dice eso, en vez de atribuírsela a Google.
+  return { proveedor: prov || null, url, etiqueta: ETIQUETA[prov] || 'Entrar a la videollamada' };
+}
+
 /** El lugar, solo si la sesión es presencial. */
 export function lugarElegido(cfgVideo: unknown): string {
   if (modalidadElegida(cfgVideo) !== 'presencial') return '';

@@ -11,12 +11,17 @@
  *
  * Correr:  node tests/agenda-enlace-coach.mjs
  */
+import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
 import fs from 'node:fs';
 import path from 'node:path';
 
 const RAIZ = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 const panel = fs.readFileSync(path.join(RAIZ, 'panel-v2.html'), 'utf8');
+
+/* `_agResLink` delega en la regla compartida desde el paso 6, asi que hay que
+ * darsela — igual que hace el navegador cargando `/pw-modalidad.js`. */
+const PWModalidad = createRequire(import.meta.url)(path.join(RAIZ, 'pw-modalidad.js'));
 
 /** Extrae una función por nombre contando llaves. Nada se reescribe a mano. */
 function extraer(nombre) {
@@ -30,9 +35,9 @@ function extraer(nombre) {
   throw new Error('no cierra: ' + nombre);
 }
 
-const API = new Function(
+const API = new Function('PWModalidad',
   extraer('_agResLink') + extraer('_agEsPresencial') + extraer('_agVideoEstado') + extraer('_agEventoAFila') +
-  '\nreturn { _agResLink, _agEsPresencial, _agVideoEstado, _agEventoAFila };')();
+  '\nreturn { _agResLink, _agEsPresencial, _agVideoEstado, _agEventoAFila };')(PWModalidad);
 
 const COACH = '99270bc1-bc56-4e0a-b978-3d58d3f8b848';
 const SALA = `https://pathwaycareercoach.com/sala.html?room=${encodeURIComponent('Pathway-' + COACH + '-101')}`;

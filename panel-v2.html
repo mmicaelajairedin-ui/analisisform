@@ -3564,14 +3564,14 @@ function _gcalAvisar(citaId, op){
     }).catch(function(){});
   }catch(e){}
 }
-function _agResLink(r){
-  if(!r) return "";
-  // Presencial no tiene videollamada, y no es un fallo: es la modalidad.
-  if(_agEsPresencial(r)) return "";
-  // Lo que se PERSISTIO al crear la cita, tal cual. Si no es una URL, no hay
-  // enlace — y no se fabrica uno.
-  var url=(""+(r.meet_link||"")).trim();
-  return /^https?:\/\//i.test(url) ? url : "";
+function _agResLink(r){ return PWModalidad.videoDeCita(r).url; }
+// El boton de videollamada de un EMAIL, con la etiqueta del proveedor real.
+// Presencial no lleva boton; una cita sin enlace tampoco promete nada.
+function _botonVideo(r){
+  var v=PWModalidad.videoDeCita(r);
+  if(v.proveedor==="presencial") return "<p style='font-size:13px;color:#8A968E'>"+PWI.svg('mapPin',{sm:true})+" <strong>Presencial</strong>"+(r&&r.lugar?(" · "+esc(r.lugar)):"")+"</p>";
+  if(!v.url) return "<p style='font-size:13px;color:#8A968E'>Te enviaremos el enlace de la sesión.</p>";
+  return "<a href=\""+esc(v.url)+"\" target='_blank' rel='noopener' style='display:inline-block;background:#2D6A4F;color:#fff;text-decoration:none;padding:11px 20px;border-radius:10px;font-weight:700'>"+esc(v.etiqueta)+"</a>";
 }
 // Presencial se reconoce por el proveedor; `modalidad` se acepta como respaldo
 // porque el camino directo (`select=*`) trae las dos columnas.
@@ -4842,8 +4842,12 @@ function _icsBuild(title, startMs, endMs, link, uid){
 function _resIcs(r, iso){
   var _s=+new Date(iso||r.inicio); var _dm=(_durMin(r.tipo||"")||60);
   var _coach=(typeof COACH!=="undefined"&&COACH&&COACH.name)||(RME&&RME.nombre)||"";
-  var _salaLink=_salaClientLink(r, iso); // Link a la Sala con start/dur para el gate
-  return _icsBuild((r.tipo||"Sesión")+(_coach?(" con "+_coach):""), _s, _s+_dm*60000, _salaLink, (r.token||r.id));
+  // El adjunto lleva el enlace PERSISTIDO de la cita, no una Sala reconstruida.
+  // Antes llamaba a `_salaClientLink()` siempre, asi que la invitacion de
+  // calendario de una cita de Meet o de Zoom mandaba a la Sala — el mismo fallo
+  // que el cuerpo del correo, una capa mas abajo y por eso mas dificil de ver.
+  var _link=PWModalidad.videoDeCita(r).url;
+  return _icsBuild((r.tipo||"Sesión")+(_coach?(" con "+_coach):""), _s, _s+_dm*60000, _link, (r.token||r.id));
 }
 // URL de Google Calendar (abre el evento cargado → guardar y listo, sin descargar
 // archivo). Sin invitados (no manda invitación con Meet). Cada uno lo agrega a SU
@@ -4854,25 +4858,40 @@ function _gcalUrl(r, iso){
   var _s=+new Date(iso||r.inicio); var _dm=(_durMin(r.tipo||"")||60); var _e=_s+_dm*60000;
   var _coach=(typeof COACH!=="undefined"&&COACH&&COACH.name)||(RME&&RME.nombre)||"";
   var _title=(r.tipo||"Sesión")+(_coach?(" con "+_coach):"");
-  // JULIO 2026: Ya no incluimos link de sala.html. Usá Google Calendar con tu Google Meet
-  return "https://calendar.google.com/calendar/render?action=TEMPLATE&text="+encodeURIComponent(_title)+"&dates="+utc(_s)+"/"+utc(_e)+"&details="+encodeURIComponent("Tu sesión en Pathway. Mirá tu Google Calendar para acceder a Google Meet.");
+  // El detalle nombra la modalidad REAL y lleva su enlace. Antes decia siempre
+  // "Mirá tu Google Calendar para acceder a Google Meet" — falso para Sala, para
+  // Zoom y para Presencial, y ademas sin ningun enlace dentro.
+  var _v=PWModalidad.videoDeCita(r);
+  var _det=(_v.proveedor==="presencial")
+    ? ("Sesión presencial en Pathway."+(r&&r.lugar?("\n"+r.lugar):""))
+    : (_v.url ? ("Tu sesión en Pathway.\nEntra por este enlace:\n"+_v.url)
+              : "Tu sesión en Pathway. Te enviaremos el enlace de acceso.");
+  var _loc=(_v.proveedor==="presencial")?((r&&r.lugar)||""):(_v.url||"");
+  return "https://calendar.google.com/calendar/render?action=TEMPLATE&text="+encodeURIComponent(_title)+"&dates="+utc(_s)+"/"+utc(_e)+"&location="+encodeURIComponent(_loc)+"&details="+encodeURIComponent(_det);
 }
 function _notifResReprog(r, iso){
   if(!r||!r.email) return; var fn=(""+(r.nombre||"")).split(" ")[0]||""; var f=_fechaCli(iso, r.cliente_tz);
   var _ics=_resIcs(r, iso); var _gc=_gcalUrl(r, iso);
-  var _salaLink=_salaClientLink(r, iso);
+  // Reprogramar NO cambia de modalidad ni de enlace: se manda EXACTAMENTE el que
+  // la cita tiene persistido. Antes esta linea era `_salaClientLink(r, iso)`, que
+  // reconstruia una Sala aunque la cita fuese Meet o Zoom — el cliente acababa en
+  // una sala a la que la coach no iba a entrar. Y como el room sale del id de la
+  // cita (paso 1), mover la hora tampoco lo cambia.
+  var _v=PWModalidad.videoDeCita(r), _salaLink=_v.url;
   _notifResCliente(r.email, r.nombre, "Tu sesión cambió de horario",
     "<p>Hola "+esc(fn)+", <strong>moví tu sesión</strong>"+(f?(" al <strong>"+esc(f)+"</strong>"):"")+".</p>"+
     "<div style='background:#F0F5EF;border-radius:10px;padding:12px 14px;margin:12px 0'><div style='font-size:11px;text-transform:uppercase;letter-spacing:.5px;color:#7A8A80;font-weight:700'>Nuevo horario · tu hora</div><div style='font-size:16px;font-weight:700;color:#1B4332'>"+esc(f||"")+"</div></div>"+
-    "<div style='margin-top:12px'>"+((_salaLink)?("<a href=\""+esc(_salaLink)+"\" target='_blank' rel='noopener' style='display:inline-block;background:#2D6A4F;color:#fff;text-decoration:none;padding:11px 20px;border-radius:10px;font-weight:700'>Entrar a la videollamada</a>"):("<a href=\""+_gc+"\" style='display:inline-block;background:#2D6A4F;color:#fff;text-decoration:none;padding:11px 20px;border-radius:10px;font-weight:700'>Actualizar en Google Calendar</a>"))+"</div>", _ics.b64);
+    "<div style='margin-top:12px'>"+((_salaLink)?("<a href=\""+esc(_salaLink)+"\" target='_blank' rel='noopener' style='display:inline-block;background:#2D6A4F;color:#fff;text-decoration:none;padding:11px 20px;border-radius:10px;font-weight:700'>"+esc(_v.etiqueta)+"</a>"):("<a href=\""+_gc+"\" style='display:inline-block;background:#2D6A4F;color:#fff;text-decoration:none;padding:11px 20px;border-radius:10px;font-weight:700'>Actualizar en Google Calendar</a>"))+"</div>", _ics.b64);
 }
 // Confirmación al cliente con la hora CORRECTA (AM/PM, su zona) + link para entrar.
 // Se dispara al "Confirmar" la reserva — sirve para reenviarle la buena si hubo lío.
 function _confirmCliente(r){
   if(!r||!r.email) return; var fn=(""+(r.nombre||"")).split(" ")[0]||""; var f=_fechaCli(r.inicio, r.cliente_tz);
   var _ics=_resIcs(r, null); var _gc=_gcalUrl(r, null);
-  // JULIO 2026: Google Meet links come from Google Calendar sync, not sala.html
-  var _joinBtn=(r.meet_link)?("<a href=\""+esc(r.meet_link)+"\" target='_blank' rel='noopener' style='display:inline-block;background:#2D6A4F;color:#fff;text-decoration:none;padding:11px 20px;border-radius:10px;font-weight:700'>Entrar a Google Meet</a>"):("<p style='font-size:13px;color:#8A968E'><strong>Google Meet:</strong> el link aparecerá en tu Google Calendar.</p>");
+  // La ETIQUETA sale del proveedor y el ENLACE de la fila. Antes ponia "Entrar a
+  // Google Meet" para cualquier `meet_link`, asi que una cita de Sala o de Zoom
+  // le prometia al cliente un Meet que no existia.
+  var _joinBtn=_botonVideo(r);
   var inner="<p>Hola "+esc(fn)+", tu sesión está <strong>confirmada</strong>. "+PWI.svg('party',{sm:true})+"</p>"+
     "<div style='background:#F0F5EF;border-radius:10px;padding:12px 14px;margin:12px 0'><div style='font-size:11px;text-transform:uppercase;letter-spacing:.5px;color:#7A8A80;font-weight:700'>Cuándo · tu hora</div><div style='font-size:16px;font-weight:700;color:#1B4332'>"+esc(f||"")+"</div></div>"+
     _joinBtn+

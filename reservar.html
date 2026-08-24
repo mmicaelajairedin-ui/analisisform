@@ -1079,7 +1079,19 @@ function confirmar(){
       // con el link viejo). return=minimal ocultaba 0 filas escritas.
       try{ var _rp=qp('reprog'); if(saved && _rp){
         var _cancelOld=function(n){ return fetch(SB+'/rest/v1/citas?token=eq.'+encodeURIComponent(_rp),{ method:'PATCH', headers:{ apikey:KEY, Authorization:'Bearer '+KEY, 'content-type':'application/json', Prefer:'return=representation' }, body:JSON.stringify({ estado:'cancelada' }) }).then(function(r){ return r.ok?r.json():[]; }).then(function(a){ if((!a||!a.length)&&n>0) return _cancelOld(n-1); return a; }).catch(function(){ if(n>0) return _cancelOld(n-1); return []; }); };
-        _cancelOld(2);
+        // El evento de Google de la cita VIEJA tambien tiene que irse. Antes se
+        // quedaba vivo para siempre: la fila pasaba a 'cancelada' pero el evento
+        // seguia ocupando el hueco en el calendario del coach, y ademas con el
+        // enlace antiguo dentro. Se hace DESPUES de tener la fila —para conocer su
+        // id— y ANTES de olvidarnos de ella. `sync-cita-to-gcal` con op:'cancelar'
+        // ya hace lo correcto en los dos casos raros: sin `google_event_id` no
+        // inventa nada, y si el evento ya no existe en Google no crea sustituto.
+        _cancelOld(2).then(function(_a){
+          try{
+            var _vieja=(_a&&_a[0])||null;
+            if(_vieja&&_vieja.id) fetch(SB+'/functions/v1/sync-cita-to-gcal',{ method:'POST', headers:{ 'content-type':'application/json', apikey:KEY, Authorization:'Bearer '+KEY }, body:JSON.stringify({ cita_id:_vieja.id, op:'cancelar' }) }).catch(function(){});
+          }catch(e){}
+        }).catch(function(){});
       } }catch(e){}
       // 1c) MARKETPLACE ("busco coach", mp=1): el sistema detecta el email y lo marca
       //     como cliente 'pathway' (comisión) DESDE la reserva — no solo al pagar. Crea

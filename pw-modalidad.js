@@ -99,6 +99,44 @@
     return typeof l === 'string' ? l.trim() : '';
   }
 
+  /**
+   * Etiqueta del boton, por proveedor. Presencial no tiene: no es que falte, es
+   * que no hay videollamada.
+   */
+  var ETIQUETA = {
+    meet: 'Entrar a Google Meet',
+    sala: 'Entrar a la Sala de Pathway',
+    zoom: 'Entrar a la videollamada',
+  };
+
+  /**
+   * El video de UNA CITA YA CREADA: que proveedor, que enlace y como se llama el
+   * boton. Todo sale de la fila; nada se vuelve a decidir.
+   *
+   * Es lo que necesitan las cuatro superficies que mandan correos, y por eso vive
+   * aqui y no repetido en cada una: la etiqueta se derivaba del ENLACE en cuatro
+   * sitios distintos, y por eso una cita de Sala o de Zoom decia "Entrar a Google
+   * Meet". El enlace no dice de quien es; el proveedor si.
+   *
+   * NO consulta `zoom_url`, ni `gcal`, ni `configuracion.video`: la cita ya tiene
+   * su decision tomada y reconstruirla seria inventarse otra.
+   *
+   * @param {{video_proveedor?:string, meet_link?:string, modalidad?:string}} cita
+   * @returns {{proveedor:string|null, url:string, etiqueta:string}}
+   */
+  function videoDeCita(cita) {
+    var prov = String((cita && cita.video_proveedor) || '').trim().toLowerCase();
+    // `modalidad` vale de respaldo para las citas anteriores al proveedor.
+    if (prov === 'presencial' || (cita && cita.modalidad === 'presencial')) {
+      return { proveedor: 'presencial', url: '', etiqueta: '' };
+    }
+    var url = String((cita && cita.meet_link) || '').trim();
+    if (!/^https?:\/\//i.test(url)) return { proveedor: prov || null, url: '', etiqueta: '' };
+    // Con enlace pero sin proveedor declarado —citas viejas— hay videollamada y
+    // no se sabe de quien: se dice eso, en vez de atribuirsela a Google.
+    return { proveedor: prov || null, url: url, etiqueta: ETIQUETA[prov] || 'Entrar a la videollamada' };
+  }
+
   var API = {
     PROVEEDORES: PROVEEDORES,
     POR_DEFECTO: POR_DEFECTO,
@@ -106,6 +144,8 @@
     modalidadCumplible: modalidadCumplible,
     modalidadDeCita: modalidadDeCita,
     lugarElegido: lugarElegido,
+    ETIQUETA: ETIQUETA,
+    videoDeCita: videoDeCita,
   };
 
   g.PWModalidad = API;
