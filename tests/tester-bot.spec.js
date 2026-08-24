@@ -199,10 +199,17 @@ test.describe('✉️ Invitación al cliente — el email sale de verdad', () =>
     // Ir a Clientes.
     await page.locator('[data-act="nav:clientes"]').first().click({ timeout: 6000 }).catch(() => {});
     await page.waitForTimeout(900);
-    // Abrir el primer cliente de la lista.
-    const card = page.locator('[data-act^="cli-open:"]').first();
-    const hay = await card.count().catch(() => 0);
-    test.skip(hay === 0, 'El coach de prueba no tiene clientes cargados — se saltea');
+    // Abrir un cliente que NO sea de ejemplo. Un `_example` corta en el propio
+    // panel sin llamar al backend, así que tomar el primero a ciegas podía teñir
+    // de rojo el email por un dato de la cuenta de prueba. El panel los marca con
+    // la etiqueta "Ejemplo" en la tarjeta.
+    const tarjetas = page.locator('article.cp-client[data-act^="cli-open:"]');
+    const reales = tarjetas.filter({ hasNot: page.locator('.cp-cli-tag', { hasText: /^Ejemplo$/ }) });
+    const total = await tarjetas.count().catch(() => 0);
+    test.skip(total === 0, 'El coach de prueba no tiene clientes cargados — se saltea');
+    const hay = await reales.count().catch(() => 0);
+    test.skip(hay === 0, `Los ${total} clientes del coach de prueba son de ejemplo — se saltea`);
+    const card = reales.first();
     // La fila puede estar fuera de vista o cubierta (resuelve pero no clickea).
     // La traemos a la vista y, si aún se resiste, forzamos el click.
     await card.scrollIntoViewIfNeeded().catch(() => {});
@@ -211,11 +218,59 @@ test.describe('✉️ Invitación al cliente — el email sale de verdad', () =>
     // El botón "Reenviar invitación" vive en la ficha (pestaña Perfil, por defecto).
     const btn = page.locator('[data-act="reinvitar"]').first();
     await expect(btn, 'No apareció "Reenviar invitación" en la ficha (¿desplegado el fix?)').toBeVisible({ timeout: 8000 });
+
+    // El handler tiene SEIS desenlaces (panel-v2.html, `act==="reinvitar"`) y el
+    // test viejo afirmaba uno solo: «¿email/Brevo caído?». Por eso este fallo
+    // llevaba desde el 2026-08-23 sin poder clasificarse. Aquí se recoge el toast
+    // REAL y se dice cuál de los seis ocurrió.
+    //
+    // Se recoge con un observador instalado ANTES de pulsar porque cada toast se
+    // borra a los 2600 ms (`setTimeout(... t.remove(), 2600)`): leer el body más
+    // tarde puede no ver nada. Comprobado en Chromium con el fixture de
+    // `.claude/diseno/parches/pathway/` (11/11).
+    await page.evaluate(() => {
+      window.__toasts = [];
+      const raiz = document.body || document.documentElement;
+      new MutationObserver((muts) => {
+        for (const m of muts) for (const n of m.addedNodes) {
+          const t = (n.textContent || '').trim();
+          if (t) window.__toasts.push(t);
+        }
+      }).observe(raiz, { childList: true });
+    });
+
+    const DESENLACES = [
+      [/invitaci[oó]n reenviada/i, 'EXITO'],
+      [/no se pudo enviar el email ahora/i, 'PRODUCTO'],
+      [/cliente de ejemplo/i, 'DATO DE PRUEBA'],
+      [/no tiene un email v[aá]lido/i, 'DATO DE PRUEBA'],
+      [/no encontramos al cliente/i, 'TEST'],
+      [/sin conexi[oó]n/i, 'INFRA'],
+    ];
+    const MOTIVOS = {
+      'EXITO': 'el backend devolvió sent:true',
+      'PRODUCTO': 'password-reset NO devolvió sent:true — fallo real de producto (Brevo o la función)',
+      'DATO DE PRUEBA': 'el panel cortó antes de llamar al backend por el dato del cliente',
+      'TEST': 'el id del cliente no estaba en CLIENTS — defecto del test',
+      'INFRA': 'el fetch a password-reset falló por red',
+    };
+    const clasificar = (t) => { for (const [re, c] of DESENLACES) if (re.test(t)) return c; return null; };
+
     await btn.click();
-    // Debe confirmar que SALIÓ. Si dice "no se pudo enviar", el email está roto
-    // (típicamente BREVO_API_KEY) → el test falla y el reporte lo marca.
-    await expect(page.locator('body'), 'La invitación no confirmó envío (¿email/Brevo caído?)').toContainText(/invitaci[oó]n reenviada/i, { timeout: 15000 });
-    await expect(page.locator('body')).not.toContainText(/no se pudo enviar/i);
+
+    // Espera al primer desenlace reconocible. El toast intermedio ("Reenviando
+    // invitación…") NO cuenta: no casa ninguna categoría.
+    let categoria = null, capturados = [];
+    for (let i = 0; i < 60 && !categoria; i++) {
+      capturados = await page.evaluate(() => window.__toasts || []);
+      categoria = capturados.map(clasificar).filter(Boolean).pop() || null;
+      if (!categoria) await page.waitForTimeout(250);
+    }
+
+    const visto = capturados.length ? capturados.map((t) => `  · ${t}`).join('\n') : '  (ninguno)';
+    expect(categoria, `El panel no mostró ningún desenlace reconocible en 15 s.\nToasts capturados:\n${visto}`).not.toBeNull();
+    expect(categoria, `Reenvío de invitación → ${categoria}: ${MOTIVOS[categoria]}.\nToasts capturados:\n${visto}`).toBe('EXITO');
+
     expect(errores, `Errores de JS al reenviar invitación [${correlationId}]:\n` + errores.map(e => `${e.error_id}: ${e.message}`).join('\n')).toHaveLength(0);
   });
 });
