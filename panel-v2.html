@@ -3551,6 +3551,19 @@ function _agReservas(){
 // una sala propia de Pathway (hoy Jitsi; luego la Sala JaaS embebida),
 // determinística por coach+horario → IDÉNTICA a la que arma reservar.html para el
 // cliente. No depende del Meet/Zoom del coach (se removió a propósito).
+// El ciclo de vida del evento de Google lo lleva `sync-cita-to-gcal`, que es
+// quien conoce `google_event_id`. El panel solo avisa de lo que acaba de pasar.
+// Best-effort a proposito: si Google falla, la cita YA esta guardada en Pathway
+// y no se le rompe nada a la coach por eso.
+function _gcalAvisar(citaId, op){
+  if(!citaId) return;
+  try{
+    fetch(SB+"/functions/v1/sync-cita-to-gcal",{
+      method:"POST", headers:{"content-type":"application/json", apikey:KEY, Authorization:"Bearer "+KEY},
+      body:JSON.stringify({ cita_id:citaId, op:op })
+    }).catch(function(){});
+  }catch(e){}
+}
 function _agResLink(r){
   if(!r) return "";
   // Presencial no tiene videollamada, y no es un fallo: es la modalidad.
@@ -11277,7 +11290,7 @@ document.addEventListener("click", function(ev){
     // Optimista en AMBAS listas (Resumen + Calendario) → ninguna vista queda vieja.
     _syncCitaLocal(_rid,{estado:_est}); _repaintCitas();
     _sbw("citas?id=eq."+encodeURIComponent(_rid)+"&coach_id=eq."+encodeURIComponent((RME&&RME.id)||""),"PATCH",{estado:_est})
-      .then(function(r){ if(r&&r.ok){ toast(_est==="confirmada"?"Confirmada ✓ — le mandamos el email al cliente":"Reserva cancelada — avisamos al cliente"); if(act==="res-cancel") _notifResCancel(_rr); else _confirmCliente(_rr); } else { _syncCitaLocal(_rid,{estado:_prevEst}); _repaintCitas(); toast("No se pudo actualizar la reserva."); } })
+      .then(function(r){ if(r&&r.ok){ toast(_est==="confirmada"?"Confirmada ✓ — le mandamos el email al cliente":"Reserva cancelada — avisamos al cliente"); if(act==="res-cancel"){ _gcalAvisar(_rid,"cancelar"); _notifResCancel(_rr); } else _confirmCliente(_rr); } else { _syncCitaLocal(_rid,{estado:_prevEst}); _repaintCitas(); toast("No se pudo actualizar la reserva."); } })
       .catch(function(){ _syncCitaLocal(_rid,{estado:_prevEst}); _repaintCitas(); toast("No se pudo actualizar la reserva."); });
     return;
   }
@@ -11294,7 +11307,7 @@ document.addEventListener("click", function(ev){
     // hora vieja y el "Unirse" no manda a la sala vieja.
     _syncCitaLocal(_rid,{inicio:_iso}); _repaintCitas();
     _sbw("citas?id=eq."+encodeURIComponent(_rid)+"&coach_id=eq."+encodeURIComponent((RME&&RME.id)||""),"PATCH",{inicio:_iso})
-      .then(function(r){ if(r&&r.ok){ toast("Hora actualizada ✓ — avisamos al cliente"); _notifResReprog(_rrh,_iso); } else { _syncCitaLocal(_rid,{inicio:_prevIso}); _repaintCitas(); toast("No se pudo cambiar la hora."); } })
+      .then(function(r){ if(r&&r.ok){ toast("Hora actualizada ✓ — avisamos al cliente"); _gcalAvisar(_rid,"mover"); _notifResReprog(_rrh,_iso); } else { _syncCitaLocal(_rid,{inicio:_prevIso}); _repaintCitas(); toast("No se pudo cambiar la hora."); } })
       .catch(function(){ _syncCitaLocal(_rid,{inicio:_prevIso}); _repaintCitas(); toast("No se pudo cambiar la hora."); });
     return;
   }

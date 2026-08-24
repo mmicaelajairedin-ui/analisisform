@@ -159,11 +159,24 @@ function _patchCancelada(){
     .then(function(ok){ if(ok !== true) throw 0; return true; });
 }
 
+// Cuando el cliente cancela, el evento tambien tiene que irse del Google
+// Calendar del coach — antes se quedaba ahi para siempre, ocupando el hueco.
+// Lo lleva `sync-cita-to-gcal`, que es quien conoce `google_event_id`; sin ese
+// id no hace nada, que es lo correcto para las citas antiguas. Best-effort: la
+// cancelacion en Pathway ya se hizo y no debe fallar por Google.
+function _gcalCancelar(){
+  try{
+    if(!CITA || !CITA.id) return;
+    fetch(SB+'/functions/v1/sync-cita-to-gcal',{ method:'POST', headers:H({ 'content-type':'application/json' }),
+      body:JSON.stringify({ cita_id:CITA.id, op:'cancelar' }) }).catch(function(){});
+  }catch(e){}
+}
 function doCancel(){
   if(!confirm(t('confirmCancel'))) return;
   $('msg').textContent=t('cancelando');
   _patchCancelada()
     .then(function(){
+      _gcalCancelar();        // que el evento desaparezca del calendario del coach
       _notifyCoachCancel();   // avisar al coach que se liberó el horario
       $('card').innerHTML="<div class='ico'>✅</div><h1>"+t('canceladaT')+"</h1>"+
         "<p class='sub'>"+t('cancelListo')+"</p>"+

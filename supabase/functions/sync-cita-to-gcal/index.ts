@@ -23,8 +23,18 @@
 // NADIE: sin él no se puede actualizar ni cancelar el evento en Google, así que
 // cancelar una cita dejaba el evento vivo en el calendario del coach.
 //
+// CICLO DE VIDA. Una cita tiene UN evento de Google, y `citas.google_event_id`
+// es la referencia estable:
+//   crear     sin id → crea y guarda el id. CON id → actualiza ese mismo evento
+//             (idempotente: re-sincronizar no duplica).
+//   mover     EXIGE id. Sin el no hace nada y lo dice — nunca crea un segundo
+//             evento durante una reprogramacion. Las citas historicas no tienen
+//             id pero SI pueden tener evento en Google (se creaban sin guardarlo),
+//             asi que crear ahi seria fabricar un duplicado invisible.
+//   cancelar  EXIGE id. Borra ese evento y limpia la columna. Sin id, no hace nada.
+//
 // POST body:
-//   { cita_id (BIGINT) }
+//   { cita_id (BIGINT), op?: "crear"|"mover"|"cancelar" }   (por defecto "crear")
 //   → { ok:true, proveedor, url, event_id } | { ok:false, reason }
 //
 // Env: SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY
@@ -104,20 +114,23 @@ async function cerrarModalidad(
   // evento vivo en el calendario del coach. Solo se escribe si Google dio uno.
   if (eventId) patch.google_event_id = eventId;
 
-  if (Object.keys(patch).length) {
-    try {
-      const r = await fetch(`${SB_URL}/rest/v1/citas?id=eq.${citaId}`, {
-        method: "PATCH",
-        headers: { ...svc, "Content-Type": "application/json", Prefer: "return=minimal" },
-        body: JSON.stringify(patch),
-      });
-      if (!r.ok) console.error(`sync-cita-to-gcal: PATCH cita ${citaId} fallo`, r.status);
-    } catch (e) {
-      console.error(`sync-cita-to-gcal: PATCH cita ${citaId} lanzo`, e);
-    }
-  }
+  if (Object.keys(patch).length) await patchCita(citaId, patch);
 
   return { proveedor: final, url };
+}
+
+/** El unico escritor de `citas` de esta funcion. Best-effort y ruidoso al fallar. */
+async function patchCita(citaId: number, patch: Record<string, unknown>): Promise<void> {
+  try {
+    const r = await fetch(`${SB_URL}/rest/v1/citas?id=eq.${citaId}`, {
+      method: "PATCH",
+      headers: { ...svc, "Content-Type": "application/json", Prefer: "return=minimal" },
+      body: JSON.stringify(patch),
+    });
+    if (!r.ok) console.error(`sync-cita-to-gcal: PATCH cita ${citaId} fallo`, r.status);
+  } catch (e) {
+    console.error(`sync-cita-to-gcal: PATCH cita ${citaId} lanzo`, e);
+  }
 }
 
 Deno.serve(async (req: Request) => {
@@ -130,6 +143,8 @@ Deno.serve(async (req: Request) => {
 
   const citaId = Number(body.cita_id || 0);
   if (!citaId) return json({ error: "no_cita_id" }, 400);
+  const op = String(body.op || "crear").toLowerCase();
+  if (op !== "crear" && op !== "mover" && op !== "cancelar") return json({ error: "op_invalida" }, 400);
 
   try {
     // 1) Obtener detalles de la cita
@@ -150,6 +165,40 @@ Deno.serve(async (req: Request) => {
     const quiereMeet = proveedor === "meet";
     const salaUrl = urlSala(citaId, String(coach_id), cita.grupal === true);
 
+    // La referencia estable al evento de Google. Vacia = esta cita no tiene
+    // ninguno REGISTRADO (puede tener uno huerfano si es anterior al paso 3).
+    const eventoId = String(cita.google_event_id || "").trim();
+
+    // ── cancelar ─────────────────────────────────────────────────────────
+    if (op === "cancelar") {
+      if (!eventoId) return json({ ok: true, reason: "sin_evento" });
+      const cr2 = await fetch(`${SB_URL}/functions/v1/gcal-push`, {
+        method: "POST",
+        headers: { ...svc, "Content-Type": "application/json" },
+        body: JSON.stringify({ coach_id, op: "cancel", event_id: eventoId }),
+      });
+      const cd = await cr2.json().catch(() => ({}));
+      // `gcal-push` da ok tambien con 410 (ya no existe): el objetivo era que no
+      // quedara evento, y no queda. En los dos casos se limpia la columna, para
+      // que un id muerto no se use luego para actualizar nada.
+      if (cd && cd.ok) {
+        await patchCita(citaId, { google_event_id: null });
+        return json({ ok: true, cancelado: true });
+      }
+      return json({ ok: false, reason: (cd && cd.reason) || "cancel_failed" });
+    }
+
+    // ── mover: exige evento conocido ─────────────────────────────────────
+    if (op === "mover" && !eventoId) {
+      return json({ ok: true, reason: "sin_evento", proveedor, url: String(cita.meet_link || "") });
+    }
+
+    // Meet ya resuelto: NO se vuelve a pedir conferencia al actualizar. Cada
+    // `createRequest` lleva un requestId nuevo, asi que pedirla otra vez mintaria
+    // OTRO Meet y el enlace que el cliente tiene en su correo dejaria de valer.
+    const yaTieneMeet = /meet\.google\.com/i.test(String(cita.meet_link || ""));
+    const pedirConferencia = quiereMeet && !(eventoId && yaTieneMeet);
+
     // `location` del evento de Google: lo que sirva para llegar a la sesion.
     const location = esPresencial
       ? String(lugar || "")
@@ -166,7 +215,9 @@ Deno.serve(async (req: Request) => {
       headers: { ...svc, "Content-Type": "application/json" },
       body: JSON.stringify({
         coach_id,
-        op: "create",
+        // Con evento conocido se ACTUALIZA ese; sin el, se crea uno.
+        op: eventoId ? "update" : "create",
+        event_id: eventoId,
         event: {
           summary: nombre || "Sesión · Pathway",
           description: "",
@@ -174,7 +225,7 @@ Deno.serve(async (req: Request) => {
           startISO: inicio,
           endISO,
           // Opt-in. Solo Meet pide conferencia; Sala, Zoom y Presencial NO.
-          conferencia: quiereMeet,
+          conferencia: pedirConferencia,
         },
       }),
     });
@@ -192,8 +243,26 @@ Deno.serve(async (req: Request) => {
     }
 
     const pushData = await pushResp.json();
-    const hangoutLink = String(pushData.hangoutLink || "");
-    const eventId = String(pushData.event_id || "");
+
+    // El evento que teniamos apuntado ya no esta en Google (borrado a mano desde
+    // el calendario, por ejemplo). NO se crea otro a ciegas: se limpia el id
+    // muerto y se dice. Quien llame decide si reintenta como creacion.
+    if (pushData && pushData.ok === false && eventoId &&
+        (pushData.status === 404 || pushData.status === 410)) {
+      await patchCita(citaId, { google_event_id: null });
+      return json({ ok: false, reason: "evento_inexistente", event_id: "" });
+    }
+    if (pushData && pushData.ok === false) {
+      return json({ ok: false, reason: String(pushData.reason || "push_failed") });
+    }
+
+    // Si no se pidio conferencia porque el Meet YA existe, el enlace bueno es el
+    // guardado: pasarlo evita que `cerrarModalidad` lo lea como "Google no dio
+    // conferencia" y degrade la cita a Sala en plena reprogramacion.
+    const hangoutLink = String(pushData.hangoutLink || "") ||
+      (quiereMeet && yaTieneMeet ? String(cita.meet_link || "") : "");
+    // El id no cambia al actualizar: Google devuelve el mismo.
+    const eventId = String(pushData.event_id || "") || eventoId;
 
     const cierre = await cerrarModalidad(citaId, proveedor, quiereMeet, hangoutLink, cita.meet_link, salaUrl, eventId);
     return json({ ok: true, event_id: eventId, ...cierre });

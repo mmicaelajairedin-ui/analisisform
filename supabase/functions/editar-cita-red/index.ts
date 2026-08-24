@@ -115,6 +115,21 @@ Deno.serve(async (req: Request) => {
     }
     if (!r.ok) return json({ error: "update_failed", status: r.status }, 502);
   } catch { return json({ error: "write_failed" }, 502); }
+
+  // El evento de Google va detras del cambio. `sync-cita-to-gcal` es quien
+  // conoce `google_event_id`: cancelar borra ESE evento y mover actualiza ESE
+  // mismo, nunca crea otro. Best-effort — la cita ya esta guardada en Pathway y
+  // un fallo de Google no debe tumbar la operacion.
+  try {
+    const opGcal = action === "cancel" ? "cancelar" : (patch.inicio ? "mover" : null);
+    if (opGcal) {
+      await fetch(`${SB_URL}/functions/v1/sync-cita-to-gcal`, {
+        method: "POST",
+        headers: { ...svc, "Content-Type": "application/json" },
+        body: JSON.stringify({ cita_id: citaId, op: opGcal }),
+      });
+    }
+  } catch { /* ignore */ }
   // Email al cliente avisando el cambio (best-effort, no bloquea).
   const EMAIL_OK = /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(citaEmail);
   if (EMAIL_OK) {
