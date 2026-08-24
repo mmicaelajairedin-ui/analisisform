@@ -4,6 +4,7 @@
 <script src="/pw-polyfill.js"></script>
 <script src="/pw-call.js"></script>
 <script src="pw-observe.js"></script>
+<script src="/pw-modalidad.js"></script>
 <script src="pw-events.js"></script>
 <script src="/pw-native.js"></script>
 <link rel="stylesheet" href="/pw-icons.css?v=1">
@@ -3331,13 +3332,19 @@ function _vidGcalOk(){
   var g=c.gcal||{};
   return !!(g && (g.refresh_token||g.access_token||g.conectado===true));
 }
-function _vidProv(){
-  var p=(""+(_vidCfg().proveedor||"")).toLowerCase();
-  if(p==="meet") return _vidGcalOk()?"meet":"sala";   // sin Google, no se sostiene
-  if(p==="zoom") return _vidZoomUrl()?"zoom":"sala";  // sin URL, tampoco
-  if(p==="presencial"||p==="sala") return p;
-  return _vidZoomUrl()?"zoom":"sala";                 // compatibilidad hacia atras
+// QUE eligio el coach lo dice la regla compartida (`pw-modalidad.js`), no este
+// fichero. Antes habia aqui una cascada propia cuya ultima linea era
+// `return _vidZoomUrl()?"zoom":"sala"`: un coach que no habia elegido nada
+// aparecia con "Tu enlace de Zoom" seleccionado. Sin eleccion es SALA.
+//
+// Aparte va otra pregunta distinta: ¿se puede CUMPLIR lo elegido? Meet sin
+// Google conectado y Zoom sin URL no se sostienen, y ofrecerlos seria prometer
+// un enlace que no va a llegar. Eso no es decidir la modalidad — es no dejar
+// guardar una que no se puede cumplir — asi que vive aqui y no en la regla.
+function _vidNormalizar(p){
+  return PWModalidad.modalidadCumplible(p, { gcal:_vidGcalOk(), zoomUrl:!!_vidZoomUrl() });
 }
+function _vidProv(){ return _vidNormalizar(PWModalidad.modalidadElegida(_vidCfg())); }
 // Se captura junto al resto del formulario, en el mismo guardado.
 function _agVideoCapture(){
   if(!state.ag) return;
@@ -11403,9 +11410,7 @@ document.addEventListener("click", function(ev){
     // "como atiendo", no un ajuste aparte. `_vidProv()` normaliza —si eligio Meet
     // y no tiene Google conectado, no se guarda Meet— asi que en la fila nunca
     // queda un proveedor que no se pueda cumplir.
-    var _vp=(state.ag&&state.ag.videoProv)||_vidProv();
-    if(_vp==="meet" && !_vidGcalOk()) _vp="sala";
-    if(_vp==="zoom" && !_vidZoomUrl()) _vp="sala";
+    var _vp=_vidNormalizar(PWModalidad.modalidadElegida({proveedor:(state.ag&&state.ag.videoProv)||_vidProv()}));
     var _vl=(state.ag&&state.ag.videoLugar!=null)?(""+state.ag.videoLugar).trim():_vidLugar();
     state.ag=null;
     saveCfg({
@@ -11469,7 +11474,12 @@ document.addEventListener("click", function(ev){
     var _agKind=_ag2?"sesion":"personal";
     var _agBody={coach_id:(RME&&RME.id)||"", nombre:_shWith, email:_ag2||"", tipo:_atl, inicio:_iso, estado:"confirmada", origen:"panel", cliente_tz:_atz};
     // Columnas opcionales (pueden no existir aún → hay reintento sin ellas).
-    var _agExtra={kind:_agKind, modalidad:_amod, grupal:_agrupal}; if(_amod==="presencial"&&_alugar) _agExtra.lugar=_alugar;
+    // Misma regla que la reserva del cliente (ver pw-modalidad.js). El formulario
+    // puede forzar `presencial` para ESTA cita; `modalidad` se DERIVA del
+    // proveedor para que las dos columnas no puedan contradecirse.
+    var _aprov=(_amod==="presencial") ? "presencial" : (_vidProv()==="presencial" ? "sala" : _vidProv());
+    _amod=PWModalidad.modalidadDeCita(_aprov);
+    var _agExtra={kind:_agKind, modalidad:_amod, video_proveedor:_aprov, grupal:_agrupal}; if(_amod==="presencial"&&_alugar) _agExtra.lugar=_alugar;
     var _agDone=function(r,sent){ if(r&&r.ok) toast("Cita agendada ✓"+(sent?" — avisamos al invitado":"")+" — ya está en tu agenda"); else toast("No se pudo guardar la cita. Reintenta."); try{ _resLoad(); }catch(e){} try{ _calLoad(); }catch(e){} };
     var _sendAgEmail=function(meetLink, citaId){if(_ag2&&/@/.test(_ag2)){try{var _f=_fechaCli(_iso,_atz),_tzTag=_atz?(" <span style='color:#8A968E;font-weight:400'>(hora de "+esc(_tzNice(_atz))+")</span>"):"",_coachNm=(COACH&&COACH.name)||(RME&&RME.nombre)||"Pathway",_inner,_ics;if(_amod==="presencial"){_ics=_icsBuild("Sesión · Pathway",_ast.getTime(),_aen.getTime(),(_alugar||"Presencial"));_inner="<p>¡Hola! Te confirmo nuestra sesión"+(_f?(" para el <strong>"+esc(_f)+"</strong>"+_tzTag):"")+".</p>"+"<div style='background:#F0F5EF;border-radius:10px;padding:12px 14px;margin:14px 0;font-size:14px'>📍 <strong>Presencial</strong>"+(_alugar?(" · "+esc(_alugar)):"")+"</div>"+"<p style='font-size:12.5px;color:#8A968E'>Puedes guardarla en tu calendario con el archivo adjunto. ¡Nos vemos!</p>";}else{var _mockCita={id:citaId,coach_id:(RME&&RME.id)||"",inicio:_iso,tipo:_atl,grupal:_agrupal},_salaUrl=(meetLink||"")||_salaClientLink(_mockCita,_iso);_ics=_icsBuild("Sesión · Pathway",_ast.getTime(),_aen.getTime(),_salaUrl);_inner="<p>¡Hola! Te confirmo nuestra sesión"+(_f?(" para el <strong>"+esc(_f)+"</strong>"+_tzTag):"")+(_agrupal?" (grupal)":"")+".</p>"+"<div style='margin:16px 0'><a href=\""+esc(_salaUrl)+"\" target='_blank' rel='noopener' style='display:inline-block;background:#2D6A4F;color:#fff;text-decoration:none;padding:11px 20px;border-radius:10px;font-weight:700'>Entrar a la videollamada</a></div>"+"<p style='font-size:12.5px;color:#8A968E'>Puedes guardarla en tu calendario con el archivo adjunto. ¡Nos vemos!</p>";}_notifResCliente(_ag2,_shWith,"Tu sesión con "+_coachNm+" está agendada",_inner,_ics&&_ics.b64);return true;}catch(e){return false;}}return false;};
     var _sendAgEmailDelayed=function(citaId){if(citaId){var _pollStart=Date.now(),_pollLink=function(){fetch(SB+'/rest/v1/citas?id=eq.'+encodeURIComponent(citaId)+'&select=meet_link',{headers:{apikey:KEY}}).then(function(r){return r.ok?r.json():null;}).catch(function(){return null;}).then(function(rows){var meetLink=(Array.isArray(rows) && rows[0] && rows[0].meet_link)?rows[0].meet_link:'';if(meetLink){_sendAgEmail(meetLink,citaId);}else if(Date.now()-_pollStart<4000){setTimeout(_pollLink,200);}else{_sendAgEmail('',citaId);}});};_pollLink();}else{_sendAgEmail('');}};

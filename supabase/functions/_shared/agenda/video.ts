@@ -32,8 +32,6 @@ export interface EntradaVideo {
   video_proveedor?: string | null;
   gcal_estado?: string | null;
   grupal?: boolean | null;
-  /** `usuarios.configuracion.zoom_url` del coach, si lo tiene. */
-  zoom_url?: string | null;
 }
 
 /**
@@ -74,13 +72,18 @@ const PROVEEDORES: ReadonlySet<string> = new Set(['meet', 'sala', 'zoom', 'prese
  *   2. Un enlace YA GUARDADO gana sobre todo lo demás. Es el que el cliente
  *      recibió por correo; sustituirlo lo mandaría a una sala distinta de la
  *      que tiene delante.
- *   3. El Zoom propio del coach, si lo tiene configurado.
- *   4. La Sala de Pathway, que es el respaldo que no puede fallar: no depende
+ *   3. La Sala de Pathway, que es el respaldo que no puede fallar: no depende
  *      de Google, ni del token del coach, ni de la red hacia un tercero.
  *
- * El punto 2 es la única diferencia con `reservar.html`, y es intencionada:
- * allí se resuelve ANTES de que exista ningún enlace guardado, así que Zoom va
- * primero sin contradecir nada.
+ * ESTA FUNCIÓN NO ELIGE MODALIDAD. Lee la que ya se decidió al crear la cita
+ * (`video_proveedor`, que sale de `modalidad.ts` a partir de
+ * `usuarios.configuracion.video`) y resuelve el ENLACE que le corresponde.
+ * Volver a elegir aquí es lo que hacía que la agenda contradijera al correo.
+ *
+ * Tenía un paso 3 que caía a `zoom_url` cuando no había enlace guardado. Se
+ * quitó por dos motivos: el contrato dice que sin elección la modalidad es
+ * Sala, nunca Zoom; y la rama estaba muerta desde siempre, porque
+ * `consulta.ts` nunca le pasó `zoom_url`.
  */
 export function resolverVideo(
   e: EntradaVideo,
@@ -94,16 +97,15 @@ export function resolverVideo(
     const declarado = e.video_proveedor && PROVEEDORES.has(e.video_proveedor)
       ? (e.video_proveedor as ProveedorVideo)
       : null;
-    // Sin `video_proveedor` se asume Meet: es quien escribe `meet_link` hoy
-    // (`sync-cita-to-gcal:87-93`) y la columna se llama así por eso.
-    return { proveedor: declarado ?? 'meet', url: e.meet_link, estado: 'ok' };
+    // Sin `video_proveedor` NO se adivina. Antes se asumía Meet —porque es quien
+    // escribía `meet_link`— y eso etiquetaba como «Google Meet» citas de Sala y
+    // de Zoom de antes del selector. El enlace guardado sí se sabe y se entrega;
+    // el proveedor va `null`, que es lo que el tipo `Video` prevé para «hay
+    // videollamada, no sé de quién». Adivinar es lo que estamos quitando.
+    return { proveedor: declarado, url: e.meet_link, estado: 'ok' };
   }
 
-  if (esUrl(e.zoom_url)) {
-    return { proveedor: 'zoom', url: e.zoom_url, estado: 'ok' };
-  }
-
-  // Sin enlace guardado y sin Zoom. Si Google quedó pendiente o sin conexión,
+  // Sin enlace guardado. Si Google quedó pendiente o sin conexión,
   // se dice — pero igualmente se entrega la Sala, para que nadie se quede sin
   // sitio al que entrar.
   const estado: EstadoVideo = e.gcal_estado === 'sin_conexion'

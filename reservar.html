@@ -11,6 +11,7 @@
      citas / send-email). Antes una reserva que no se guardaba era invisible;
      ahora queda el rastro para diagnosticar "no le llegó / no se agendó". -->
 <script src="/pw-observe.js"></script>
+<script src="/pw-modalidad.js"></script>
 <!-- Event bus del Pathway OS (define window.pwEmit; inerte hasta que se llama). -->
 <script src="/pw-events.js"></script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -438,22 +439,22 @@ function loadCitas(){ TAKEN={}; if(!CID) return; var _abort=new AbortController(
 // Sin configuracion se asume la Sala de Pathway: es nuestra, funciona siempre y
 // no depende de que el coach haya conectado nada.
 function _videoPlan(){
-  var cfg=(CUR&&CUR.configuracion)||{}, v=cfg.video||{};
-  var prov=String(v.proveedor||'').toLowerCase();
-  if(prov==='presencial') return { proveedor:'presencial', modalidad:'presencial', lugar:String(v.lugar||'') };
-  if(prov==='meet')       return { proveedor:'meet',       modalidad:'online', lugar:'' };
-  if(prov==='zoom'){
-    var u=String(cfg.zoom_url||'').trim();
-    // Un enlace propio sin URL valida no se ofrece: antes un boton roto,
-    // preferimos la Sala.
-    if(/^https?:\/\//i.test(u)) return { proveedor:'zoom', modalidad:'online', lugar:'', url:u };
-  }
-  if(!prov){
-    // Coaches de antes del selector que solo tenian pegado su enlace de Zoom.
-    var z=String(cfg.zoom_url||'').trim();
-    if(/^https?:\/\//i.test(z)) return { proveedor:'zoom', modalidad:'online', lugar:'', url:z };
-  }
-  return { proveedor:'sala', modalidad:'online', lugar:'' };
+  var cfg=(CUR&&CUR.configuracion)||{};
+  // QUE proveedor lo decide la regla compartida, no esta pantalla. Antes aqui
+  // habia una cascada propia que, sin `configuracion.video`, se iba a `zoom_url`
+  // — asi es como un enlace de CHAT de Zoom acabo enviandose como videollamada.
+  var _zu=String(cfg.zoom_url||'').trim(), _zok=/^https?:\/\//i.test(_zu);
+  // Lo elegido, y despues si se puede cumplir. Las dos preguntas viven en la
+  // regla compartida; esta pantalla solo declara lo que tiene (una URL de Zoom
+  // utilizable o no). Google no hace falta declararlo: si eligio Meet, se
+  // intenta y hay caida explicita a Sala mas abajo.
+  var prov=PWModalidad.modalidadCumplible(PWModalidad.modalidadElegida(cfg.video), { gcal:true, zoomUrl:_zok });
+  var plan={ proveedor:prov, modalidad:PWModalidad.modalidadDeCita(prov), lugar:PWModalidad.lugarElegido(cfg.video) };
+  // CUAL enlace es otra pregunta. Solo Zoom la responde aqui: su URL vive en la
+  // configuracion del coach. La Sala se deriva del id de la cita (mas abajo) y
+  // el Meet lo devuelve Google.
+  if(prov==='zoom') plan.url=_zu;
+  return plan;
 }
 // La Sala es determinista: mismo room para coach y cliente, sin guardar nada.
 //

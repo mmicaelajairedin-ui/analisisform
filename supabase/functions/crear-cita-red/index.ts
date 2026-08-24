@@ -18,6 +18,9 @@
 // Deploy: supabase functions deploy crear-cita-red --no-verify-jwt
 // ===================================================================
 
+import { modalidadCumplible, modalidadDeCita, modalidadElegida } from "../_shared/agenda/modalidad.ts";
+import type { ProveedorVideo } from "../_shared/agenda/tipos.ts";
+
 const SB_URL = Deno.env.get("SUPABASE_URL") || "";
 const SERVICE = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || "";
 const ANON = Deno.env.get("SUPABASE_ANON_KEY") || "";
@@ -65,6 +68,30 @@ async function coachInOrg(coachId: string, orgId: string): Promise<boolean> {
     return Array.isArray(rows) && rows.length > 0;
   } catch { return false; }
 }
+/** `usuarios.configuracion` del coach: su eleccion de modalidad y lo que tiene
+ *  conectado. Best-effort — si no se puede leer, la regla cae a Sala, que es su
+ *  valor seguro, y no se promete ningun enlace que dependa de un tercero. */
+async function configuracionDeCoach(
+  coachId: string,
+): Promise<{ video: unknown; gcal: boolean; zoomUrl: boolean }> {
+  const VACIA = { video: null, gcal: false, zoomUrl: false };
+  try {
+    const r = await fetch(
+      `${SB_URL}/rest/v1/usuarios?id=eq.${encodeURIComponent(coachId)}&select=configuracion&limit=1`,
+      { headers: svc },
+    );
+    if (!r.ok) return VACIA;
+    const rows = await r.json();
+    const cfg = (Array.isArray(rows) && rows[0] && rows[0].configuracion) || null;
+    if (!cfg) return VACIA;
+    const g = cfg.gcal || {};
+    return {
+      video: cfg.video,
+      gcal: !!(g.refresh_token || g.access_token || g.conectado === true),
+      zoomUrl: /^https?:\/\//i.test(String(cfg.zoom_url || "").trim()),
+    };
+  } catch { return VACIA; }
+}
 async function hasConflict(coachId: string, inicio: string): Promise<boolean> {
   try {
     const inicioMs = new Date(inicio).getTime();
@@ -108,7 +135,6 @@ Deno.serve(async (req: Request) => {
   const nombre = (body.nombre || "").toString().trim().slice(0, 120);
   const cliEmail = (body.email || "").toString().trim().toLowerCase().slice(0, 160);
   const tipo = (body.tipo || "Sesión").toString().trim().slice(0, 80);
-  const modalidad = body.modalidad === "presencial" ? "presencial" : "online";
   const lugar = (body.lugar || "").toString().trim().slice(0, 200);
   const grupal = body.grupal === true;
   if (!coach_id || !inicio) return json({ error: "missing_fields" }, 400);
@@ -122,9 +148,29 @@ Deno.serve(async (req: Request) => {
     return json({ error: "coach_conflict", message: "El coach ya tiene una cita en ese horario." }, 409);
   }
 
+  // ── Modalidad ────────────────────────────────────────────────────
+  // MISMA regla que la reserva del cliente y que el alta desde el panel: el
+  // proveedor sale de `usuarios.configuracion.video` del coach. Antes esta
+  // funcion no escribia `video_proveedor` en absoluto, asi que aguas abajo cada
+  // superficie volvia a adivinar — y adivinaba distinto.
+  //
+  // Quien llama puede forzar `presencial` para ESTA cita; es una excepcion por
+  // cita, no un cambio de la modalidad del coach. Una cita online no puede
+  // quedarse con proveedor 'presencial', asi que en ese cruce cae a Sala.
+  // `modalidad` se DERIVA del proveedor: las dos columnas no pueden discrepar.
+  const cfgCoach = await configuracionDeCoach(coach_id);
+  const elegido = modalidadCumplible(modalidadElegida(cfgCoach.video), cfgCoach);
+  const proveedor: ProveedorVideo = body.modalidad === "presencial"
+    ? "presencial"
+    : (elegido === "presencial" ? "sala" : elegido);
+  const modalidad = modalidadDeCita(proveedor);
+
   // ── Crear la cita ────────────────────────────────────────────────
   const base: Record<string, unknown> = { coach_id, nombre, email: cliEmail, tipo, inicio, estado: "confirmada", origen: "red" };
-  const full = { ...base, modalidad, grupal, ...(modalidad === "presencial" && lugar ? { lugar } : {}) };
+  // `video_proveedor` viaja con `modalidad` en el mismo objeto opcional: si el
+  // reintento por columna inexistente se dispara, caen las dos juntas y la fila
+  // nunca queda con una sin la otra.
+  const full = { ...base, modalidad, video_proveedor: proveedor, grupal, ...(modalidad === "presencial" && lugar ? { lugar } : {}) };
   async function insert(payload: Record<string, unknown>) {
     return await fetch(`${SB_URL}/rest/v1/citas`, {
       method: "POST",
