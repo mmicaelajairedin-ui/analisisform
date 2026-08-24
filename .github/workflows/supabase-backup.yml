@@ -17,7 +17,17 @@ jobs:
 
     env:
       SB_URL: "https://ddxnrsnjdvtqhxunxnwj.supabase.co"
-      SB_KEY: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRkeG5yc25qZHZ0cWh4dW54bndsIiwicm9sZSI6ImFub24iLCJpYXQiOjE3MjM5ODAwMDAsImV4cCI6MTg4MTc0NjAwMH0.WyY8_f_mTGJfRJLZ_b4A_rC8_r-9qOqNM8gfDg6xxRk"
+      # La credencial YA NO va escrita en el fichero.
+      #
+      # Antes había aquí una anon key con el project-ref FALSIFICADO (…nwl), y por
+      # eso las cuatro tablas respondían 401 todas las noches desde el 11-08: el
+      # backup subía un artifact de ~1 KB con solo metadatos de error.
+      #
+      # Y no basta con poner la anon key BUENA: `usuarios` está bajo RLS, así que
+      # una lectura anónima devuelve 200 con CERO filas. Eso sería peor que el 401,
+      # porque el workflow lo marcaría como ✅ y el backup saldría vacío en
+      # silencio. Un backup necesita service_role, que es lo que salta la RLS.
+      SB_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
 
     steps:
       - name: "📥 Checkout"
@@ -27,6 +37,54 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: '22'
+
+      # Falla ANTES de tocar nada si la credencial no está o no es del proyecto.
+      # Un backup que se salta por falta de secret no puede salir en verde.
+      - name: "🔑 Comprobar la credencial (sin imprimirla)"
+        run: |
+          if [ -z "${SB_KEY}" ]; then
+            echo "::error::Falta el secret SUPABASE_SERVICE_KEY. Sin credencial no hay backup."
+            exit 1
+          fi
+
+          # El project-ref viaja en base64 DENTRO del JWT: compararlo como texto no
+          # lo ve. Se decodifica y se imprime SOLO el ref, nunca la clave.
+          python3 - <<'PY'
+          import base64, json, os, sys, re
+
+          key = os.environ["SB_KEY"]
+          url = os.environ["SB_URL"]
+          esperado = re.sub(r"^https://([^.]+)\..*$", r"\1", url)
+
+          partes = key.split(".")
+          if len(partes) != 3:
+              # Las claves nuevas de Supabase (sb_secret_…) no son JWT: no llevan
+              # el ref dentro y no se pueden comprobar así. No es un error.
+              print(f"La credencial no es un JWT: no se puede comprobar el ref. Esperado: {esperado}")
+              sys.exit(0)
+
+          try:
+              b64 = partes[1].replace("-", "+").replace("_", "/")
+              b64 += "=" * ((4 - len(b64) % 4) % 4)
+              payload = json.loads(base64.b64decode(b64).decode())
+          except Exception as e:
+              print(f"::error::No se pudo decodificar el payload del JWT: {e}")
+              sys.exit(1)
+
+          ref = payload.get("ref", "")
+          rol = payload.get("role", "")
+          print(f"project-ref de la credencial: {ref}")
+          print(f"project-ref esperado:         {esperado}")
+          print(f"rol de la credencial:         {rol}")
+
+          if ref != esperado:
+              print(f"::error::La credencial apunta al proyecto '{ref}' y no a '{esperado}'. Es exactamente el fallo que tenia este workflow (clave falsificada terminada en nwl).")
+              sys.exit(1)
+          if rol != "service_role":
+              print(f"::error::La credencial tiene rol '{rol}'. Un backup necesita service_role: con anon, la RLS deja tablas como 'usuarios' en CERO filas y el backup saldria vacio sin avisar.")
+              sys.exit(1)
+          print("Credencial correcta: service_role del proyecto esperado.")
+          PY
 
       - name: "💾 Exportar todas las tablas"
         id: export
@@ -55,25 +113,47 @@ jobs:
               -H "apikey: ${SB_KEY}" \
               -H "Authorization: Bearer ${SB_KEY}")
 
-            if [ "$HTTP_CODE" = "200" ]; then
-              COUNT=$(python3 -c "import json;print(len(json.load(open('backup/${TABLE}.json'))))" 2>/dev/null || echo "0")
-              echo "  ✅ $TABLE: $COUNT registros"
-              SUMMARY="$SUMMARY\n  ✅ $TABLE: $COUNT registros"
-            else
+            if [ "$HTTP_CODE" != "200" ]; then
               echo "  ❌ $TABLE: HTTP $HTTP_CODE"
               SUMMARY="$SUMMARY\n  ❌ $TABLE: HTTP $HTTP_CODE"
-              ERRORS="$ERRORS $TABLE"
+              ERRORS="$ERRORS $TABLE(HTTP $HTTP_CODE)"
+              continue
+            fi
+
+            # Un 200 no basta. Hay que comprobar que lo que llegó es una LISTA de
+            # filas y que no está vacía: bajo RLS, una credencial insuficiente
+            # devuelve 200 con [] y eso se leería como un backup correcto.
+            COUNT=$(python3 -c "
+          import json, sys
+          try:
+              d = json.load(open('backup/${TABLE}.json'))
+          except Exception:
+              print('-1'); sys.exit(0)
+          print(len(d) if isinstance(d, list) else '-1')
+          ")
+
+            if [ "$COUNT" = "-1" ]; then
+              echo "  ❌ $TABLE: la respuesta no es una lista de filas"
+              SUMMARY="$SUMMARY\n  ❌ $TABLE: respuesta ilegible"
+              ERRORS="$ERRORS $TABLE(ilegible)"
+            elif [ "$COUNT" = "0" ]; then
+              echo "  ❌ $TABLE: 0 filas — un backup vacío no es un backup"
+              SUMMARY="$SUMMARY\n  ❌ $TABLE: 0 filas"
+              ERRORS="$ERRORS $TABLE(0-filas)"
+            else
+              echo "  ✅ $TABLE: $COUNT registros"
+              SUMMARY="$SUMMARY\n  ✅ $TABLE: $COUNT registros"
             fi
           done
 
           # Generar metadata del backup
           python3 -c "
           import json, os, glob
-          from datetime import datetime
+          from datetime import datetime, timezone
 
           meta = {
             'date': '${DATE}',
-            'timestamp': datetime.utcnow().isoformat(),
+            'timestamp': datetime.now(timezone.utc).isoformat(),
             'tables': {}
           }
 
@@ -83,11 +163,14 @@ jobs:
               continue
             try:
               data = json.load(open(f))
+              if not isinstance(data, list):
+                raise ValueError('no es una lista')
               meta['tables'][table] = {
                 'count': len(data),
-                'size_bytes': os.path.getsize(f)
+                'size_bytes': os.path.getsize(f),
+                'error': len(data) == 0,
               }
-            except:
+            except Exception:
               meta['tables'][table] = {'count': 0, 'error': True}
 
           json.dump(meta, open('backup/backup-meta.json', 'w'), indent=2)
@@ -102,15 +185,35 @@ jobs:
             echo "has_errors=false" >> $GITHUB_OUTPUT
           fi
 
+      # El artifact BUENO solo se sube si las cuatro tablas trajeron filas. Antes
+      # se subía siempre, así que un backup vacío quedaba archivado 90 días con
+      # nombre de backup válido: desde fuera no había forma de distinguirlo.
       - name: "📤 Subir backup como artifact"
+        if: steps.export.outputs.has_errors == 'false'
         uses: actions/upload-artifact@v4
         with:
           name: supabase-backup-${{ steps.export.outputs.date }}
           path: backup/
           retention-days: 90
 
-      - name: "📧 Notificar si hubo errores"
+      # Si falló, lo que se sube es el DIAGNÓSTICO, con un nombre que no se puede
+      # confundir con un backup. Se conserva poco tiempo: no son datos.
+      - name: "🔴 Subir diagnóstico del fallo (NO es un backup)"
         if: steps.export.outputs.has_errors == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: BACKUP-FALLIDO-${{ steps.export.outputs.date }}
+          path: backup/
+          retention-days: 14
+
+      # NOTA: este aviso lleva roto desde el 11-08 con
+      # `535-5.7.8 Username and Password not accepted` — las credenciales de Gmail
+      # ya no valen. Se deja porque volverá a funcionar en cuanto se refresquen
+      # GMAIL_USER / GMAIL_APP_PASSWORD, pero YA NO se depende de él: el paso final
+      # pone el job en rojo pase lo que pase con el correo.
+      - name: "📧 Notificar si hubo errores (best effort)"
+        if: steps.export.outputs.has_errors == 'true'
+        continue-on-error: true
         uses: dawidd6/action-send-mail@v3
         with:
           server_address: smtp.gmail.com
@@ -149,3 +252,13 @@ jobs:
               print(f'| {status} {table} | {count} | {size_str} |')
           " >> $GITHUB_STEP_SUMMARY
           fi
+
+      # La puerta final, y es la que hace que esto no pueda volver a pasar
+      # desapercibido: el job se pone ROJO aunque el correo no salga. El aviso por
+      # email es un extra, no la única señal.
+      - name: "🚦 Poner el job en rojo si el backup no trajo datos"
+        if: steps.export.outputs.has_errors == 'true'
+        run: |
+          echo "::error::El backup NO trajo datos de:${{ steps.export.outputs.errors }}"
+          echo "No se ha subido ningún artifact con nombre de backup válido."
+          exit 1
