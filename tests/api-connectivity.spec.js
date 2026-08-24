@@ -77,17 +77,25 @@ test.describe('Supabase — Integridad', () => {
     }
   });
 
-  test('Usuarios tiene registros', async ({ request }) => {
+  // `usuarios` esta protegida por RLS y la clave anon NO debe poder leerla: lo
+  // correcto es CERO filas. La version anterior exigia `>= 1`, o sea que solo
+  // podia pasar si la RLS tenia una fuga. Nunca se noto porque este fichero
+  // llevaba la clave anon falsificada: la peticion moria en 401 y no se llegaba
+  // a contar nada. Corregida la clave, el run #176 conto 0 y el test se puso
+  // rojo pidiendo exactamente lo que NO debe ocurrir.
+  //
+  // Tampoco se deja el `>= 0` de su hermana `candidatos`: seria cierto siempre y
+  // no comprobaria nada (R-27). Asi el test SI puede fallar, y si falla es
+  // porque la tabla de usuarios se esta exponiendo.
+  test('Usuarios NO es legible con la clave anon (RLS)', async ({ request }) => {
     const r = await request.get(`${SB_URL}/rest/v1/usuarios?select=id`, {
       headers: { ...HEADERS, 'Prefer': 'count=exact' },
     });
     expect(r.status()).toBe(200);
     const range = r.headers()['content-range'];
-    if (range) {
-      const total = parseInt(range.split('/')[1]);
-      expect(total).toBeGreaterThanOrEqual(1);
-      console.log(`Usuarios: ${total}`);
-    }
+    expect(range, 'PostgREST no devolvio content-range: la cuenta no se puede comprobar').toBeTruthy();
+    const total = parseInt(range.split('/')[1], 10);
+    expect(total, `La clave anon ve ${total} filas de usuarios: la RLS esta exponiendo la tabla`).toBe(0);
   });
 });
 
