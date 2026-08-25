@@ -1860,6 +1860,31 @@ function pn(n){return(n||'').split(' ')[0]||'';}
 function _hdr(extra){return (window.PWAUTH?PWAUTH.headers(extra):Promise.resolve(Object.assign({'apikey':KEY,'Authorization':'Bearer '+KEY},extra||{})));}
 // Versión síncrona para los fetch crudos (lee el token de localStorage).
 function H(extra){return window.PWAUTH?PWAUTH.headersSync(extra):Object.assign({'apikey':KEY,'Authorization':'Bearer '+KEY},extra||{});}
+// Red de seguridad de sesión: 401/403 (sesión vencida o token inválido) → login.
+// Mismo patrón que los dos portales hermanos (pathway-fit-cliente.html:1180 y
+// pathway-fin-cliente.html:926), adaptado a que AQUÍ la sesión es 'mj_user' en
+// localStorage y no solo el JWT: al expulsar hay que limpiarla o el login rebota.
+// Un 401 no siempre es "sesión vencida": recién logueado, una lectura puede salir
+// ANTES de que el token se adjunte. Si HAY sesión, reintentamos UNA vez recargando.
+var _authGone=false,_authChecking=false;
+function _tokenNow(){ try{ var h=(window.PWAUTH&&PWAUTH.headersSync)?PWAUTH.headersSync():null; return !!(h&&h.Authorization&&h.Authorization!=='Bearer '+KEY); }catch(e){ return false; } }
+function _authExpired(){
+  if(_authGone||_authChecking) return;
+  _authChecking=true;
+  var check; try{ check=(window.PWAUTH&&PWAUTH.hasSession)?PWAUTH.hasSession():Promise.resolve(_tokenNow()); }catch(e){ check=Promise.resolve(_tokenNow()); }
+  var timed=new Promise(function(res){ setTimeout(function(){ res(_tokenNow()); },4000); });
+  Promise.race([check,timed]).then(function(has){
+    _authChecking=false; if(_authGone) return;
+    if(has){
+      var tried=false; try{ tried=sessionStorage.getItem('pw_auth_retry')==='1'; }catch(e){}
+      if(!tried){ try{ sessionStorage.setItem('pw_auth_retry','1'); }catch(e){} location.reload(); return; }
+      return; // ya reintentamos y sigue con sesión válida → no desloguear en bucle
+    }
+    _authGone=true;
+    try{ localStorage.removeItem('mj_user'); }catch(e){}
+    try{ location.href=BASE+'/login.html'; }catch(e){}
+  },function(){ _authChecking=false; });
+}
 function get(t,q){return _hdr().then(function(h){return fetch(SB+'/rest/v1/'+t+'?'+q,{headers:h});}).then(function(r){return r.json();});}
 function pt(t,q,d){return _hdr({'Content-Type':'application/json','Prefer':'return=representation'}).then(function(h){return fetch(SB+'/rest/v1/'+t+'?'+q,{method:'PATCH',headers:h,body:JSON.stringify(d)});}).then(function(r){if(r.status===401||r.status===403){if(typeof _authExpired==='function')_authExpired();return {ok:false,status:r.status,rows:0};}if(!r.ok)return {ok:false,status:r.status,rows:0};return r.json().then(function(a){var n=(a&&a.length)||0;return {ok:n>=1,status:r.status,rows:n,json:function(){return Promise.resolve(a);}};},function(){return {ok:true,status:r.status,rows:1};});});}
 function docSvg(color,ok){return '<svg width="48" height="60" viewBox="0 0 48 60" fill="none"><rect x="1" y="1" width="46" height="58" rx="6" fill="'+color+'18" stroke="'+color+'" stroke-width="1.5"/><path d="M10 18h28M10 26h28M10 34h18" stroke="'+color+'" stroke-width="2.5" stroke-linecap="round"/>'+(ok?'<circle cx="36" cy="48" r="9" fill="'+color+'"/><path d="M32 48l3 3 5-5" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>':'<circle cx="36" cy="48" r="9" fill="'+color+'60"/><path d="M36 44.5v4.5M36 50.5v1" stroke="#fff" stroke-width="2" stroke-linecap="round"/>')+'</svg>';}
@@ -2304,7 +2329,12 @@ function init(){
     // coach logueado, bloqueamos. Sin esto, cualquier coach podría ver
     // datos privados de clientes de otros coaches simplemente cambiando
     // el email en la URL. Admin sí puede ver todo (rol='admin').
-    if(COACH_PREVIEW && parsed.rol!=='admin' && C.coach_id && C.coach_id!==parsed.id){
+    // Un cliente SIN COACH ASIGNADO (coach_id NULL) no lo ve ningún coach, ni
+    // por navegación ni por URL directa: el acceso exige una asignación válida.
+    // Antes, el `C.coach_id &&` hacía que un cliente sin asignar pasara el guard
+    // para cualquiera. El admin conserva el paso sobre clientes YA ASIGNADOS;
+    // que pueda ver a los no asignados será un permiso explícito aparte.
+    if(COACH_PREVIEW && (!C.coach_id || (parsed.rol!=='admin' && C.coach_id!==parsed.id))){
       document.getElementById('load-err').textContent='Sin permisos: este cliente pertenece a otro coach.';
       document.getElementById('load-msg').textContent='';
       setTimeout(function(){window.location.href=BASE+'/panel-v2.html';},2500);
@@ -2392,11 +2422,34 @@ function showConsentGate(){
     var mkt=!!ov.querySelector('#cons-mkt').checked;
     var payload={ consent_at:new Date().toISOString(), consent_version:CONSENT_VERSION, consent_marketing:mkt };
     function done(){ C.consent_at=payload.consent_at; C.consent_version=payload.consent_version; C.consent_marketing=mkt; var o=document.getElementById('consent-ov'); if(o)o.remove(); entrar(); try{ if(window.pwEmit) pwEmit("ClientAccepted",{dominio:"Client",entidad_tipo:"cliente",entidad_id:(typeof E!=='undefined'?E:null)}); }catch(_e){} }
-    pt('candidatos','email=eq.'+encodeURIComponent(E),payload).then(done).catch(function(){
-      // Si falla el guardado no bloqueamos al cliente: marcamos local y seguimos.
-      // pw-observe ya reporta el fallo del fetch a client_errors.
-      try{ localStorage.setItem('mj_consent_'+E, payload.consent_at); }catch(e){}
-      done();
+    // El consentimiento NO se da por aceptado si la escritura no se confirma.
+    // `pt()` NO rechaza ante 401/403: devuelve {ok:false,status,rows}. Antes se
+    // encadenaba .then(done) y el cliente entraba como si hubiera quedado
+    // registrado, así que la prueba que exige el art. 7.1 del RGPD se perdía en
+    // silencio (R-23: una escritura no confirmada no es una escritura).
+    function _consFallo(msg){
+      var e=ov.querySelector('#cons-err');
+      if(!e){ e=document.createElement('p'); e.id='cons-err';
+        e.style.cssText='font-size:13px;color:#B3261E;line-height:1.5;margin:12px 0 0;text-align:center';
+        btn.parentNode.insertBefore(e, btn.nextSibling); }
+      e.textContent=msg;
+      btn.disabled=!cb.checked; btn.style.opacity=cb.checked?'1':'.4';
+      btn.style.cursor=cb.checked?'pointer':'not-allowed';
+      btn.textContent=(EN?'Try again':'Reintentar');
+    }
+    pt('candidatos','email=eq.'+encodeURIComponent(E),payload).then(function(r){
+      if(r&&r.ok){ done(); return; }
+      // 401/403 = sesión vencida: _authExpired ya decide reintentar o expulsar.
+      if(r&&(r.status===401||r.status===403)){
+        _consFallo(EN?'Your session expired. Sign in again to accept.'
+                     :'Tu sesión venció. Vuelve a entrar para aceptar.');
+        return;
+      }
+      _consFallo(EN?'We could not save your consent. Please try again.'
+                   :'No pudimos guardar tu consentimiento. Inténtalo de nuevo.');
+    }).catch(function(){
+      _consFallo(EN?'We could not save your consent. Please try again.'
+                   :'No pudimos guardar tu consentimiento. Inténtalo de nuevo.');
     });
   });
 }
@@ -2632,9 +2685,17 @@ function buildSbNotifs(){
         // Comprobar si hay informes recientes
         get('informes','email=eq.'+encodeURIComponent(E)+'&select=created_at&order=created_at.desc&limit=1').then(function(rows){
           if(rows&&rows.length){
-            var infTime=new Date(rows[0].created_at).getTime();
+            // Solo se guarda la marca de tiempo, que rActivityFeed() usa para
+            // fechar "Micaela generó tu informe".
+            // La NOTIFICACIÓN de informe actualizado NO va aquí: la emite
+            // buildNotifs() contra la tabla `notificaciones`, con
+            // clave:'informe:'+created_at — persistida, idempotente y con su
+            // propio leído/no-leído, así que sobrevive a que el destinatario no
+            // estuviera conectado y cruza dispositivos. Este motor es el
+            // ANTERIOR (lista de sugerencias del sidebar) y aquí llamaba a
+            // _addCoachNotif(), que no existe en ningún fichero: la llamada la
+            // tragaba el .catch de abajo y nunca notificó nada.
             try{localStorage.setItem('mj_inf_time_'+E,rows[0].created_at);}catch(e){}
-            if(infTime>lastSeen) _addCoachNotif('Tu informe fue actualizado por Micaela','analisis','var(--green)');
           }
         }).catch(function(){});
       }catch(e){}
