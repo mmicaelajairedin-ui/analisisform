@@ -345,18 +345,62 @@ test.describe('🏋️ Handoff del owner — Pathway entrega la sesion a MultiCo
     const navegaciones = [];
     page.on('framenavigated', (f) => { if (f === page.mainFrame()) navegaciones.push(f.url()); });
 
+    // La corrida #177 dejo demostrado el DESENLACE —el owner no sale de
+    // login.html— pero no la CAUSA: el mensaje admitia por igual «el login
+    // fallo» y «el fetch se colgo», y con eso el fallo llevaba dias en C2.
+    // Aqui se graba la RED para separarlas, sin tocar login.html:
+    //   - si no hay respuesta de /auth/v1/token  -> el formulario ni lo pidio
+    //   - si esa respuesta es >= 400             -> A · credenciales
+    //   - si es 200 y no se pide pathway-handoff -> la condicion de owner no se
+    //                                               cumple (rol distinto)
+    //   - si se pide y no responde               -> C · el fetch sin timeout
+    //   - si responde >= 400                     -> la funcion devuelve error
+    const red = { auth: null, handoffPedido: false, handoffEstado: null };
+    page.on('response', (r) => {
+      const u = r.url();
+      if (/\/auth\/v1\/token/.test(u)) red.auth = r.status();
+      if (/pathway-handoff/.test(u)) red.handoffEstado = r.status();
+    });
+    page.on('request', (r) => { if (/pathway-handoff/.test(r.url())) red.handoffPedido = true; });
+
     await page.goto(`${BASE}login.html`, { waitUntil: 'domcontentloaded' });
     await page.fill('#email', /** @type {string} */ (email));
     await page.fill('#password', /** @type {string} */ (password));
     await page.locator('#password').press('Enter');
 
     // C · ¿salio del login? Esta asercion es la que separa las dos hipotesis.
-    await expect(
-      page,
-      'El owner no salio de login.html en 25 s. O el login fallo, o el fetch a ' +
-        'pathway-handoff (login.html:902, SIN timeout) no volvio y se queda ' +
-        'plantado en la pantalla de login.',
-    ).toHaveURL(/pathwayplatforms\.com|panel-v2/i, { timeout: 25000 });
+    let salio = true;
+    try {
+      await expect(page).toHaveURL(/pathwayplatforms\.com|panel-v2/i, { timeout: 25000 });
+    } catch (_e) {
+      salio = false;
+    }
+
+    if (!salio) {
+      // Se lee lo que el propio login muestra: si hay un aviso de credenciales,
+      // eso ya es la causa y no hace falta deducirla.
+      const visible = (await page.locator('body').innerText().catch(() => '') || '')
+        .split('\n').map((s) => s.trim()).filter(Boolean).slice(0, 40).join(' · ');
+
+      const causa =
+        red.auth === null
+          ? 'TEST · el formulario no llego a pedir /auth/v1/token (¿cambiaron los selectores de login.html?)'
+          : red.auth >= 400
+            ? `A · CREDENCIALES: /auth/v1/token devolvio ${red.auth}. La cuenta TEST_GYM_* no entra; no es un fallo del handoff.`
+            : !red.handoffPedido
+              ? 'PRODUCTO · el login autentico (200) pero NUNCA pidio pathway-handoff: la cuenta no cumple la condicion de owner de login.html:898 (rol distinto de owner/colaborador-con-acceso).'
+              : red.handoffEstado === null
+                ? 'C · EL FETCH SE COLGO: se pidio pathway-handoff y no llego respuesta en 25 s. Es el fetch SIN timeout de login.html:902, y deja al owner plantado.'
+                : `PRODUCTO · pathway-handoff respondio ${red.handoffEstado}: no devolvio codigo utilizable y el owner se queda en el login.`;
+
+      expect(
+        salio,
+        `El owner no salio de login.html en 25 s.\n` +
+          `CAUSA: ${causa}\n` +
+          `Red: auth=${red.auth} · handoff pedido=${red.handoffPedido} · handoff estado=${red.handoffEstado}\n` +
+          `Pantalla: ${visible.slice(0, 300)}`,
+      ).toBe(true);
+    }
 
     const destino = navegaciones.find((u) => /pathwayplatforms\.com|panel-v2/i.test(u)) || page.url();
 
