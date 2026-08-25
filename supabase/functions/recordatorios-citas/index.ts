@@ -169,8 +169,10 @@ async function sendReminder(
   // una sola decision persistida, el recordatorio no puede contradecir al correo
   // de confirmacion.
   const esPresencial = String(c.modalidad || "online") === "presencial";
-  const startMs = new Date(c.inicio).getTime();
-  const salaRoom = "Pathway-" + (c.coach_id || "x") + "-" + startMs;
+  // Room derivado del ID DE LA CITA, no de su hora: es la formula canonica de
+  // `_shared/agenda/video.ts::urlSala`, la misma que usa la reserva. Con la hora,
+  // reprogramar cambiaba la sala y el recordatorio contradecia al correo.
+  const salaRoom = "Pathway-" + (c.coach_id || "x") + "-" + c.id;
   const salaLink = "https://pathwaycareercoach.com/sala.html?room=" + encodeURIComponent(salaRoom);
 
   const ETIQUETA: Record<string, string> = {

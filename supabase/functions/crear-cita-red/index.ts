@@ -18,6 +18,9 @@
 // Deploy: supabase functions deploy crear-cita-red --no-verify-jwt
 // ===================================================================
 
+import { modalidadCumplible, modalidadDeCita, modalidadElegida, videoDeCita, zoomEsSala } from "../_shared/agenda/modalidad.ts";
+import type { ProveedorVideo } from "../_shared/agenda/tipos.ts";
+
 const SB_URL = Deno.env.get("SUPABASE_URL") || "";
 const SERVICE = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || "";
 const ANON = Deno.env.get("SUPABASE_ANON_KEY") || "";
@@ -65,6 +68,31 @@ async function coachInOrg(coachId: string, orgId: string): Promise<boolean> {
     return Array.isArray(rows) && rows.length > 0;
   } catch { return false; }
 }
+/** `usuarios.configuracion` del coach: su eleccion de modalidad y lo que tiene
+ *  conectado. Best-effort — si no se puede leer, la regla cae a Sala, que es su
+ *  valor seguro, y no se promete ningun enlace que dependa de un tercero. */
+async function configuracionDeCoach(
+  coachId: string,
+): Promise<{ video: unknown; gcal: boolean; zoomUrl: boolean }> {
+  const VACIA = { video: null, gcal: false, zoomUrl: false };
+  try {
+    const r = await fetch(
+      `${SB_URL}/rest/v1/usuarios?id=eq.${encodeURIComponent(coachId)}&select=configuracion&limit=1`,
+      { headers: svc },
+    );
+    if (!r.ok) return VACIA;
+    const rows = await r.json();
+    const cfg = (Array.isArray(rows) && rows[0] && rows[0].configuracion) || null;
+    if (!cfg) return VACIA;
+    const g = cfg.gcal || {};
+    return {
+      video: cfg.video,
+      gcal: !!(g.refresh_token || g.access_token || g.conectado === true),
+      // Utilizable = es una SALA, no cualquier URL: un chat no abre reunion.
+      zoomUrl: zoomEsSala(cfg.zoom_url),
+    };
+  } catch { return VACIA; }
+}
 async function hasConflict(coachId: string, inicio: string): Promise<boolean> {
   try {
     const inicioMs = new Date(inicio).getTime();
@@ -108,7 +136,6 @@ Deno.serve(async (req: Request) => {
   const nombre = (body.nombre || "").toString().trim().slice(0, 120);
   const cliEmail = (body.email || "").toString().trim().toLowerCase().slice(0, 160);
   const tipo = (body.tipo || "Sesión").toString().trim().slice(0, 80);
-  const modalidad = body.modalidad === "presencial" ? "presencial" : "online";
   const lugar = (body.lugar || "").toString().trim().slice(0, 200);
   const grupal = body.grupal === true;
   if (!coach_id || !inicio) return json({ error: "missing_fields" }, 400);
@@ -122,9 +149,29 @@ Deno.serve(async (req: Request) => {
     return json({ error: "coach_conflict", message: "El coach ya tiene una cita en ese horario." }, 409);
   }
 
+  // ── Modalidad ────────────────────────────────────────────────────
+  // MISMA regla que la reserva del cliente y que el alta desde el panel: el
+  // proveedor sale de `usuarios.configuracion.video` del coach. Antes esta
+  // funcion no escribia `video_proveedor` en absoluto, asi que aguas abajo cada
+  // superficie volvia a adivinar — y adivinaba distinto.
+  //
+  // Quien llama puede forzar `presencial` para ESTA cita; es una excepcion por
+  // cita, no un cambio de la modalidad del coach. Una cita online no puede
+  // quedarse con proveedor 'presencial', asi que en ese cruce cae a Sala.
+  // `modalidad` se DERIVA del proveedor: las dos columnas no pueden discrepar.
+  const cfgCoach = await configuracionDeCoach(coach_id);
+  const elegido = modalidadCumplible(modalidadElegida(cfgCoach.video), cfgCoach);
+  const proveedor: ProveedorVideo = body.modalidad === "presencial"
+    ? "presencial"
+    : (elegido === "presencial" ? "sala" : elegido);
+  const modalidad = modalidadDeCita(proveedor);
+
   // ── Crear la cita ────────────────────────────────────────────────
   const base: Record<string, unknown> = { coach_id, nombre, email: cliEmail, tipo, inicio, estado: "confirmada", origen: "red" };
-  const full = { ...base, modalidad, grupal, ...(modalidad === "presencial" && lugar ? { lugar } : {}) };
+  // `video_proveedor` viaja con `modalidad` en el mismo objeto opcional: si el
+  // reintento por columna inexistente se dispara, caen las dos juntas y la fila
+  // nunca queda con una sin la otra.
+  const full = { ...base, modalidad, video_proveedor: proveedor, grupal, ...(modalidad === "presencial" && lugar ? { lugar } : {}) };
   async function insert(payload: Record<string, unknown>) {
     return await fetch(`${SB_URL}/rest/v1/citas`, {
       method: "POST",
@@ -134,8 +181,11 @@ Deno.serve(async (req: Request) => {
   }
   try {
     let r = await insert(full);
-    // Reintento SIN columnas opcionales (modalidad/lugar/grupal) si aún no existen.
-    if (r.status === 400) r = await insert(base);
+    // Reintento sin las columnas realmente opcionales. `modalidad` y
+    // `video_proveedor` SE CONSERVAN: existen desde hace meses, y soltarlas hacia
+    // nacer una cita con proveedor NULL — la rama que `recordatorios-citas`
+    // reserva para las citas anteriores al selector.
+    if (r.status === 400) r = await insert({ ...base, modalidad, video_proveedor: proveedor });
     if (!r.ok) return json({ error: "insert_failed", status: r.status }, 502);
     const rows = await r.json().catch(() => []);
     const cita = Array.isArray(rows) && rows[0] ? rows[0] : { coach_id, nombre, tipo, inicio, estado: "confirmada" };
@@ -153,7 +203,7 @@ Deno.serve(async (req: Request) => {
     // Email de confirmación al cliente (best-effort, no bloquea la creación).
     // JULIO 2026: Google Meet links come from Google Calendar sync, not sala.html
     if (EMAIL_RE.test(cliEmail)) {
-      try { await notificarCita(cliEmail, tipo, inicio, modalidad, lugar, cita.meet_link || ""); } catch { /* ignore */ }
+      try { await notificarCita(cliEmail, tipo, inicio, modalidad, lugar, cita.meet_link || "", proveedor); } catch { /* ignore */ }
     }
     return json({ ok: true, cita });
   } catch { return json({ error: "write_failed" }, 502); }
@@ -165,13 +215,20 @@ function fmtFecha(iso: string): string {
   return m ? `${m[3]}/${m[2]}/${m[1]} · ${m[4]}:${m[5]}` : iso;
 }
 // Email de confirmación de la cita al cliente (misma idea que el panel del coach).
-async function notificarCita(to: string, tipo: string, inicio: string, modalidad: string, lugar: string, meetLink: string): Promise<void> {
+async function notificarCita(
+  to: string, tipo: string, inicio: string, modalidad: string, lugar: string,
+  meetLink: string, proveedor: string,
+): Promise<void> {
   const cuando = fmtFecha(inicio);
-  const donde = modalidad === "presencial"
+  // La ETIQUETA sale del proveedor persistido y el ENLACE de la cita. Antes decia
+  // "Entrar a Google Meet" para cualquier enlace —tambien Sala y Zoom— y, sin
+  // enlace, prometia un Meet en el calendario que podia no existir.
+  const v = videoDeCita({ video_proveedor: proveedor, meet_link: meetLink, modalidad });
+  const donde = v.proveedor === "presencial"
     ? `<p style='font-size:15px'>📍 <b>Presencial:</b> ${lugar || "te confirmamos el lugar"}</p>`
-    : meetLink
-      ? `<p style='margin:20px 0'><a href='${meetLink}' target='_blank' rel='noopener' style='background:#1F5740;color:#fff;text-decoration:none;padding:12px 24px;border-radius:10px;font-size:15px;font-weight:600;display:inline-block'>Entrar a Google Meet →</a></p>`
-      : `<p style='margin:20px 0;color:#8A968E'><b>Google Meet:</b> el link aparecerá en tu Google Calendar.</p>`;
+    : v.url
+      ? `<p style='margin:20px 0'><a href='${v.url}' target='_blank' rel='noopener' style='background:#1F5740;color:#fff;text-decoration:none;padding:12px 24px;border-radius:10px;font-size:15px;font-weight:600;display:inline-block'>${v.etiqueta} →</a></p>`
+      : `<p style='margin:20px 0;color:#8A968E'>Te enviaremos el enlace de la sesión.</p>`;
   const html =
     "<p style='font-size:15px'>¡Hola!</p>" +
     "<p style='font-size:15px;line-height:1.6'>Tu sesión quedó agendada:</p>" +

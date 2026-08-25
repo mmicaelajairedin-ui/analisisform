@@ -32,23 +32,24 @@ export interface EntradaVideo {
   video_proveedor?: string | null;
   gcal_estado?: string | null;
   grupal?: boolean | null;
-  /** `usuarios.configuracion.zoom_url` del coach, si lo tiene. */
-  zoom_url?: string | null;
 }
 
 /**
  * URL de la Sala de Pathway. Determinista: no se almacena en ninguna parte.
  *
- * CAMBIO RESPECTO A LO QUE HAY HOY: el room se deriva de `cita_id`, no de
- * `inicio`. Hoy es `Pathway-<coach_id>-<epoch_ms_de_inicio>`
- * (`panel-v2.html:_agSalaUrl`, `reservar.html:908-912`), así que **al
- * reprogramar una cita el enlace cambia** y el que el cliente tiene en su
- * correo lleva a una sala vacía. Es el mismo error que P7: un identificador
- * que no sobrevive a un cambio.
+ * FÓRMULA CANÓNICA DE LA PLATAFORMA. El room se deriva de `cita_id`, no de
+ * `inicio`, porque un identificador que cambia no sirve: con la hora, al
+ * reprogramar cambiaba el enlace y el que el cliente tenía en su correo
+ * llevaba a una sala vacía. Es el mismo error que P7.
  *
- * El momento de cambiarlo es AHORA y no más tarde: se ha medido que no existe
- * ni una sola cita futura en la tabla, así que no hay ningún correo pendiente
- * cuyo enlace se vaya a romper. Dentro de un mes, sí lo habría.
+ * Desde agosto de 2026 la usan también `reservar.html::_salaUrlDe`,
+ * `panel-v2.html::_agSalaUrl` / `::_salaClientLink` y `recordatorios-citas`.
+ * Antes cada una derivaba del `inicio`, así que `agenda-list` devolvía una
+ * sala distinta de la que iba en el correo. Si aparece una quinta copia de
+ * esta cadena en otro sitio, es un error: debe salir de aquí.
+ *
+ * Se unificó cuando no había ninguna cita futura con enlace de Sala ya
+ * enviado, así que ningún correo pendiente se rompió.
  */
 export function urlSala(
   citaId: number,
@@ -71,36 +72,41 @@ const PROVEEDORES: ReadonlySet<string> = new Set(['meet', 'sala', 'zoom', 'prese
  *   2. Un enlace YA GUARDADO gana sobre todo lo demás. Es el que el cliente
  *      recibió por correo; sustituirlo lo mandaría a una sala distinta de la
  *      que tiene delante.
- *   3. El Zoom propio del coach, si lo tiene configurado.
- *   4. La Sala de Pathway, que es el respaldo que no puede fallar: no depende
+ *   3. La Sala de Pathway, que es el respaldo que no puede fallar: no depende
  *      de Google, ni del token del coach, ni de la red hacia un tercero.
  *
- * El punto 2 es la única diferencia con `reservar.html`, y es intencionada:
- * allí se resuelve ANTES de que exista ningún enlace guardado, así que Zoom va
- * primero sin contradecir nada.
+ * ESTA FUNCIÓN NO ELIGE MODALIDAD. Lee la que ya se decidió al crear la cita
+ * (`video_proveedor`, que sale de `modalidad.ts` a partir de
+ * `usuarios.configuracion.video`) y resuelve el ENLACE que le corresponde.
+ * Volver a elegir aquí es lo que hacía que la agenda contradijera al correo.
+ *
+ * Tenía un paso 3 que caía a `zoom_url` cuando no había enlace guardado. Se
+ * quitó por dos motivos: el contrato dice que sin elección la modalidad es
+ * Sala, nunca Zoom; y la rama estaba muerta desde siempre, porque
+ * `consulta.ts` nunca le pasó `zoom_url`.
  */
 export function resolverVideo(
   e: EntradaVideo,
   origenSala: string = ORIGEN_SALA_POR_DEFECTO,
 ): Video {
   if (e.modalidad === 'presencial') {
-    return { proveedor: 'presencial', url: null, estado: 'no_aplica' };
+    // El lugar viaja con el resto: es el "enlace" de una sesión presencial.
+    return { proveedor: 'presencial', url: null, estado: 'no_aplica', lugar: String(e.lugar || '').trim() };
   }
 
   if (esUrl(e.meet_link)) {
     const declarado = e.video_proveedor && PROVEEDORES.has(e.video_proveedor)
       ? (e.video_proveedor as ProveedorVideo)
       : null;
-    // Sin `video_proveedor` se asume Meet: es quien escribe `meet_link` hoy
-    // (`sync-cita-to-gcal:87-93`) y la columna se llama así por eso.
-    return { proveedor: declarado ?? 'meet', url: e.meet_link, estado: 'ok' };
+    // Sin `video_proveedor` NO se adivina. Antes se asumía Meet —porque es quien
+    // escribía `meet_link`— y eso etiquetaba como «Google Meet» citas de Sala y
+    // de Zoom de antes del selector. El enlace guardado sí se sabe y se entrega;
+    // el proveedor va `null`, que es lo que el tipo `Video` prevé para «hay
+    // videollamada, no sé de quién». Adivinar es lo que estamos quitando.
+    return { proveedor: declarado, url: e.meet_link, estado: 'ok', lugar: '' };
   }
 
-  if (esUrl(e.zoom_url)) {
-    return { proveedor: 'zoom', url: e.zoom_url, estado: 'ok' };
-  }
-
-  // Sin enlace guardado y sin Zoom. Si Google quedó pendiente o sin conexión,
+  // Sin enlace guardado. Si Google quedó pendiente o sin conexión,
   // se dice — pero igualmente se entrega la Sala, para que nadie se quede sin
   // sitio al que entrar.
   const estado: EstadoVideo = e.gcal_estado === 'sin_conexion'
@@ -113,5 +119,6 @@ export function resolverVideo(
     proveedor: 'sala',
     url: urlSala(e.cita_id, e.coach_id, e.grupal === true, origenSala),
     estado,
+    lugar: '',
   };
 }

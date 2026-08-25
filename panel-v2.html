@@ -4,6 +4,7 @@
 <script src="/pw-polyfill.js"></script>
 <script src="/pw-call.js"></script>
 <script src="pw-observe.js"></script>
+<script src="/pw-modalidad.js"></script>
 <script src="pw-events.js"></script>
 <script src="/pw-native.js"></script>
 <link rel="stylesheet" href="/pw-icons.css?v=1">
@@ -3331,13 +3332,22 @@ function _vidGcalOk(){
   var g=c.gcal||{};
   return !!(g && (g.refresh_token||g.access_token||g.conectado===true));
 }
-function _vidProv(){
-  var p=(""+(_vidCfg().proveedor||"")).toLowerCase();
-  if(p==="meet") return _vidGcalOk()?"meet":"sala";   // sin Google, no se sostiene
-  if(p==="zoom") return _vidZoomUrl()?"zoom":"sala";  // sin URL, tampoco
-  if(p==="presencial"||p==="sala") return p;
-  return _vidZoomUrl()?"zoom":"sala";                 // compatibilidad hacia atras
+// QUE eligio el coach lo dice la regla compartida (`pw-modalidad.js`), no este
+// fichero. Antes habia aqui una cascada propia cuya ultima linea era
+// `return _vidZoomUrl()?"zoom":"sala"`: un coach que no habia elegido nada
+// aparecia con "Tu enlace de Zoom" seleccionado. Sin eleccion es SALA.
+//
+// Aparte va otra pregunta distinta: ¿se puede CUMPLIR lo elegido? Meet sin
+// Google conectado y Zoom sin URL no se sostienen, y ofrecerlos seria prometer
+// un enlace que no va a llegar. Eso no es decidir la modalidad — es no dejar
+// guardar una que no se puede cumplir — asi que vive aqui y no en la regla.
+function _vidNormalizar(p){
+  // `zoomUrl` es "¿hay una SALA utilizable?", no "¿hay algo escrito?". Con un
+  // enlace de chat guardado, Zoom deja de poder cumplirse y se atiende en la
+  // Sala — el valor guardado no se toca, solo deja de tratarse como videollamada.
+  return PWModalidad.modalidadCumplible(p, { gcal:_vidGcalOk(), zoomUrl:PWModalidad.zoomEsSala(_vidZoomUrl()) });
 }
+function _vidProv(){ return _vidNormalizar(PWModalidad.modalidadElegida(_vidCfg())); }
 // Se captura junto al resto del formulario, en el mismo guardado.
 function _agVideoCapture(){
   if(!state.ag) return;
@@ -3544,10 +3554,39 @@ function _agReservas(){
 // una sala propia de Pathway (hoy Jitsi; luego la Sala JaaS embebida),
 // determinística por coach+horario → IDÉNTICA a la que arma reservar.html para el
 // cliente. No depende del Meet/Zoom del coach (se removió a propósito).
-function _agResLink(r){
-  // JULIO 2026: DEPRECATED — Ya no usamos sala.html para videosesiones
-  // El video ahora viene de Google Meet (via Google Calendar del coach)
-  return "";
+// El ciclo de vida del evento de Google lo lleva `sync-cita-to-gcal`, que es
+// quien conoce `google_event_id`. El panel solo avisa de lo que acaba de pasar.
+// Best-effort a proposito: si Google falla, la cita YA esta guardada en Pathway
+// y no se le rompe nada a la coach por eso.
+function _gcalAvisar(citaId, op){
+  if(!citaId) return;
+  try{
+    fetch(SB+"/functions/v1/sync-cita-to-gcal",{
+      method:"POST", headers:{"content-type":"application/json", apikey:KEY, Authorization:"Bearer "+KEY},
+      body:JSON.stringify({ cita_id:citaId, op:op })
+    }).catch(function(){});
+  }catch(e){}
+}
+function _agResLink(r){ return PWModalidad.videoDeCita(r).url; }
+// El boton de videollamada de un EMAIL, con la etiqueta del proveedor real.
+// Presencial no lleva boton; una cita sin enlace tampoco promete nada.
+function _botonVideo(r){
+  var v=PWModalidad.videoDeCita(r);
+  if(v.proveedor==="presencial") return "<p style='font-size:13px;color:#8A968E'>"+PWI.svg('mapPin',{sm:true})+" <strong>Presencial</strong>"+(r&&r.lugar?(" · "+esc(r.lugar)):"")+"</p>";
+  if(!v.url) return "<p style='font-size:13px;color:#8A968E'>Te enviaremos el enlace de la sesión.</p>";
+  return "<a href=\""+esc(v.url)+"\" target='_blank' rel='noopener' style='display:inline-block;background:#2D6A4F;color:#fff;text-decoration:none;padding:11px 20px;border-radius:10px;font-weight:700'>"+esc(v.etiqueta)+"</a>";
+}
+// Presencial se reconoce por el proveedor; `modalidad` se acepta como respaldo
+// porque el camino directo (`select=*`) trae las dos columnas.
+function _agEsPresencial(r){
+  return !!r && (String(r.video_proveedor||"").toLowerCase()==="presencial" || r.modalidad==="presencial");
+}
+// Estado del video de una cita, para que la interfaz pueda DECIRLO en vez de
+// quedarse muda: "ok" (hay enlace), "presencial" (no toca) o "sin-enlace" (el
+// proveedor prometia uno y no esta — es un estado invalido, no un hueco normal).
+function _agVideoEstado(r){
+  if(_agEsPresencial(r)) return "presencial";
+  return _agResLink(r) ? "ok" : "sin-enlace";
 }
 // ¿La cita es GRUPAL (varios en el mismo video)? Usa la columna explícita si está
 // (viene en las queries con select=*), y SIEMPRE cae al nombre del evento como
@@ -3567,9 +3606,8 @@ function _esGrupal(r){
 // (Pathway-<coach>-<hora>), pero con panel de notas/tareas/objetivos/timer. El coach
 // entra como moderador (mod=1); lleva la cita para poder guardar el resultado.
 function _agSalaUrl(r){
-  if(!r||!r.inicio||!r.coach_id) return "";
-  var ms=new Date(r.inicio).getTime();
-  var room="Pathway-"+r.coach_id+"-"+ms;
+  if(!r||!r.id||!r.coach_id) return "";
+  var room="Pathway-"+r.coach_id+"-"+r.id;
   return "https://pathwaycareercoach.com/sala.html?room="+encodeURIComponent(room)+(_esGrupal(r)?"&grupal=1":"");
 }
 // Botones de asistencia (asistió / no vino) — MISMA lógica que la agenda del día,
@@ -3656,10 +3694,10 @@ function _agCitaDetalle(id){
   if(!r) return;
   var typ=_agEventTypeFor(r.tipo)||{}, col=(typ.color)||"#8C7B80", ico=(typ.icon)||""+PWI.svg('calendar',{sm:true})+"";
   var ms=+new Date(r.inicio), durMin=_durMin(r.tipo||"")||60;
-  var link=(r.modalidad==="presencial"&&r.lugar)?null:_agResLink(r);
+  var link=_agResLink(r), vEstado=_agVideoEstado(r);
   return _agDetalleRender({
     nombre:r.nombre||"Sesión", email:r.email||"", tipo:typ.label||r.tipo||"", ms:ms, durMin:durMin,
-    estado:r.estado||"", origen:r.origen||"", telefono:r.telefono||"", link:link, modalidad:r.modalidad||"", lugar:r.lugar||"",
+    estado:r.estado||"", origen:r.origen||"", telefono:r.telefono||"", link:link, vEstado:vEstado, modalidad:r.modalidad||"", lugar:r.lugar||"",
     foto:_persFoto(r.email,r.nombre), col:col, ico:ico, esGoogle:false, desc:"" });
 }
 // Dibuja el overlay de detalle a partir de un objeto normalizado (reserva o Google).
@@ -3683,7 +3721,22 @@ function _agDetalleRender(r){
   var old=document.getElementById("pw-cita-ov"); if(old) old.remove();
   var ov=document.createElement("div"); ov.id="pw-cita-ov";
   ov.style.cssText="position:fixed;inset:0;z-index:400;display:flex;align-items:center;justify-content:center;padding:22px;background:rgba(20,40,30,.55)";
-  var btnAction=(r.modalidad==="presencial"&&r.lugar)?("<div style='display:flex;align-items:center;justify-content:center;gap:8px;margin-top:16px;background:#F5F0E8;color:var(--pw-carbon);padding:13px;border-radius:11px;font-size:14px;font-weight:700;word-break:break-word'>"+_cIco('mapPin',15)+" "+esc(r.lugar)+"</div>"):(link?"<a href='"+esc(link)+"' target='_blank' rel='noopener' style='display:flex;align-items:center;justify-content:center;gap:8px;margin-top:16px;background:var(--pw-bosque);color:#fff;text-decoration:none;padding:13px;border-radius:11px;font-size:14px;font-weight:700'>"+_cIco('video',15)+" "+(r.esGoogle?"Abrir la videollamada":"Entrar a la sala")+"</a>":"");
+  // Tres estados, sin solaparse. Antes presencial SIN lugar caia en la rama del
+  // enlace y podia acabar ofreciendo una videollamada que no existe.
+  var _caja=function(bg,fg,contenido){ return "<div style='display:flex;align-items:center;justify-content:center;gap:8px;margin-top:16px;background:"+bg+";color:"+fg+";padding:13px;border-radius:11px;font-size:14px;font-weight:700;word-break:break-word'>"+contenido+"</div>"; };
+  var btnAction;
+  if(r.vEstado==="presencial"){
+    btnAction=r.lugar ? _caja("#F5F0E8","var(--pw-carbon)",_cIco('mapPin',15)+" "+esc(r.lugar))
+                      : _caja("#F5F0E8","var(--pw-carbon)",_cIco('mapPin',15)+" Presencial");
+  } else if(link){
+    btnAction="<a href='"+esc(link)+"' target='_blank' rel='noopener' style='display:flex;align-items:center;justify-content:center;gap:8px;margin-top:16px;background:var(--pw-bosque);color:#fff;text-decoration:none;padding:13px;border-radius:11px;font-size:14px;font-weight:700'>"+_cIco('video',15)+" "+(r.esGoogle?"Abrir la videollamada":"Entrar a la sala")+"</a>";
+  } else if(r.vEstado==="sin-enlace"){
+    // El proveedor prometia enlace y no hay. Se DICE, en vez de dejar el hueco
+    // mudo: un boton ausente sin explicacion parece un fallo de la pantalla.
+    btnAction=_caja("var(--pw-niebla-2)","var(--pw-text-muted)",_cIco('video',15)+" Sin enlace de videollamada");
+  } else {
+    btnAction="";
+  }
   ov.innerHTML="<div style='width:100%;max-width:430px;background:#fff;border-radius:18px;box-shadow:0 30px 70px rgba(20,55,38,.32);overflow:hidden;font-family:var(--pw-sans)'>"+
     "<div style='background:linear-gradient(135deg,"+col+"cc,"+col+");padding:22px 24px;color:#fff;display:flex;align-items:center;gap:14px'>"+av+
       "<div style='min-width:0'><div style='font-family:var(--pw-serif);font-size:20px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis'>"+esc(r.nombre||"Sesión")+"</div>"+
@@ -4583,9 +4636,13 @@ function _salaRender(box,c,cid,rows,RL,fbMap){
         function _rlst(arr){ if(!arr.length) return ""; return "<div style='margin-top:8px'><div style='font-size:10px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;color:var(--pw-text-muted);margin-bottom:3px'>Documentos</div>"+arr.map(function(it){ return it.url?("<a href=\""+esc(it.url)+"\" target='_blank' rel='noopener' style='display:inline-flex;align-items:center;gap:6px;font-size:12.5px;color:var(--pw-bosque);text-decoration:none;padding:2px 0'>"+PWI.svg('paperclip',{sm:true})+" "+esc(it.name)+"</a><br>"):("<div style='font-size:12.5px'>"+PWI.svg('paperclip',{sm:true})+" "+esc(it.name)+"</div>"); }).join("")+"</div>"; }
         var secs=(P.notas?"<div style='font-size:12.5px;color:var(--pw-carbon);white-space:pre-wrap;line-height:1.5'>"+esc(P.notas)+"</div>":"")+_lst("Objetivos",P.obj)+_lst("Tareas",P.tar)+_rlst(P.rec);
         var nt=secs?("<div style='margin-top:6px;background:var(--pw-niebla-2);border-radius:10px;padding:10px 12px'>"+secs+"</div>"):"";
-        // Feedback del cliente: la Sala guarda con room = Pathway-<coach_id>-<inicio_ms>.
-        var _room="Pathway-"+(x.coach_id||"")+"-"+_ms;
-        var _fb=fbMap[_room]; var fbHtml="";
+        // Feedback del cliente. La Sala lo guarda con la clave del room que se
+        // uso ese dia, asi que se buscan las DOS: primero la canonica (por id de
+        // cita) y, si no esta, la vieja (por hora de inicio). Sin el segundo
+        // intento, el feedback ya recogido dejaria de verse.
+        var _room="Pathway-"+(x.coach_id||"")+"-"+(x.id||"");
+        var _roomLegacy="Pathway-"+(x.coach_id||"")+"-"+_ms;
+        var _fb=fbMap[_room]||fbMap[_roomLegacy]; var fbHtml="";
         if(_fb && _fb.rating){
           var _e=_FB_EMO[_fb.rating]||"", _t=_FB_TXT[_fb.rating]||"";
           fbHtml="<div style='margin-top:8px;display:flex;align-items:flex-start;gap:8px;background:rgba(82,183,136,.08);border-radius:10px;padding:8px 11px'>"+
@@ -4762,9 +4819,13 @@ function _notifResCancel(r){
 // Link a la Sala para el cliente: misma sala que el coach, pero sin mod=1 ni permisos de edición.
 // Incluye start+dur para que el gate (cuenta regresiva, ya terminó, 5 min antes) funcione.
 function _salaClientLink(r, iso){
-  if(!r||!r.inicio||!r.coach_id) return "";
+  if(!r||!r.id||!r.coach_id||!(iso||r.inicio)) return "";
+  // El ROOM sale del id de la cita (formula canonica, `video.ts::urlSala`); la
+  // HORA sigue viajando en `&start` porque el gate de sala.html la lee de ahi
+  // (`sala.html:330`), no del nombre del room. Separarlas es lo que permite
+  // reprogramar sin cambiar de sala.
   var ms=new Date(iso||r.inicio).getTime();
-  var room="Pathway-"+r.coach_id+"-"+ms;
+  var room="Pathway-"+r.coach_id+"-"+r.id;
   var dur=_durMin(r.tipo||"")||60; // duración en minutos
   return "https://pathwaycareercoach.com/sala.html?room="+encodeURIComponent(room)+"&start="+ms+"&dur="+dur+(_esGrupal(r)?"&grupal=1":"");
 }
@@ -4784,8 +4845,12 @@ function _icsBuild(title, startMs, endMs, link, uid){
 function _resIcs(r, iso){
   var _s=+new Date(iso||r.inicio); var _dm=(_durMin(r.tipo||"")||60);
   var _coach=(typeof COACH!=="undefined"&&COACH&&COACH.name)||(RME&&RME.nombre)||"";
-  var _salaLink=_salaClientLink(r, iso); // Link a la Sala con start/dur para el gate
-  return _icsBuild((r.tipo||"Sesión")+(_coach?(" con "+_coach):""), _s, _s+_dm*60000, _salaLink, (r.token||r.id));
+  // El adjunto lleva el enlace PERSISTIDO de la cita, no una Sala reconstruida.
+  // Antes llamaba a `_salaClientLink()` siempre, asi que la invitacion de
+  // calendario de una cita de Meet o de Zoom mandaba a la Sala — el mismo fallo
+  // que el cuerpo del correo, una capa mas abajo y por eso mas dificil de ver.
+  var _link=PWModalidad.videoDeCita(r).url;
+  return _icsBuild((r.tipo||"Sesión")+(_coach?(" con "+_coach):""), _s, _s+_dm*60000, _link, (r.token||r.id));
 }
 // URL de Google Calendar (abre el evento cargado → guardar y listo, sin descargar
 // archivo). Sin invitados (no manda invitación con Meet). Cada uno lo agrega a SU
@@ -4796,25 +4861,40 @@ function _gcalUrl(r, iso){
   var _s=+new Date(iso||r.inicio); var _dm=(_durMin(r.tipo||"")||60); var _e=_s+_dm*60000;
   var _coach=(typeof COACH!=="undefined"&&COACH&&COACH.name)||(RME&&RME.nombre)||"";
   var _title=(r.tipo||"Sesión")+(_coach?(" con "+_coach):"");
-  // JULIO 2026: Ya no incluimos link de sala.html. Usá Google Calendar con tu Google Meet
-  return "https://calendar.google.com/calendar/render?action=TEMPLATE&text="+encodeURIComponent(_title)+"&dates="+utc(_s)+"/"+utc(_e)+"&details="+encodeURIComponent("Tu sesión en Pathway. Mirá tu Google Calendar para acceder a Google Meet.");
+  // El detalle nombra la modalidad REAL y lleva su enlace. Antes decia siempre
+  // "Mirá tu Google Calendar para acceder a Google Meet" — falso para Sala, para
+  // Zoom y para Presencial, y ademas sin ningun enlace dentro.
+  var _v=PWModalidad.videoDeCita(r);
+  var _det=(_v.proveedor==="presencial")
+    ? ("Sesión presencial en Pathway."+(r&&r.lugar?("\n"+r.lugar):""))
+    : (_v.url ? ("Tu sesión en Pathway.\nEntra por este enlace:\n"+_v.url)
+              : "Tu sesión en Pathway. Te enviaremos el enlace de acceso.");
+  var _loc=(_v.proveedor==="presencial")?((r&&r.lugar)||""):(_v.url||"");
+  return "https://calendar.google.com/calendar/render?action=TEMPLATE&text="+encodeURIComponent(_title)+"&dates="+utc(_s)+"/"+utc(_e)+"&location="+encodeURIComponent(_loc)+"&details="+encodeURIComponent(_det);
 }
 function _notifResReprog(r, iso){
   if(!r||!r.email) return; var fn=(""+(r.nombre||"")).split(" ")[0]||""; var f=_fechaCli(iso, r.cliente_tz);
   var _ics=_resIcs(r, iso); var _gc=_gcalUrl(r, iso);
-  var _salaLink=_salaClientLink(r, iso);
+  // Reprogramar NO cambia de modalidad ni de enlace: se manda EXACTAMENTE el que
+  // la cita tiene persistido. Antes esta linea era `_salaClientLink(r, iso)`, que
+  // reconstruia una Sala aunque la cita fuese Meet o Zoom — el cliente acababa en
+  // una sala a la que la coach no iba a entrar. Y como el room sale del id de la
+  // cita (paso 1), mover la hora tampoco lo cambia.
+  var _v=PWModalidad.videoDeCita(r), _salaLink=_v.url;
   _notifResCliente(r.email, r.nombre, "Tu sesión cambió de horario",
     "<p>Hola "+esc(fn)+", <strong>moví tu sesión</strong>"+(f?(" al <strong>"+esc(f)+"</strong>"):"")+".</p>"+
     "<div style='background:#F0F5EF;border-radius:10px;padding:12px 14px;margin:12px 0'><div style='font-size:11px;text-transform:uppercase;letter-spacing:.5px;color:#7A8A80;font-weight:700'>Nuevo horario · tu hora</div><div style='font-size:16px;font-weight:700;color:#1B4332'>"+esc(f||"")+"</div></div>"+
-    "<div style='margin-top:12px'>"+((_salaLink)?("<a href=\""+esc(_salaLink)+"\" target='_blank' rel='noopener' style='display:inline-block;background:#2D6A4F;color:#fff;text-decoration:none;padding:11px 20px;border-radius:10px;font-weight:700'>Entrar a la videollamada</a>"):("<a href=\""+_gc+"\" style='display:inline-block;background:#2D6A4F;color:#fff;text-decoration:none;padding:11px 20px;border-radius:10px;font-weight:700'>Actualizar en Google Calendar</a>"))+"</div>", _ics.b64);
+    "<div style='margin-top:12px'>"+((_salaLink)?("<a href=\""+esc(_salaLink)+"\" target='_blank' rel='noopener' style='display:inline-block;background:#2D6A4F;color:#fff;text-decoration:none;padding:11px 20px;border-radius:10px;font-weight:700'>"+esc(_v.etiqueta)+"</a>"):("<a href=\""+_gc+"\" style='display:inline-block;background:#2D6A4F;color:#fff;text-decoration:none;padding:11px 20px;border-radius:10px;font-weight:700'>Actualizar en Google Calendar</a>"))+"</div>", _ics.b64);
 }
 // Confirmación al cliente con la hora CORRECTA (AM/PM, su zona) + link para entrar.
 // Se dispara al "Confirmar" la reserva — sirve para reenviarle la buena si hubo lío.
 function _confirmCliente(r){
   if(!r||!r.email) return; var fn=(""+(r.nombre||"")).split(" ")[0]||""; var f=_fechaCli(r.inicio, r.cliente_tz);
   var _ics=_resIcs(r, null); var _gc=_gcalUrl(r, null);
-  // JULIO 2026: Google Meet links come from Google Calendar sync, not sala.html
-  var _joinBtn=(r.meet_link)?("<a href=\""+esc(r.meet_link)+"\" target='_blank' rel='noopener' style='display:inline-block;background:#2D6A4F;color:#fff;text-decoration:none;padding:11px 20px;border-radius:10px;font-weight:700'>Entrar a Google Meet</a>"):("<p style='font-size:13px;color:#8A968E'><strong>Google Meet:</strong> el link aparecerá en tu Google Calendar.</p>");
+  // La ETIQUETA sale del proveedor y el ENLACE de la fila. Antes ponia "Entrar a
+  // Google Meet" para cualquier `meet_link`, asi que una cita de Sala o de Zoom
+  // le prometia al cliente un Meet que no existia.
+  var _joinBtn=_botonVideo(r);
   var inner="<p>Hola "+esc(fn)+", tu sesión está <strong>confirmada</strong>. "+PWI.svg('party',{sm:true})+"</p>"+
     "<div style='background:#F0F5EF;border-radius:10px;padding:12px 14px;margin:12px 0'><div style='font-size:11px;text-transform:uppercase;letter-spacing:.5px;color:#7A8A80;font-weight:700'>Cuándo · tu hora</div><div style='font-size:16px;font-weight:700;color:#1B4332'>"+esc(f||"")+"</div></div>"+
     _joinBtn+
@@ -5067,11 +5147,22 @@ function _agEventoAFila(e){
     fin: e.fin||null,
     estado: e.estado||"pendiente",
     grupal: e.grupal===true,
-    // `video.url` SIEMPRE trae algo, porque cae a la Sala. Aqui solo se copia
-    // cuando el enlace venia guardado en la fila (Meet o Zoom), que es lo que
-    // tenia `citas.meet_link` y lo que el boton "Entrar" espera. Con la Sala
-    // como respaldo se deja en null, para no cambiar cuando aparece ese boton.
-    meet_link: (v.url && v.proveedor!=="sala" && v.proveedor!=="presencial") ? v.url : null,
+    // El vídeo YA viene resuelto por el servidor (`agenda-list` →
+    // `_shared/agenda/video.ts`). Se copia tal cual: proveedor y enlace.
+    //
+    // Antes esta funcion TIRABA los dos: `video_proveedor` no se copiaba nunca y
+    // la URL de la Sala se convertia en null. Asi que la misma cita se pintaba
+    // distinta segun por que camino se hubiera cargado —`_calLoadDirecto` hace
+    // `select=*` y si los traia—, y el enlace de Sala no llegaba jamas.
+    video_proveedor: v.proveedor||null,
+    meet_link: v.url||null,
+    // `agenda-list` no devuelve `modalidad`: la codifica en el proveedor. Se
+    // deriva para que el resto del panel, que lee `r.modalidad`, siga andando.
+    modalidad: (v.proveedor==="presencial") ? "presencial" : "online",
+    // Ya viaja: `Video` lleva `lugar` desde el paso 7. Antes este camino
+    // pintaba las citas presenciales sin direccion mientras el directo si la
+    // tenia — la misma cita, distinta segun como se hubiera cargado.
+    lugar: v.lugar||"",
     email:"", telefono:"", origen:""   // los rellena el paso 2
   };
 }
@@ -11221,7 +11312,7 @@ document.addEventListener("click", function(ev){
     // Optimista en AMBAS listas (Resumen + Calendario) → ninguna vista queda vieja.
     _syncCitaLocal(_rid,{estado:_est}); _repaintCitas();
     _sbw("citas?id=eq."+encodeURIComponent(_rid)+"&coach_id=eq."+encodeURIComponent((RME&&RME.id)||""),"PATCH",{estado:_est})
-      .then(function(r){ if(r&&r.ok){ toast(_est==="confirmada"?"Confirmada ✓ — le mandamos el email al cliente":"Reserva cancelada — avisamos al cliente"); if(act==="res-cancel") _notifResCancel(_rr); else _confirmCliente(_rr); } else { _syncCitaLocal(_rid,{estado:_prevEst}); _repaintCitas(); toast("No se pudo actualizar la reserva."); } })
+      .then(function(r){ if(r&&r.ok){ toast(_est==="confirmada"?"Confirmada ✓ — le mandamos el email al cliente":"Reserva cancelada — avisamos al cliente"); if(act==="res-cancel"){ _gcalAvisar(_rid,"cancelar"); _notifResCancel(_rr); } else _confirmCliente(_rr); } else { _syncCitaLocal(_rid,{estado:_prevEst}); _repaintCitas(); toast("No se pudo actualizar la reserva."); } })
       .catch(function(){ _syncCitaLocal(_rid,{estado:_prevEst}); _repaintCitas(); toast("No se pudo actualizar la reserva."); });
     return;
   }
@@ -11238,7 +11329,7 @@ document.addEventListener("click", function(ev){
     // hora vieja y el "Unirse" no manda a la sala vieja.
     _syncCitaLocal(_rid,{inicio:_iso}); _repaintCitas();
     _sbw("citas?id=eq."+encodeURIComponent(_rid)+"&coach_id=eq."+encodeURIComponent((RME&&RME.id)||""),"PATCH",{inicio:_iso})
-      .then(function(r){ if(r&&r.ok){ toast("Hora actualizada ✓ — avisamos al cliente"); _notifResReprog(_rrh,_iso); } else { _syncCitaLocal(_rid,{inicio:_prevIso}); _repaintCitas(); toast("No se pudo cambiar la hora."); } })
+      .then(function(r){ if(r&&r.ok){ toast("Hora actualizada ✓ — avisamos al cliente"); _gcalAvisar(_rid,"mover"); _notifResReprog(_rrh,_iso); } else { _syncCitaLocal(_rid,{inicio:_prevIso}); _repaintCitas(); toast("No se pudo cambiar la hora."); } })
       .catch(function(){ _syncCitaLocal(_rid,{inicio:_prevIso}); _repaintCitas(); toast("No se pudo cambiar la hora."); });
     return;
   }
@@ -11396,9 +11487,7 @@ document.addEventListener("click", function(ev){
     // "como atiendo", no un ajuste aparte. `_vidProv()` normaliza —si eligio Meet
     // y no tiene Google conectado, no se guarda Meet— asi que en la fila nunca
     // queda un proveedor que no se pueda cumplir.
-    var _vp=(state.ag&&state.ag.videoProv)||_vidProv();
-    if(_vp==="meet" && !_vidGcalOk()) _vp="sala";
-    if(_vp==="zoom" && !_vidZoomUrl()) _vp="sala";
+    var _vp=_vidNormalizar(PWModalidad.modalidadElegida({proveedor:(state.ag&&state.ag.videoProv)||_vidProv()}));
     var _vl=(state.ag&&state.ag.videoLugar!=null)?(""+state.ag.videoLugar).trim():_vidLugar();
     state.ag=null;
     saveCfg({
@@ -11462,10 +11551,15 @@ document.addEventListener("click", function(ev){
     var _agKind=_ag2?"sesion":"personal";
     var _agBody={coach_id:(RME&&RME.id)||"", nombre:_shWith, email:_ag2||"", tipo:_atl, inicio:_iso, estado:"confirmada", origen:"panel", cliente_tz:_atz};
     // Columnas opcionales (pueden no existir aún → hay reintento sin ellas).
-    var _agExtra={kind:_agKind, modalidad:_amod, grupal:_agrupal}; if(_amod==="presencial"&&_alugar) _agExtra.lugar=_alugar;
+    // Misma regla que la reserva del cliente (ver pw-modalidad.js). El formulario
+    // puede forzar `presencial` para ESTA cita; `modalidad` se DERIVA del
+    // proveedor para que las dos columnas no puedan contradecirse.
+    var _aprov=(_amod==="presencial") ? "presencial" : (_vidProv()==="presencial" ? "sala" : _vidProv());
+    _amod=PWModalidad.modalidadDeCita(_aprov);
+    var _agExtra={kind:_agKind, modalidad:_amod, video_proveedor:_aprov, grupal:_agrupal}; if(_amod==="presencial"&&_alugar) _agExtra.lugar=_alugar;
     var _agDone=function(r,sent){ if(r&&r.ok) toast("Cita agendada ✓"+(sent?" — avisamos al invitado":"")+" — ya está en tu agenda"); else toast("No se pudo guardar la cita. Reintenta."); try{ _resLoad(); }catch(e){} try{ _calLoad(); }catch(e){} };
-    var _sendAgEmail=function(meetLink){if(_ag2&&/@/.test(_ag2)){try{var _f=_fechaCli(_iso,_atz),_tzTag=_atz?(" <span style='color:#8A968E;font-weight:400'>(hora de "+esc(_tzNice(_atz))+")</span>"):"",_coachNm=(COACH&&COACH.name)||(RME&&RME.nombre)||"Pathway",_inner,_ics;if(_amod==="presencial"){_ics=_icsBuild("Sesión · Pathway",_ast.getTime(),_aen.getTime(),(_alugar||"Presencial"));_inner="<p>¡Hola! Te confirmo nuestra sesión"+(_f?(" para el <strong>"+esc(_f)+"</strong>"+_tzTag):"")+".</p>"+"<div style='background:#F0F5EF;border-radius:10px;padding:12px 14px;margin:14px 0;font-size:14px'>📍 <strong>Presencial</strong>"+(_alugar?(" · "+esc(_alugar)):"")+"</div>"+"<p style='font-size:12.5px;color:#8A968E'>Puedes guardarla en tu calendario con el archivo adjunto. ¡Nos vemos!</p>";}else{var _mockCita={coach_id:(RME&&RME.id)||"",inicio:_iso,tipo:_atl,grupal:_agrupal},_salaUrl=(meetLink||"")||_salaClientLink(_mockCita,_iso);_ics=_icsBuild("Sesión · Pathway",_ast.getTime(),_aen.getTime(),_salaUrl);_inner="<p>¡Hola! Te confirmo nuestra sesión"+(_f?(" para el <strong>"+esc(_f)+"</strong>"+_tzTag):"")+(_agrupal?" (grupal)":"")+".</p>"+"<div style='margin:16px 0'><a href=\""+esc(_salaUrl)+"\" target='_blank' rel='noopener' style='display:inline-block;background:#2D6A4F;color:#fff;text-decoration:none;padding:11px 20px;border-radius:10px;font-weight:700'>Entrar a la videollamada</a></div>"+"<p style='font-size:12.5px;color:#8A968E'>Puedes guardarla en tu calendario con el archivo adjunto. ¡Nos vemos!</p>";}_notifResCliente(_ag2,_shWith,"Tu sesión con "+_coachNm+" está agendada",_inner,_ics&&_ics.b64);return true;}catch(e){return false;}}return false;};
-    var _sendAgEmailDelayed=function(citaId){if(citaId){var _pollStart=Date.now(),_pollLink=function(){fetch(SB+'/rest/v1/citas?id=eq.'+encodeURIComponent(citaId)+'&select=meet_link',{headers:{apikey:KEY}}).then(function(r){return r.ok?r.json():null;}).catch(function(){return null;}).then(function(rows){var meetLink=(Array.isArray(rows) && rows[0] && rows[0].meet_link)?rows[0].meet_link:'';if(meetLink){_sendAgEmail(meetLink);}else if(Date.now()-_pollStart<4000){setTimeout(_pollLink,200);}else{_sendAgEmail('');}});};_pollLink();}else{_sendAgEmail('');}};
+    var _sendAgEmail=function(meetLink, citaId){if(_ag2&&/@/.test(_ag2)){try{var _f=_fechaCli(_iso,_atz),_tzTag=_atz?(" <span style='color:#8A968E;font-weight:400'>(hora de "+esc(_tzNice(_atz))+")</span>"):"",_coachNm=(COACH&&COACH.name)||(RME&&RME.nombre)||"Pathway",_inner,_ics;if(_amod==="presencial"){_ics=_icsBuild("Sesión · Pathway",_ast.getTime(),_aen.getTime(),(_alugar||"Presencial"));_inner="<p>¡Hola! Te confirmo nuestra sesión"+(_f?(" para el <strong>"+esc(_f)+"</strong>"+_tzTag):"")+".</p>"+"<div style='background:#F0F5EF;border-radius:10px;padding:12px 14px;margin:14px 0;font-size:14px'>📍 <strong>Presencial</strong>"+(_alugar?(" · "+esc(_alugar)):"")+"</div>"+"<p style='font-size:12.5px;color:#8A968E'>Puedes guardarla en tu calendario con el archivo adjunto. ¡Nos vemos!</p>";}else{var _mockCita={id:citaId,coach_id:(RME&&RME.id)||"",inicio:_iso,tipo:_atl,grupal:_agrupal},_salaUrl=(meetLink||"")||_salaClientLink(_mockCita,_iso);_ics=_icsBuild("Sesión · Pathway",_ast.getTime(),_aen.getTime(),_salaUrl);_inner="<p>¡Hola! Te confirmo nuestra sesión"+(_f?(" para el <strong>"+esc(_f)+"</strong>"+_tzTag):"")+(_agrupal?" (grupal)":"")+".</p>"+"<div style='margin:16px 0'><a href=\""+esc(_salaUrl)+"\" target='_blank' rel='noopener' style='display:inline-block;background:#2D6A4F;color:#fff;text-decoration:none;padding:11px 20px;border-radius:10px;font-weight:700'>Entrar a la videollamada</a></div>"+"<p style='font-size:12.5px;color:#8A968E'>Puedes guardarla en tu calendario con el archivo adjunto. ¡Nos vemos!</p>";}_notifResCliente(_ag2,_shWith,"Tu sesión con "+_coachNm+" está agendada",_inner,_ics&&_ics.b64);return true;}catch(e){return false;}}return false;};
+    var _sendAgEmailDelayed=function(citaId){if(citaId){var _pollStart=Date.now(),_pollLink=function(){fetch(SB+'/rest/v1/citas?id=eq.'+encodeURIComponent(citaId)+'&select=meet_link',{headers:{apikey:KEY}}).then(function(r){return r.ok?r.json():null;}).catch(function(){return null;}).then(function(rows){var meetLink=(Array.isArray(rows) && rows[0] && rows[0].meet_link)?rows[0].meet_link:'';if(meetLink){_sendAgEmail(meetLink,citaId);}else if(Date.now()-_pollStart<4000){setTimeout(_pollLink,200);}else{_sendAgEmail('',citaId);}});};_pollLink();}else{_sendAgEmail('');}};
     _sbw("citas","POST",Object.assign({},_agBody,_agExtra))
       .then(function(r){
         if(r&&r.ok){
@@ -11473,7 +11567,11 @@ document.addEventListener("click", function(ev){
           try{ r.json().then(function(rows){ if(Array.isArray(rows) && rows[0] && rows[0].id){ fetch(SB+'/functions/v1/sync-cita-to-gcal',{method:'POST',headers:{'content-type':'application/json',apikey:KEY,Authorization:'Bearer '+KEY},body:JSON.stringify({cita_id:rows[0].id})}).catch(function(){}); _sendAgEmailDelayed(rows[0].id); } }).catch(function(){}); }catch(e){}
           return;
         }
-        return _sbw("citas","POST",_agBody).then(function(r2){
+        // El reintento conserva modalidad y proveedor: son columnas que existen
+        // desde hace meses, y perderlas hacia nacer una cita con
+        // `video_proveedor` NULL — la rama que los recordatorios reservan para
+        // las citas antiguas. Lo que se suelta es lo realmente opcional.
+        return _sbw("citas","POST",Object.assign({},_agBody,{modalidad:_amod,video_proveedor:_aprov})).then(function(r2){
           _agDone(r2,false);
           if(r2&&r2.ok){ try{ r2.json().then(function(rows){ if(Array.isArray(rows) && rows[0] && rows[0].id){ fetch(SB+'/functions/v1/sync-cita-to-gcal',{method:'POST',headers:{'content-type':'application/json',apikey:KEY,Authorization:'Bearer '+KEY},body:JSON.stringify({cita_id:rows[0].id})}).catch(function(){}); _sendAgEmailDelayed(rows[0].id); } }).catch(function(){}); }catch(e){} }
           return r2;
@@ -14270,8 +14368,11 @@ document.addEventListener("click", function(ev){
   if(act==="integ:zoom-save"){
     var inp = document.getElementById("integ-zoom-input");
     var url = inp ? inp.value.trim() : "";
-    if(!url){ alert("Pega un enlace de Zoom válido."); return; }
-    if(url.indexOf("zoom.us")<0 && url.indexOf("http")<0){ alert("Eso no parece ser un enlace de Zoom."); return; }
+    // Antes la comprobacion era `indexOf("zoom.us")<0 && indexOf("http")<0`: un
+    // `&&`, asi que bastaba con UNA de las dos y entraba casi cualquier cosa.
+    // Por ahi entro un enlace de CHAT que se envio a clientes como videollamada.
+    var _zm=PWModalidad.zoomMotivo(url);
+    if(_zm){ alert(_zm); return; }
     var cfg = RCFG||{};
     cfg.zoom_url = url;
     _sbw("usuarios", ME.id, {configuracion:cfg}, function(){

@@ -66,6 +66,11 @@ export interface Video {
   proveedor: ProveedorVideo | null;
   url: string | null;
   estado: EstadoVideo;
+  /** Dónde es, solo en `presencial`. Vacío en el resto: una videollamada no
+   *  tiene sitio. Sin este campo, `citas.lugar` se leía, se pasaba a
+   *  `resolverVideo` y se tiraba ahí — así que una cita presencial llegaba a la
+   *  Agenda y a MultiCoach sin dirección, y la pantalla no tenía qué pintar. */
+  lugar: string;
 }
 
 /** Un evento tal como lo devuelve `agenda-list`. */

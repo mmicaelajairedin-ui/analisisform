@@ -1,18 +1,46 @@
 // ===================================================================
-// sync-cita-to-gcal — Sincroniza una cita a Google Calendar y guarda el Meet link
+// sync-cita-to-gcal — lleva una cita al Google Calendar del coach.
 //
-// Después de que se crea una cita en Supabase, esta función:
-// 1. Obtiene los detalles de la cita (nombre, inicio, fin, modalidad, lugar)
-// 2. Llama a gcal-push para crear el evento en Google Calendar
-// 3. Extrae el hangoutLink (Google Meet)
-// 4. Guarda el link en citas.meet_link
+// RESPETA `citas.video_proveedor`. No lo decide, no lo cambia salvo en la caída
+// contractual de Meet, y NUNCA pisa un enlace que el cliente ya recibió.
+//
+// Antes hacía esto, y era INC-2: pedía un Google Meet en TODA cita y después
+// escribía ese `hangoutLink` en `citas.meet_link` sin mirar nada. Una cita de
+// Sala o de Zoom perdía su enlace, sustituido por un Meet que nadie eligió y
+// que el cliente no tenía en su correo.
+//
+// Lo que hace ahora, por modalidad:
+//   meet        pide conferencia. Con `hangoutLink` → lo guarda. Sin él, NO
+//               finge: cae a Sala y persiste el proveedor FINAL, para que no
+//               pueda quedar `video_proveedor='meet'` sin enlace de Meet.
+//   sala        no pide conferencia. Si la fila aún no tiene enlace, escribe el
+//               canónico; si ya lo tiene, no lo toca.
+//   zoom        no pide conferencia. Conserva el enlace tal cual.
+//   presencial  no pide conferencia, no hay enlace, y el `lugar` va como
+//               `location` del evento.
+//
+// Y en los cuatro casos persiste `google_event_id`, que hasta ahora no escribía
+// NADIE: sin él no se puede actualizar ni cancelar el evento en Google, así que
+// cancelar una cita dejaba el evento vivo en el calendario del coach.
+//
+// CICLO DE VIDA. Una cita tiene UN evento de Google, y `citas.google_event_id`
+// es la referencia estable:
+//   crear     sin id → crea y guarda el id. CON id → actualiza ese mismo evento
+//             (idempotente: re-sincronizar no duplica).
+//   mover     EXIGE id. Sin el no hace nada y lo dice — nunca crea un segundo
+//             evento durante una reprogramacion. Las citas historicas no tienen
+//             id pero SI pueden tener evento en Google (se creaban sin guardarlo),
+//             asi que crear ahi seria fabricar un duplicado invisible.
+//   cancelar  EXIGE id. Borra ese evento y limpia la columna. Sin id, no hace nada.
 //
 // POST body:
-//   { cita_id (BIGINT) }
-//   → { ok:true, hangoutLink } | { ok:false, reason }
+//   { cita_id (BIGINT), op?: "crear"|"mover"|"cancelar" }   (por defecto "crear")
+//   → { ok:true, proveedor, url, event_id } | { ok:false, reason }
 //
 // Env: SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY
 // Deploy: supabase functions deploy sync-cita-to-gcal --no-verify-jwt
+
+import { urlSala } from "../_shared/agenda/video.ts";
 
 const SB_URL = Deno.env.get("SUPABASE_URL") || "";
 const SERVICE = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || "";
@@ -28,6 +56,83 @@ function json(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), { status, headers: { ...CORS, "Content-Type": "application/json" } });
 }
 
+/**
+ * Deja la fila coherente con lo que REALMENTE pasó, y es el UNICO sitio de esta
+ * funcion que escribe en `citas`.
+ *
+ * Las dos invariantes que hacen imposible el estado que veniamos arrastrando:
+ *
+ *  1. `meet_link` solo se escribe cuando hay algo mejor que lo que ya hay. Un
+ *     enlace ya guardado es el que el cliente recibio por correo: sustituirlo lo
+ *     manda a un sitio distinto del que tiene delante. Zoom no se toca NUNCA.
+ *
+ *  2. `video_proveedor` y `meet_link` se escriben JUNTOS. Si Meet no devuelve
+ *     conferencia, no se finge: baja a Sala y las dos columnas viajan en el
+ *     mismo PATCH, asi que la fila no puede quedar en `meet` sin enlace de Meet
+ *     ni en `meet` con enlace de Sala.
+ */
+async function cerrarModalidad(
+  citaId: number,
+  proveedor: string,
+  quiereMeet: boolean,
+  hangoutLink: string,
+  meetLinkActual: string | null,
+  salaUrl: string,
+  eventId: string,
+): Promise<{ proveedor: string; url: string }> {
+  const patch: Record<string, unknown> = {};
+  let final = proveedor;
+  let url = String(meetLinkActual || "");
+
+  if (proveedor === "presencial") {
+    // Sin videollamada, y punto. No se limpia `meet_link` por si acaso: si algo
+    // le puso un valor, borrarlo aqui seria otra escritura a ciegas.
+    url = "";
+  } else if (quiereMeet) {
+    if (hangoutLink) {
+      final = "meet";
+      url = hangoutLink;
+      patch.video_proveedor = "meet";
+      patch.meet_link = hangoutLink;
+    } else {
+      // Google no dio conferencia. NO se finge que se creo un Meet.
+      // Caida contractual a Sala, con el proveedor FINAL persistido.
+      final = "sala";
+      url = salaUrl;
+      patch.video_proveedor = "sala";
+      patch.meet_link = salaUrl;
+    }
+  } else if (proveedor === "sala") {
+    // Se genera solo si falta. Las citas de `reservar.html` ya lo traen; las que
+    // crea el panel o `crear-cita-red`, no.
+    if (!url) { url = salaUrl; patch.meet_link = salaUrl; }
+  }
+  // `zoom`: no entra en ninguna rama que escriba. Su enlace es del coach.
+
+  // `google_event_id` no lo escribia NADIE (0 de 66 filas). Sin el no se puede
+  // actualizar ni cancelar el evento en Google: cancelar una cita dejaba el
+  // evento vivo en el calendario del coach. Solo se escribe si Google dio uno.
+  if (eventId) patch.google_event_id = eventId;
+
+  if (Object.keys(patch).length) await patchCita(citaId, patch);
+
+  return { proveedor: final, url };
+}
+
+/** El unico escritor de `citas` de esta funcion. Best-effort y ruidoso al fallar. */
+async function patchCita(citaId: number, patch: Record<string, unknown>): Promise<void> {
+  try {
+    const r = await fetch(`${SB_URL}/rest/v1/citas?id=eq.${citaId}`, {
+      method: "PATCH",
+      headers: { ...svc, "Content-Type": "application/json", Prefer: "return=minimal" },
+      body: JSON.stringify(patch),
+    });
+    if (!r.ok) console.error(`sync-cita-to-gcal: PATCH cita ${citaId} fallo`, r.status);
+  } catch (e) {
+    console.error(`sync-cita-to-gcal: PATCH cita ${citaId} lanzo`, e);
+  }
+}
+
 Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: CORS });
   if (req.method !== "POST") return json({ error: "post_only" }, 405);
@@ -38,6 +143,8 @@ Deno.serve(async (req: Request) => {
 
   const citaId = Number(body.cita_id || 0);
   if (!citaId) return json({ error: "no_cita_id" }, 400);
+  const op = String(body.op || "crear").toLowerCase();
+  if (op !== "crear" && op !== "mover" && op !== "cancelar") return json({ error: "op_invalida" }, 400);
 
   try {
     // 1) Obtener detalles de la cita
@@ -48,6 +155,54 @@ Deno.serve(async (req: Request) => {
     const cita = citas[0];
     const { coach_id, nombre, inicio, modalidad, lugar } = cita;
     if (!coach_id || !inicio) return json({ error: "cita_incomplete" }, 400);
+
+    // La decision de modalidad ya esta tomada (paso 2). Aqui SOLO se obedece.
+    // Sin proveedor declarado —citas anteriores al selector— se trata como Sala,
+    // que es el valor seguro del contrato; lo que NO se hace es pedir un Meet
+    // "por si acaso", que es como se pisaban los enlaces.
+    const proveedor: string = String(cita.video_proveedor || "sala").toLowerCase();
+    const esPresencial = modalidad === "presencial" || proveedor === "presencial";
+    const quiereMeet = proveedor === "meet";
+    const salaUrl = urlSala(citaId, String(coach_id), cita.grupal === true);
+
+    // La referencia estable al evento de Google. Vacia = esta cita no tiene
+    // ninguno REGISTRADO (puede tener uno huerfano si es anterior al paso 3).
+    const eventoId = String(cita.google_event_id || "").trim();
+
+    // ── cancelar ─────────────────────────────────────────────────────────
+    if (op === "cancelar") {
+      if (!eventoId) return json({ ok: true, reason: "sin_evento" });
+      const cr2 = await fetch(`${SB_URL}/functions/v1/gcal-push`, {
+        method: "POST",
+        headers: { ...svc, "Content-Type": "application/json" },
+        body: JSON.stringify({ coach_id, op: "cancel", event_id: eventoId }),
+      });
+      const cd = await cr2.json().catch(() => ({}));
+      // `gcal-push` da ok tambien con 410 (ya no existe): el objetivo era que no
+      // quedara evento, y no queda. En los dos casos se limpia la columna, para
+      // que un id muerto no se use luego para actualizar nada.
+      if (cd && cd.ok) {
+        await patchCita(citaId, { google_event_id: null });
+        return json({ ok: true, cancelado: true });
+      }
+      return json({ ok: false, reason: (cd && cd.reason) || "cancel_failed" });
+    }
+
+    // ── mover: exige evento conocido ─────────────────────────────────────
+    if (op === "mover" && !eventoId) {
+      return json({ ok: true, reason: "sin_evento", proveedor, url: String(cita.meet_link || "") });
+    }
+
+    // Meet ya resuelto: NO se vuelve a pedir conferencia al actualizar. Cada
+    // `createRequest` lleva un requestId nuevo, asi que pedirla otra vez mintaria
+    // OTRO Meet y el enlace que el cliente tiene en su correo dejaria de valer.
+    const yaTieneMeet = /meet\.google\.com/i.test(String(cita.meet_link || ""));
+    const pedirConferencia = quiereMeet && !(eventoId && yaTieneMeet);
+
+    // `location` del evento de Google: lo que sirva para llegar a la sesion.
+    const location = esPresencial
+      ? String(lugar || "")
+      : (quiereMeet ? "" : String(cita.meet_link || (proveedor === "sala" ? salaUrl : "")));
 
     // 2) Calcular hora fin (asumimos 1h de duración)
     const startMs = new Date(inicio).getTime();
@@ -60,13 +215,17 @@ Deno.serve(async (req: Request) => {
       headers: { ...svc, "Content-Type": "application/json" },
       body: JSON.stringify({
         coach_id,
-        op: "create",
+        // Con evento conocido se ACTUALIZA ese; sin el, se crea uno.
+        op: eventoId ? "update" : "create",
+        event_id: eventoId,
         event: {
           summary: nombre || "Sesión · Pathway",
-          description: "", // JULIO 2026: Empty description; Google Meet is auto-generated in conferenceData
-          location: modalidad === "presencial" ? (lugar || "") : "",
+          description: "",
+          location,
           startISO: inicio,
           endISO,
+          // Opt-in. Solo Meet pide conferencia; Sala, Zoom y Presencial NO.
+          conferencia: pedirConferencia,
         },
       }),
     });
@@ -75,28 +234,38 @@ Deno.serve(async (req: Request) => {
       const err = await pushResp.json().catch(() => ({}));
       // Si gcal-push falla por falta de conexión Google, no es error fatal
       if ((err && err.reason === "coach_no_gcal_write") || !coach_id) {
-        return json({ ok: true, hangoutLink: "", reason: "no_gcal" });
+        // Sin Google no hay evento, pero la cita sigue siendo valida: se cierra
+        // igual la modalidad para que no quede a medias.
+        const cierre = await cerrarModalidad(citaId, proveedor, quiereMeet, "", cita.meet_link, salaUrl, "");
+        return json({ ok: true, reason: "no_gcal", ...cierre });
       }
       return json({ error: "gcal_push_failed", detail: err }, 502);
     }
 
     const pushData = await pushResp.json();
-    const hangoutLink = pushData.hangoutLink || "";
 
-    // 4) Si hay hangoutLink, guardar en citas.meet_link
-    if (hangoutLink) {
-      const ur = await fetch(`${SB_URL}/rest/v1/citas?id=eq.${citaId}`, {
-        method: "PATCH",
-        headers: { ...svc, "Content-Type": "application/json", Prefer: "return=minimal" },
-        body: JSON.stringify({ meet_link: hangoutLink }),
-      });
-      if (!ur.ok) {
-        console.error(`Failed to save meet_link for cita ${citaId}`, ur.status);
-        // No es error fatal — el link se generó pero no se guardó en BD
-      }
+    // El evento que teniamos apuntado ya no esta en Google (borrado a mano desde
+    // el calendario, por ejemplo). NO se crea otro a ciegas: se limpia el id
+    // muerto y se dice. Quien llame decide si reintenta como creacion.
+    if (pushData && pushData.ok === false && eventoId &&
+        (pushData.status === 404 || pushData.status === 410)) {
+      await patchCita(citaId, { google_event_id: null });
+      return json({ ok: false, reason: "evento_inexistente", event_id: "" });
+    }
+    if (pushData && pushData.ok === false) {
+      return json({ ok: false, reason: String(pushData.reason || "push_failed") });
     }
 
-    return json({ ok: true, hangoutLink, event_id: pushData.event_id || "" });
+    // Si no se pidio conferencia porque el Meet YA existe, el enlace bueno es el
+    // guardado: pasarlo evita que `cerrarModalidad` lo lea como "Google no dio
+    // conferencia" y degrade la cita a Sala en plena reprogramacion.
+    const hangoutLink = String(pushData.hangoutLink || "") ||
+      (quiereMeet && yaTieneMeet ? String(cita.meet_link || "") : "");
+    // El id no cambia al actualizar: Google devuelve el mismo.
+    const eventId = String(pushData.event_id || "") || eventoId;
+
+    const cierre = await cerrarModalidad(citaId, proveedor, quiereMeet, hangoutLink, cita.meet_link, salaUrl, eventId);
+    return json({ ok: true, event_id: eventId, ...cierre });
   } catch (e) {
     console.error("sync-cita-to-gcal error:", e);
     return json({ error: "internal_error", detail: String(e) }, 500);
