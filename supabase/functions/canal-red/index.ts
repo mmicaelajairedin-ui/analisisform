@@ -11,6 +11,8 @@
 //   { action:'groups',       org_id }                       → { ok, canales:[{id,nombre,general,miembros,ultimo_at}] }
 //   { action:'group_create', org_id, nombre, miembros? }    → { ok, canal:{id,nombre,miembros} }
 //   { action:'group_update', org_id, canal_id, nombre?, miembros? } → { ok }
+//   { action:'group_delete', org_id, canal_id }             → { ok }
+//        · un canal is_system NO se elimina: 403 { error:'canal_de_sistema' }
 //
 // Header: Authorization: Bearer <JWT del dueño o de un coach de la red>
 // Deploy: supabase functions deploy canal-red --no-verify-jwt
@@ -146,13 +148,20 @@ Deno.serve(async (req: Request) => {
     } catch { return json({ error: "write_failed" }, 502); }
   }
 
-  // ── Eliminar un grupo (dueño o quien lo creó) ──
+  // ── Eliminar un grupo (dueño o quien lo creó; nunca uno de sistema) ──
   if (action === "group_delete") {
     if (!canalId) return json({ error: "missing_canal" }, 400);
-    const rows = await q(`red_canales?id=eq.${encodeURIComponent(canalId)}&select=id,org_id,creado_por&limit=1`);
+    const rows = await q(`red_canales?id=eq.${encodeURIComponent(canalId)}&select=id,org_id,creado_por,is_system&limit=1`);
     const row = rows[0];
     if (!row || String(row.org_id) !== String(orgId)) return json({ error: "no_existe" }, 404);
     if (!(caller.rol === "owner" || String(row.creado_por) === String(caller.id))) return json({ error: "sin_permiso" }, 403);
+    // Los canales de SISTEMA (General, Owners, Coaches, RRHH) no se eliminan.
+    // Lo prometía red_canales_system.sql desde el principio y no lo comprobaba
+    // nadie: hasta ahora esto devolvía 200 y borraba la fila, y con ella todos
+    // sus mensajes (la FK de mensajes_red_canal.canal_id es ON DELETE CASCADE).
+    // Va DESPUÉS del permiso a propósito: a quien no puede tocar el canal no se
+    // le cuenta de qué tipo es. El General no llega aquí — viaja sin canal_id.
+    if (row.is_system === true) return json({ error: "canal_de_sistema" }, 403);
     try {
       const r = await fetch(`${SB_URL}/rest/v1/red_canales?id=eq.${encodeURIComponent(canalId)}`, {
         method: "DELETE", headers: svc,
