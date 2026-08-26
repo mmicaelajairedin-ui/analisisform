@@ -1889,16 +1889,30 @@ function get(t,q){return _hdr().then(function(h){return fetch(SB+'/rest/v1/'+t+'
 function pt(t,q,d){return _hdr({'Content-Type':'application/json','Prefer':'return=representation'}).then(function(h){return fetch(SB+'/rest/v1/'+t+'?'+q,{method:'PATCH',headers:h,body:JSON.stringify(d)});}).then(function(r){if(r.status===401||r.status===403){if(typeof _authExpired==='function')_authExpired();return {ok:false,status:r.status,rows:0};}if(!r.ok)return {ok:false,status:r.status,rows:0};return r.json().then(function(a){var n=(a&&a.length)||0;return {ok:n>=1,status:r.status,rows:n,json:function(){return Promise.resolve(a);}};},function(){return {ok:true,status:r.status,rows:1};});});}
 function docSvg(color,ok){return '<svg width="48" height="60" viewBox="0 0 48 60" fill="none"><rect x="1" y="1" width="46" height="58" rx="6" fill="'+color+'18" stroke="'+color+'" stroke-width="1.5"/><path d="M10 18h28M10 26h28M10 34h18" stroke="'+color+'" stroke-width="2.5" stroke-linecap="round"/>'+(ok?'<circle cx="36" cy="48" r="9" fill="'+color+'"/><path d="M32 48l3 3 5-5" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>':'<circle cx="36" cy="48" r="9" fill="'+color+'60"/><path d="M36 44.5v4.5M36 50.5v1" stroke="#fff" stroke-width="2" stroke-linecap="round"/>')+'</svg>';}
 
+// Quien puede estar en la superficie del CLIENTE: lista BLANCA.
+// Antes esto era una lista NEGRA (solo coach/admin se iban al panel), asi que un
+// owner, un colaborador o un empleado que caia en /cliente.html por marcador,
+// back del navegador o link compartido se quedaba DENTRO del portal del cliente.
+// Los portales hermanos (pathway-fit-cliente / pathway-fin-cliente) ya usan
+// lista blanca (rol==='cliente'); este queda igual.
+var PW_CLIENT_ROLES=['cliente','candidato'];
+var PW_ROLE_HOME={coach:'/panel-v2.html',admin:'/panel-v2.html',owner:'/app.html',colaborador:'/app.html',empleado:'/empleado.html'};
+function _pwRoleHome(rol){
+  return Object.prototype.hasOwnProperty.call(PW_ROLE_HOME,rol) ? PW_ROLE_HOME[rol] : '/login.html';
+}
 (function(){
   try{
     var u=localStorage.getItem('mj_user');
     if(!u){window.location.href=BASE+'/login.html';return;}
     var pu=JSON.parse(u);
+    var rol=(pu&&pu.rol)?String(pu.rol):'';
     // Si trae ?coach_view=<email> y la sesion es de coach/admin, NO redirigir
     // al panel — estamos en modo preview del portal del cliente.
     var qsView=new URLSearchParams(window.location.search).get('coach_view');
-    if(qsView && (pu.rol==='coach'||pu.rol==='admin'))return;
-    if(pu.rol==='coach'||pu.rol==='admin'){window.location.href=BASE+'/panel-v2.html';return;}
+    if(qsView && (rol==='coach'||rol==='admin'))return;
+    // Sesion vieja sin rol guardado: se trata como cliente (lo historico).
+    if(!rol || PW_CLIENT_ROLES.indexOf(rol)!==-1) return;
+    window.location.href=BASE+_pwRoleHome(rol);
   }catch(e){window.location.href=BASE+'/login.html';}
 })();
 
@@ -2352,7 +2366,23 @@ function init(){
     }
     if(!window.PW_IN_APP){ try{ pwSubGate(C); }catch(e){} }
     SEM=parseInt(C.semana_activa)||1;
-    try{ var _et=C.etapas&&JSON.parse(C.etapas); if(_et&&_et.length===4){ SEMS[0].lbl=_et[0]; SEMS[1].lbl=_et[1]; SEMS[2].lbl=_et[2]; SEMS[3].lbl=_et[3]; } }catch(e){}
+    // Nombres de las etapas que puso el coach (candidatos.etapas). El panel las
+    // guarda con CUALQUIER cantidad — "+ Agregar paso" arma las fases desde cero
+    // (cli-savefases) — y le avisa al coach "Fases guardadas ✓ — el cliente las
+    // ve". Pero aca se exigia length===4 EXACTO: si el coach dejaba 1, 2, 3 o 5
+    // fases, el portal las tiraba TODAS y mostraba los nombres por defecto de
+    // carrera (Evaluacion/CV/LinkedIn/...), incluso en nichos que no son carrera.
+    // Ahora se aplica cada nombre que venga, hasta las ranuras que hay, y el
+    // resto queda en el default.
+    try{
+      var _et=C.etapas&&JSON.parse(C.etapas);
+      if(Object.prototype.toString.call(_et)==='[object Array]'){
+        for(var _ei=0;_ei<Math.min(_et.length,SEMS.length);_ei++){
+          var _en=(typeof _et[_ei]==='string')?_et[_ei].trim():'';
+          if(_en) SEMS[_ei].lbl=_en;
+        }
+      }
+    }catch(e){}
     try{ACTS=C.acciones_progreso?JSON.parse(C.acciones_progreso):[];}catch(e){ACTS=[];}
     // Visibilidad por cliente: el coach controla qué secciones se ven desde
     // su panel (Gestión → "Qué ve el cliente"). Default = todo visible.
@@ -3417,48 +3447,11 @@ function _enhanceCliCards(){
   }catch(e){}
 }
 
-// CORE MODULE INTEGRATION EXAMPLE: Client program card using Core modules
-// Nota: Esta función demuestra cómo el Core funciona en cliente.html (contexto individual)
-// Mismo código que en panel-v2 y multicoach, pero con contexto y permisos del cliente
-function _cliRenderProgramCard(){
-  if(typeof PWCoreProgram !== 'undefined' && CLIENTE){
-    // Step 1: Build client context (mismo patrón que panel-v2, solo contexto diferente)
-    var html = PWCoreProgram.renderWorkCenter(CLIENTE, {
-      heroStyle: false,
-      showCommunity: true,
-      nicho: CLIENTE.raw?.nicho || 'carrera'
-    });
-    return html;
-  }
-  return "";
-}
-
-// CORE MODULE INTEGRATION EXAMPLE: Client's upcoming sessions using Core timeline
-function _cliRenderSessionTimeline(){
-  if(typeof PWCoreTimeline !== 'undefined' && CLIENTE?.sesiones){
-    var upcoming = PWCoreTimeline.getUpcomingSessions(CLIENTE.sesiones);
-    var html = PWCoreTimeline.renderTimeline(upcoming, {
-      limit: 5,
-      compact: true,
-      showStatus: true
-    });
-    return html;
-  }
-  return "";
-}
-
-// CORE MODULE INTEGRATION EXAMPLE: Onboarding resources using Core modules
-function _cliRenderOnboardingResources(){
-  if(typeof PWCoreResources !== 'undefined' && RESOURCES){
-    var onboarding = PWCoreResources.getOnboardingResources(RESOURCES);
-    var html = PWCoreResources.renderResourceSection('Comienza aquí', onboarding, {
-      size: 'normal',
-      showMeta: true
-    });
-    return html;
-  }
-  return "";
-}
+// NOTA (auditoria ClientPrograms, ago 2026): aca habia tres funciones de
+// ejemplo del Core (_cliRenderProgramCard, _cliRenderSessionTimeline,
+// _cliRenderOnboardingResources) que NADIE llamaba y que referenciaban globales
+// inexistentes en este portal (`CLIENTE`, `RESOURCES`). Si alguna se hubiese
+// cableado, habria tirado ReferenceError. Se quitaron.
 
 function render(sec){
   var el=document.getElementById('mc');
@@ -4258,35 +4251,24 @@ function rSemana(){
   var o=_prepCardCarrera()+'<div id="clasesred-slot"></div><div id="novered-slot"></div>'+rRoadmap();
   o+='<div id="semana-view-panel"></div>';
 
-  // Core Activation: Client Program Card + Timeline
-  if(typeof PWCoreProgram !== 'undefined' && C && C.raw){
-    try{
-      var clientProgram = PWCoreProgram.renderWorkCenter(C, {
-        heroStyle: false,
-        showCommunity: true,
-        nicho: C.raw.nicho || 'carrera',
-        resources: (typeof PWCoreResources !== 'undefined' && RECURSOS) ?
-          PWCoreResources.getOnboardingResources(RECURSOS) : []
-      });
-      if(clientProgram) o += clientProgram;
-    }catch(e){}
-  }
-
-  // Core Timeline: Upcoming Sessions
-  if(typeof PWCoreTimeline !== 'undefined' && C && C.sesiones){
-    try{
-      var upcoming = PWCoreTimeline.getUpcomingSessions(C.sesiones);
-      if(upcoming.length > 0){
-        var timelineHtml = PWCoreTimeline.renderTimeline(upcoming, {
-          limit: 3, compact: true, showStatus: true
-        });
-        if(timelineHtml){
-          o += '<div class="card" style="margin-bottom:14px;"><div class="card-hd"><div><div class="card-title">'+PWI.svg('calendar',{sm:true})+' Próximas sesiones</div></div></div>'+
-            '<div class="card-body">'+timelineHtml+'</div></div>';
-        }
-      }
-    }catch(e){}
-  }
+  // NOTA (auditoria ClientPrograms, ago 2026): aca vivian dos bloques del Core
+  // (PWCoreProgram.renderWorkCenter y PWCoreTimeline) que NUNCA se renderizaron
+  // para ningun cliente y se quitaron. Por que no podian funcionar:
+  //   1. la guarda era `C.raw` y `C.sesiones`, pero en este portal `C` ES la fila
+  //      de `candidatos` — no existen ni la columna `raw` ni `sesiones` (el campo
+  //      real es `sesiones_registro`, un TEXT con JSON);
+  //   2. aun pasando la guarda, `RECURSOS` es un identificador no declarado →
+  //      ReferenceError que el `try{}catch(e){}` se tragaba en silencio;
+  //   3. `renderWorkCenter` espera `client.ses` y `client.raw.etapas` como
+  //      objetos con `.nombre`; en produccion `candidatos.etapas` es un JSON de
+  //      strings sueltos, asi que el roadmap habria salido todo como "Etapa".
+  // Ademas cada sub-bloque duplicaba algo que el cliente YA tiene y mejor:
+  // proxima sesion → _proxSesion() (cruza sesiones_registro + citas), roadmap →
+  // rRoadmap() "Tu proceso", recursos → la seccion Recursos; y `showCommunity`
+  // linkeaba a /comunidad.html, que es la landing de la comunidad CERRADA DE
+  // COACHES — publico equivocado para el cliente y, en white-label, el embudo de
+  // Pathway metido en el portal del cliente de otro coach.
+  // Blindado en scripts/check-guardrails.js y en tests/cliente-programas.spec.js.
 
   o+='<div id="semana-main-content" class="two-col"><div class="left-col">';
 

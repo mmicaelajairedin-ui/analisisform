@@ -3,6 +3,12 @@ const { defineConfig } = require('@playwright/test');
 
 const BASE_URL = process.env.BASE_URL || 'https://pathwaycareercoach.com/';
 
+// Chromium ya instalado en la maquina. Sirve para correr la suite en entornos
+// sin salida a internet para bajar el browser que trae Playwright (contenedores,
+// CI aislado): PW_CHROMIUM_PATH=/opt/pw-browsers/chromium npx playwright test
+// Sin la variable, todo queda exactamente como antes.
+const CHROMIUM_PATH = process.env.PW_CHROMIUM_PATH || '';
+
 module.exports = defineConfig({
   testDir: './tests',
   // El bot logueado (entrar + render + recorrer secciones) de un panel pesado
@@ -26,6 +32,7 @@ module.exports = defineConfig({
     ignoreHTTPSErrors: true,
     actionTimeout: 10000,
     navigationTimeout: 20000,
+    launchOptions: CHROMIUM_PATH ? { executablePath: CHROMIUM_PATH } : {},
   },
   projects: [
     {
