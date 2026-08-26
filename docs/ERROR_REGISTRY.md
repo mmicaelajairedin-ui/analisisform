@@ -633,6 +633,83 @@ en el resto. No se tocó el panel ni el backend.
 
 ---
 
+## INC-039: Ramas vacías de las fichas de Cliente y Coach (multicoach.html)
+
+**Estado:** FIXED  
+**Fecha detectado:** 2026-08-26  
+**Fecha triaged:** 2026-08-26  
+**Severity:** MEDIUM  
+
+### Scope Metadata
+- **Module:** `multicoach` (fichas de Cliente y Coach)
+- **Scope Type:** `MODULE_SPECIFIC`
+- **Scope Belongs To:** `multicoach`
+- **Blocking Scope:** `none`
+- **Blocks Current Branch:** No  
+
+### Síntoma
+Dos defectos simétricos, ambos **solo en red REAL** (`MC_REAL`), cuando no hay
+datos relacionados o cuando la fuente de datos no responde:
+
+1. **Ficha del CLIENTE · pestaña «Recursos»** — la tarjeta "Recursos del
+   programa" mostraba **3 recursos inventados** en cualquier red real
+   (`📘 9 jul · 78.2 kg · Semana 1`, `📘 9 jun · 79.5 kg · Semana 2`, …).
+   Su estado vacío ("Sin recursos cargados aún") era **código muerto**: nunca
+   podía alcanzarse. Los recursos REALES del cliente solo salían en la tarjeta
+   de abajo ("Subir recursos").
+2. **Ficha del COACH · pestaña «Sesiones»** — mostraba el estado vacío
+   ("Cuando X agende sesiones con sus clientes, las ves acá") **aunque el coach
+   tuviera citas**, en cuanto el `coach-api-gateway` no respondía. Las mismas
+   citas sí se veían en la ficha del CLIENTE.
+
+### Categoría
+`FRONTEND_ERROR` · `EMPTY_STATE` · `UX_MESSAGING`
+
+### Módulo
+`multicoach.html` → `_cliBody()` (rama `t==='recursos'`) y `_coachBody()` (rama `t==='sesiones'`)
+
+### Root Cause
+1. La rama de Recursos leía `DET().prog`, que es la plantilla de **MEDICIONES**
+   de la maqueta (peso/grasa por fecha), no una lista de recursos — no existe
+   `DET().recursos`. Como `DET().prog` nunca está vacío, el ternario
+   `progHtml ? progHtml : '<empty state>'` siempre tomaba la primera rama.
+   La fuente real es `k.recursos` (lo que escribe `_recursosFiles`).
+2. La rama de Sesiones derivaba el conteo **solo** de
+   `apiData.metrics.sesiones_ultima_semana`. `_mcLoadCoachDataGateway` atrapa
+   cualquier fallo y devuelve `null`, así que un gateway caído producía
+   `sesCount === 0` — indistinguible de "no tiene sesiones". Las citas de la red
+   ya estaban en memoria en `MC_CITAS` (las trae `mi-red`), que es justo lo que
+   usa `_mcSesReal` en la ficha del cliente.
+
+### Evidencia
+- **Files affected:**
+  - `multicoach.html` → `_cliBody()` rama `t==='recursos'`
+  - `multicoach.html` → `_coachBody()` rama `t==='sesiones'`
+  - `multicoach.html` → nuevo helper `_mcSesCoachReal()` (junto a `_mcSesReal`)
+- **Reproducción (antes):** red real, cliente sin recursos →
+  `Recursos del programa. … 📘 9 jul 78.2 kg Semana 1 📘 9 jun 79.5 kg Semana 2 📘 9 may 81.0 kg`
+- **Reproducción (antes):** red real, coach con 2 citas en `MC_CITAS`, gateway sin responder →
+  `Agenda de Ana. Cuando Ana agende sesiones con sus clientes, las ves acá.`
+- **Test:** `tests/inc-039-fichas-empty-states.spec.js` (10 casos: cero datos,
+  datos, campo ausente, gateway caído, gateway + citas, anti-XSS, maqueta intacta)
+
+### Estado actual
+- ✅ **DETECTED:** reproducido en navegador (Playwright sobre el repo)
+- ✅ **ROOT_CAUSE_CONFIRMED_STATIC:** código fuente lo demuestra (`DET().prog`, `sesCount`)
+- ✅ **FIXED:** rama `claude/inc-039-empty-states-d6lts2`
+- ✅ **TESTED:** `tests/inc-039-fichas-empty-states.spec.js` — 10/10, y falla sobre el código previo
+- ❌ **VERIFIED:** pendiente (requiere 48 h en producción sin regresión)
+
+### Cómo evitar regresión
+Guardrail `INC-039 fichas: las ramas vacias de Cliente y Coach dicen la verdad`
+en `scripts/check-guardrails.js`. Falla si:
+- la rama `t==='recursos'` vuelve a usar `DET().prog`, deja de leer `k.recursos`
+  o pierde su estado vacío;
+- desaparece `_mcSesCoachReal`, deja de leer `MC_CITAS`, la ficha del coach deja
+  de usarlo, o el estado vacío vuelve a decidirse solo con `sesCount`.
+
+---
+
 ## ESTADO RESUMEN
 
 | Error | Estado | Severity | Module | Fixed | Verified |
@@ -651,6 +728,7 @@ en el resto. No se tocó el panel ni el backend.
 | **ERR-CLIPROG-003** | **FIXED / TESTED** | **HIGH** | **cliente** | ✅ | ❌ |
 | **ERR-CLIPROG-004** | **FIXED / TESTED** | **HIGH** | **cliente** | ✅ | ❌ |
 | **ERR-EMAIL-RECORDATORIO** | **DETECTED** | **LOW** | **email** | ❌ | ❌ |
+| **INC-039** | **FIXED** | **MEDIUM** | **multicoach** | ✅ | ❌ |
 
 ---
 

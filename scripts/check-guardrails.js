@@ -5230,6 +5230,47 @@ const RULES = [
       return null;
     },
   },
+  {
+    name: "INC-039 fichas: las ramas vacias de Cliente y Coach dicen la verdad",
+    bug: "Dos defectos simetricos en multicoach.html, ambos en red REAL:\n" +
+         "  (a) Ficha del CLIENTE > Recursos listaba DET().prog — la plantilla de " +
+         "MEDICIONES de la maqueta ('9 jul - 78.2 kg') — asi que inventaba 3 recursos " +
+         "y su rama vacia ('Sin recursos cargados aun') era codigo muerto. La fuente " +
+         "real es k.recursos.\n" +
+         "  (b) Ficha del COACH > Sesiones caia en el estado vacio en cuanto el " +
+         "coach-api-gateway no respondia, aunque las citas del coach ya estuvieran en " +
+         "MC_CITAS (las mismas que la ficha del cliente si muestra via _mcSesReal).",
+    check() {
+      const mc = read("multicoach.html");
+      if (!mc) return null;
+      const js = inlineJs(mc);
+
+      // (a) la pestana Recursos de la ficha del cliente no puede volver a DET().prog
+      const rec = /if\(t===['"]recursos['"]\)\{([\s\S]*?)\n\s*\}\n/.exec(js);
+      if (!rec) return "multicoach.html: no se encuentra la rama t==='recursos' de la ficha del cliente.";
+      const recCode = rec[1].replace(/^[ \t]*\/\/.*$/gm, ""); // sin comentarios
+      if (/DET\(\)\.prog/.test(recCode))
+        return "multicoach.html: la pestana Recursos de la ficha del cliente volvio a listar DET().prog (inventa recursos y deja su estado vacio inalcanzable).";
+      if (!/k\.recursos/.test(recCode))
+        return "multicoach.html: la pestana Recursos de la ficha del cliente dejo de leer k.recursos (la fuente real).";
+      if (!/Sin recursos cargados a/.test(recCode))
+        return "multicoach.html: la pestana Recursos de la ficha del cliente perdio su estado vacio.";
+
+      // (b) la pestana Sesiones de la ficha del coach mira MC_CITAS, no solo el gateway
+      if (!isDefined("_mcSesCoachReal", js))
+        return "multicoach.html: falta _mcSesCoachReal (las sesiones del coach volverian a depender solo del gateway).";
+      if (!/MC_CITAS/.test(String((/function _mcSesCoachReal\(c\)\{([\s\S]*?)\n\}/.exec(js) || [])[1] || "")))
+        return "multicoach.html: _mcSesCoachReal dejo de leer MC_CITAS.";
+      const ses = /if\(t===['"]sesiones['"]\)\{([\s\S]*?)\n\s*\}\n\s*if\(t===['"]mensajes['"]\)/.exec(js);
+      if (!ses) return "multicoach.html: no se encuentra la rama t==='sesiones' de la ficha del coach.";
+      if (!/_mcSesCoachReal\(/.test(ses[1]))
+        return "multicoach.html: la pestana Sesiones de la ficha del coach dejo de usar _mcSesCoachReal.";
+      if (!/if\(!sesRows&&!sesCount\)/.test(ses[1]))
+        return "multicoach.html: la ficha del coach volvio a mostrar el estado vacio sin comprobar las citas reales (basta con que el gateway falle para mentir).";
+      return null;
+    },
+  },
+
 ];
 
 
