@@ -1702,6 +1702,24 @@ function _mcSesReal(k){
     return '<div class="cp-drow"><div class="dd"><span class="emo">'+_mcSesIco(c.tipo,c.estado)+'</span></div><div class="dg"><div class="dn">'+_mcEsc(c.tipo||'Sesión')+'</div><div class="ds">'+sub+'</div></div></div>';
   }).join('');
 }
+// Sesiones REALES del COACH en su ficha: las MISMAS citas que ya trajo mi-red
+// (MC_CITAS), filtradas por coach_id. INC-039: la pestaña solo miraba el
+// coach-api-gateway, así que si el gateway no respondía caía en la rama vacía
+// ("todavía no agendó") aunque el coach tuviera citas cargadas.
+function _mcSesCoachReal(c){
+  var id=c&&c.id; if(!id) return '';
+  var rows=(MC_CITAS||[]).filter(function(x){ return String(x.coach_id||'')===String(id); });
+  if(!rows.length) return '';
+  return rows.map(function(x){
+    var sub=_mcFecha(x.inicio);
+    var em=(''+(x.email||'')).toLowerCase();
+    var k=em?(DB.clientes||[]).filter(function(y){return (''+(y.email||'')).toLowerCase()===em;})[0]:null;
+    if(k&&k.n) sub+=' · '+_mcEsc(k.n);
+    var note=(x.resultado||x.notas_llamada||'');
+    if(note) sub+=' · '+_mcEsc((''+note).slice(0,90));
+    return '<div class="cp-drow"><div class="dd"><span class="emo">'+_mcSesIco(x.tipo,x.estado)+'</span></div><div class="dg"><div class="dn">'+_mcEsc(x.tipo||'Sesión')+'</div><div class="ds">'+sub+'</div></div></div>';
+  }).join('');
+}
 // Nicho real (carrera|fitness|financiero) → clave del template demo (fitness|carrera|finanzas).
 function mcNichoKey(n){ n=(''+(n||'')).toLowerCase(); if(n.indexOf('fit')>=0)return 'fitness'; if(n.indexOf('financ')>=0||n.indexOf('finanz')>=0)return 'finanzas'; return 'carrera'; }
 function mcEmptyRow(t,s){ return '<div class="row" style="opacity:.85"><div><div class="nm">'+_mcEsc(t)+'</div><div class="sub">'+_mcEsc(s||'')+'</div></div></div>'; }
@@ -2216,19 +2234,19 @@ function _cliBody(k,c,t){
    +'</div>';
  }
  if(t==='recursos'){
-  var prog=DET().prog||[];
-  var progHtml=prog.map(function(p,i){
-   var suf=(i<2?'<span style="font-size:11px;color:var(--pw-bosque);font-weight:600;margin-left:8px">Semana '+(i+1)+'</span>':'');
-   return '<div class="cp-drow"><div class="dd"><span class="emo">📘</span></div><div class="dg"><div class="dn">'+_mcEsc(p[0])+'</div><div class="ds">'+_mcEsc(p[1])+suf+'</div></div></div>';
-  }).join('');
+  // INC-039: la tarjeta listaba DET().prog — la plantilla de MEDICIONES de la
+  // maqueta ("9 jul · 78.2 kg") disfrazada de recurso — así que en una red real
+  // inventaba 3 recursos y su rama vacía ("Sin recursos cargados aún") nunca se
+  // alcanzaba. La fuente real es k.recursos (lo que sube _recursosFiles).
+  var recs=(Object.prototype.toString.call(k.recursos)==='[object Array]')?k.recursos:[];
+  var recHtml=recs.map(function(n,i){return '<div class="cp-drow"><div class="dd"><span class="emo">'+PWI.svg('fileText',{sm:true})+'</span></div><div class="dg"><div class="dn">'+_mcEsc(n)+'</div></div><button class="ccollapse" onclick="_recursosDel('+i+')" title="Quitar">✕</button></div>';}).join('');
   return '<div class="cp-card cp-card-pad"><h3 class="cp-card-title">Recursos del programa<span class="dot">.</span></h3>'
    +'<div style="font-size:12px;color:var(--pw-text-soft);margin-bottom:12px">Materiales y recursos que el cliente puede consultar.</div>'
-   +(progHtml?progHtml:'<div style="font-size:12.5px;color:var(--pw-text-soft);padding:16px;text-align:center">Sin recursos cargados aún</div>')
+   +(recHtml?recHtml:'<div style="font-size:12.5px;color:var(--pw-text-soft);padding:16px;text-align:center">Sin recursos cargados aún</div>')
    +'</div>'
    +'<div class="cp-card cp-card-pad"><h3 class="cp-card-title">Subir recursos<span class="dot">.</span></h3>'
    +'<div style="font-size:12px;color:var(--pw-text-soft);margin-bottom:8px">PDFs, guías o materiales del programa.</div>'
    +'<div class="dropz" ondragover="_dzOver(event)" ondragleave="_dzLeave(event)" ondrop="_recursosDrop(event)" onclick="document.getElementById(\'recursosfile\').click()"><input type="file" id="recursosfile" accept="image/*,.pdf,.doc,.docx" multiple style="display:none" onchange="_recursosFiles(this.files)">'+PWI.svg('paperclip',{sm:true})+' Arrastra recursos acá o toca para subir</div>'
-   +((k.recursos&&k.recursos.length)?'<div style="margin-top:12px">'+k.recursos.map(function(n,i){return '<div class="cp-drow"><div class="dd"><span class="emo">'+PWI.svg('fileText',{sm:true})+'</span></div><div class="dg"><div class="dn">'+_mcEsc(n)+'</div></div><button class="ccollapse" onclick="_recursosDel('+i+')" title="Quitar">✕</button></div>';}).join('')+'</div>':'')
    +'</div>';
  }
  // mensajes
@@ -2446,10 +2464,15 @@ function _coachBody(c,t){
  }
  if(t==='sesiones'){
   var sesCount=apiData&&apiData.metrics?apiData.metrics.sesiones_ultima_semana:0;
-  if(MC_REAL&&!sesCount) return _mcEmptyCard('Agenda de '+c.n.split(" ")[0],'Cuando '+c.n.split(" ")[0]+' agende sesiones con sus clientes, las ves acá.');
-  if(MC_REAL&&sesCount&&apiData){
+  if(MC_REAL){
+    // INC-039: el estado vacío solo vale cuando NO hay sesiones en ningún lado.
+    // Si el gateway no responde, las citas de MC_CITAS siguen siendo la verdad
+    // (es lo que ya muestra la ficha del cliente con _mcSesReal).
+    var sesRows=_mcSesCoachReal(c);
+    if(!sesRows&&!sesCount) return _mcEmptyCard('Agenda de '+c.n.split(" ")[0],'Cuando '+c.n.split(" ")[0]+' agende sesiones con sus clientes, las ves acá.');
     return '<div class="cp-card cp-card-pad"><h3 class="cp-card-title">Agenda de '+c.n.split(" ")[0]+'<span class="dot">.</span></h3>'
-     +'<div class="cp-infogrid">'+_info('Sesiones última semana',sesCount)+_info('Informes última semana',apiData.metrics.informes_ultima_semana||0)+'</div></div>';
+     +((sesCount&&apiData)?'<div class="cp-infogrid">'+_info('Sesiones última semana',sesCount)+_info('Informes última semana',apiData.metrics.informes_ultima_semana||0)+'</div>':'')
+     +sesRows+'</div>';
   }
   var nm0=suyos[0]?suyos[0].n:'Cliente',nm1=suyos[1]?suyos[1].n:nm0;
   var ses=DET().coachSes.map(function(s,i){return [s[0],s[1]+' · '+(i===1?nm1:nm0),s[2]];});
