@@ -17,6 +17,12 @@ function inlineJs(html) {
   while ((m = re.exec(html))) { if (!/\bsrc\s*=/.test(m[1] || "")) out += "\n" + (m[2] || ""); }
   return out;
 }
+// Quita comentarios (// y /* */) para que las reglas miren CODIGO, no prosa.
+function noComments(js) {
+  return String(js || "")
+    .replace(/\/\*[\s\S]*?\*\//g, " ")
+    .replace(/^[ \t]*\/\/.*$/gm, " ");
+}
 function isDefined(name, js) {
   return new RegExp("\\bfunction\\s+" + name + "\\b").test(js) ||
          new RegExp("\\b" + name + "\\s*=\\s*function\\b").test(js) ||
@@ -5126,6 +5132,104 @@ const RULES = [
   // Verifica: pattern `zoom_url` guardado + pattern de uso en crear-cita-red.
   // Status: BLOCKED (Agenda no implementada)
 
+  // ── Auditoria ClientPrograms (agosto 2026) ────────────────────────────────
+  {
+    name: "cliente: la superficie de Programas no se gatea por campos inexistentes",
+    bug: "El portal del cliente traia dos bloques del Core (PWCoreProgram.renderWorkCenter " +
+         "y PWCoreTimeline) gateados por `C.raw` y `C.sesiones`. En cliente.html `C` ES la " +
+         "fila de `candidatos`, que no tiene columna `raw` ni `sesiones` (el campo real es " +
+         "`sesiones_registro`, TEXT con JSON). Las dos guardas eran SIEMPRE falsas, asi que " +
+         "la superficie nunca se renderizo para ningun cliente y nadie se entero: no habia " +
+         "recorrido de navegador que la tocara. Si vuelve el patron, vuelve la pantalla muerta.",
+    check() {
+      const cli = read("cliente.html");
+      if (!cli) return null;
+      const js = noComments(inlineJs(cli));
+      if (/\bC\s*&&\s*C\.raw\b/.test(js) || /\bC\.raw\.[a-z_]+/i.test(js))
+        return "cliente.html: volvio a leer `C.raw` — `candidatos` no tiene esa columna, la guarda siempre da falso.";
+      if (/\bC\s*&&\s*C\.sesiones\b/.test(js) || /getUpcomingSessions\(\s*C\.sesiones\s*\)/.test(js))
+        return "cliente.html: volvio a leer `C.sesiones` — el campo real es `C.sesiones_registro` (TEXT con JSON).";
+      return null;
+    },
+  },
+  {
+    name: "cliente: no se referencian globales que no existen en este portal",
+    bug: "En el bloque de Programas del cliente habia `RECURSOS` (y en funciones de ejemplo " +
+         "`CLIENTE` / `RESOURCES`), identificadores que no estan declarados en ningun lado. " +
+         "Como el bloque estaba dentro de un `try{}catch(e){}`, el ReferenceError se tragaba " +
+         "en silencio: la pantalla no salia y no quedaba ni un error en consola. Los recursos " +
+         "reales del cliente viven en `window.ORG_RECURSOS` / `window.COACH_RECURSOS`.",
+    check() {
+      const cli = read("cliente.html");
+      if (!cli) return null;
+      const js = noComments(inlineJs(cli));
+      const bad = [];
+      // `RECURSOS` suelto = sin ORG_/COACH_ delante y sin ser propiedad de algo.
+      if (/(^|[^.\w_])RECURSOS\b/m.test(js.replace(/\b(?:ORG|COACH)_RECURSOS\b/g, "_ok_"))) bad.push("RECURSOS");
+      if (/(^|[^.\w])CLIENTE\b/.test(js)) bad.push("CLIENTE");
+      if (/(^|[^.\w])RESOURCES\b/.test(js)) bad.push("RESOURCES");
+      if (bad.length)
+        return "cliente.html: global(es) no declarada(s) en el portal del cliente: " + bad.join(", ") +
+               " (usar window.ORG_RECURSOS / window.COACH_RECURSOS y la fila `C`).";
+      return null;
+    },
+  },
+  {
+    name: "cliente: el portal NO linkea la comunidad cerrada de COACHES",
+    bug: "El work center del Core traia `showCommunity:true`, que pinta una tarjeta " +
+         "'Conecta con otros coaches' apuntando a /comunidad.html. Esa pagina es la landing " +
+         "de la comunidad CERRADA DE COACHES ('Comunidad cerrada · solo coaches'): publico " +
+         "equivocado para el cliente y, en white-label, el embudo de captacion de Pathway " +
+         "metido dentro del portal del cliente de otro coach.",
+    check() {
+      const bad = ["cliente.html", "pathway-fit-cliente.html", "pathway-fin-cliente.html"]
+        .filter((f) => {
+          const src = noComments(read(f).replace(/<!--[\s\S]*?-->/g, " "));
+          return /comunidad\.html/.test(src) || /showCommunity\s*:\s*true/.test(src);
+        });
+      if (bad.length)
+        return "portal(es) del cliente linkeando la comunidad de coaches: " + bad.join(", ") + ".";
+      return null;
+    },
+  },
+  {
+    name: "cliente: las fases del coach llegan aunque no sean exactamente 4",
+    bug: "El panel guarda `candidatos.etapas` con CUALQUIER cantidad de fases " +
+         "(cli-savefases, '+ Agregar paso') y le avisa al coach 'Fases guardadas ✓ — el " +
+         "cliente las ve'. Pero cliente.html exigia `_et.length===4` EXACTO y, si no, " +
+         "descartaba TODAS: con 1, 2, 3 o 5 fases el cliente leia los nombres por defecto " +
+         "de carrera (Evaluacion/CV/LinkedIn/…), incluso en nichos que no son carrera. " +
+         "En produccion habia fichas con 1 sola fase guardada.",
+    check() {
+      const cli = read("cliente.html");
+      if (!cli) return null;
+      const js = noComments(inlineJs(cli));
+      if (/_et\s*&&\s*_et\.length\s*===\s*4/.test(js) || /etapas[\s\S]{0,120}?\.length\s*===\s*4/.test(js))
+        return "cliente.html: volvio el `length===4` exacto para candidatos.etapas (tira las fases del coach).";
+      if (!/Math\.min\(\s*_et\.length\s*,\s*SEMS\.length\s*\)/.test(js))
+        return "cliente.html: se perdio el recorrido de etapas por cantidad variable (Math.min(_et.length, SEMS.length)).";
+      return null;
+    },
+  },
+  {
+    name: "cliente: quien entra al portal se decide por lista BLANCA de roles",
+    bug: "La guarda de /cliente.html era una lista NEGRA (solo coach/admin se iban al panel). " +
+         "Un owner, un colaborador o un empleado que llegaba por marcador, back del navegador " +
+         "o link compartido se quedaba DENTRO de la superficie del cliente. Los portales " +
+         "hermanos ya usaban lista blanca (rol==='cliente'). Fix: PW_CLIENT_ROLES + PW_ROLE_HOME.",
+    check() {
+      const cli = read("cliente.html");
+      if (!cli) return null;
+      const js = noComments(inlineJs(cli));
+      if (!/PW_CLIENT_ROLES\s*=\s*\[/.test(js))
+        return "cliente.html: falta la lista blanca PW_CLIENT_ROLES (volvio la lista negra de roles).";
+      if (!/PW_CLIENT_ROLES\.indexOf\(\s*rol\s*\)\s*!==\s*-1/.test(js))
+        return "cliente.html: la guarda ya no consulta PW_CLIENT_ROLES para dejar entrar.";
+      if (!/PW_ROLE_HOME\s*=\s*\{[^}]*owner\s*:/.test(js))
+        return "cliente.html: PW_ROLE_HOME dejo de mapear `owner` (volveria a quedarse en el portal del cliente).";
+      return null;
+    },
+  },
 ];
 
 

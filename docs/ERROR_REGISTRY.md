@@ -505,6 +505,134 @@ Guardrail: verificar que recordatorios no mencionan "Google Meet" (o si menciona
 
 ---
 
+## ERR-CLIPROG-001: La superficie de Programas del cliente nunca se renderizó
+
+**Estado:** ROOT_CAUSE_CONFIRMED_STATIC → FIXED → TESTED
+**Fecha detectado:** 2026-08-26 (auditoría de cobertura de ClientPrograms)
+**Severity:** HIGH
+
+### Scope Metadata
+- **Module:** `cliente` (portal del cliente — superficie de Programas)
+- **Scope Type:** `MODULE_SPECIFIC`
+- **Scope Belongs To:** `cliente`
+
+### Síntoma
+`cliente.html` incluía un "Program Work Center" (`PWCoreProgram.renderWorkCenter`) y una
+timeline de sesiones (`PWCoreTimeline`) que ningún cliente vio nunca. Ningún script de
+navegador recorría la pantalla, así que nadie lo notó.
+
+### Root cause (confirmada por análisis estático + esquema de producción)
+1. Las guardas eran `C && C.raw` y `C && C.sesiones`. En este portal `C` **es** la fila de
+   `candidatos`, y la tabla no tiene columnas `raw` ni `sesiones` (el campo real es
+   `sesiones_registro`, TEXT con JSON). Ambas guardas eran siempre falsas.
+2. Aun pasando la guarda, dentro del bloque se leía `RECURSOS`, un identificador **no
+   declarado** en ninguna parte del proyecto → `ReferenceError` que el `try{}catch(e){}`
+   se tragaba en silencio (ni error en consola).
+3. `renderWorkCenter` espera `client.ses` (array) y `client.raw.etapas` como objetos con
+   `.nombre`; en producción `candidatos.etapas` es un JSON de strings sueltos.
+4. Tres funciones de ejemplo (`_cliRenderProgramCard`, `_cliRenderSessionTimeline`,
+   `_cliRenderOnboardingResources`) referenciaban globales inexistentes (`CLIENTE`,
+   `RESOURCES`) y nadie las llamaba.
+
+### Fix
+Se quitaron los bloques muertos en vez de encenderlos: cada sub-bloque duplicaba algo que
+el cliente ya tiene y mejor (próxima sesión → `_proxSesion()`, que cruza `sesiones_registro`
+con `citas`; roadmap → `rRoadmap()` "Tu proceso"; recursos → la sección Recursos), y
+encenderlos sería funcionalidad nueva de Programas, que está cerrado.
+
+### Estado actual
+- ✅ **DETECTED / ROOT_CAUSE_CONFIRMED_STATIC**
+- ✅ **FIXED** (`cliente.html`)
+- ✅ **TESTED** (`tests/cliente-programas.spec.js`)
+- ❌ **VERIFIED** — falta el recorrido contra producción (sin egress en el entorno de trabajo)
+
+### Cómo evitar regresión
+`scripts/check-guardrails.js`: reglas "cliente: la superficie de Programas no se gatea por
+campos inexistentes" y "cliente: no se referencian globales que no existen en este portal".
+
+---
+
+## ERR-CLIPROG-002: El portal del cliente ofrecía la comunidad cerrada de COACHES
+
+**Estado:** ROOT_CAUSE_CONFIRMED_STATIC → FIXED → TESTED
+**Fecha detectado:** 2026-08-26
+**Severity:** MEDIUM (producto / white-label)
+
+### Síntoma
+El work center muerto se invocaba con `showCommunity:true`, que pinta una tarjeta
+"Conecta con otros coaches…" apuntando a `/comunidad.html`. Esa página es la landing de la
+**comunidad cerrada de coaches** ("Comunidad cerrada · solo coaches"): público equivocado
+para un cliente y, en white-label, el embudo de captación de Pathway dentro del portal del
+cliente de otro coach. Nunca llegó a verse porque el bloque estaba muerto (ERR-CLIPROG-001),
+pero cualquier "arreglo" de la guarda lo habría publicado.
+
+### Estado actual
+- ✅ **FIXED** (se eliminó junto con el bloque)
+- ✅ **TESTED** (`tests/cliente-programas.spec.js` → "el portal del cliente no le ofrece la comunidad cerrada de COACHES")
+- ❌ **VERIFIED** (falta producción)
+
+### Cómo evitar regresión
+`scripts/check-guardrails.js`: "cliente: el portal NO linkea la comunidad cerrada de COACHES"
+(cubre los tres portales del cliente).
+
+---
+
+## ERR-CLIPROG-003: owner/colaborador/empleado se quedaban dentro del portal del cliente
+
+**Estado:** ROOT_CAUSE_CONFIRMED_STATIC → FIXED → TESTED
+**Fecha detectado:** 2026-08-26
+**Severity:** HIGH (permisos)
+
+### Síntoma
+La guarda de `/cliente.html` era una lista **negra**: solo `coach` y `admin` se redirigían al
+panel. Un `owner`, `colaborador` o `empleado` que llegaba por marcador, back del navegador o
+link compartido se quedaba dentro de la superficie del cliente (y veía "Perfil no encontrado
+para: …" en vez de irse a su lugar). Los portales hermanos
+(`pathway-fit-cliente.html`, `pathway-fin-cliente.html`) ya usaban lista blanca.
+
+### Fix
+Lista blanca `PW_CLIENT_ROLES = ['cliente','candidato']` + mapa `PW_ROLE_HOME` que manda a
+cada rol a su lugar. Una sesión vieja sin `rol` sigue tratándose como cliente (histórico).
+Se preserva el modo preview del coach (`?coach_view=`).
+
+### Estado actual
+- ✅ **FIXED** (`cliente.html`)
+- ✅ **TESTED** (5 casos: coach, admin, owner, colaborador, empleado + preview del coach)
+- ❌ **VERIFIED** (falta producción)
+
+### Cómo evitar regresión
+`scripts/check-guardrails.js`: "cliente: quien entra al portal se decide por lista BLANCA de roles".
+
+---
+
+## ERR-CLIPROG-004: las fases del coach se descartaban salvo que fueran exactamente 4
+
+**Estado:** ROOT_CAUSE_CONFIRMED_STATIC → FIXED → TESTED
+**Fecha detectado:** 2026-08-26
+**Severity:** HIGH (contrato coach→cliente)
+
+### Síntoma
+El panel guarda `candidatos.etapas` con **cualquier** cantidad de fases (`cli-savefases`,
+"+ Agregar paso") y le avisa al coach *"Fases guardadas ✓ — el cliente las ve"*. Pero
+`cliente.html` exigía `_et.length===4` exacto y, si no, las descartaba **todas**: el cliente
+leía los nombres por defecto de carrera (Evaluación / CV / LinkedIn / Búsqueda activa).
+Evidencia en producción: de 8 fichas con `etapas` cargadas, 2 tienen una sola fase
+(p. ej. `["Semana de adaptación"]`) y su nombre nunca llegaba al cliente.
+
+### Fix
+`cliente.html` aplica cada nombre que venga (hasta las ranuras disponibles) y deja el default
+en el resto. No se tocó el panel ni el backend.
+
+### Estado actual
+- ✅ **FIXED** (`cliente.html`)
+- ✅ **TESTED** (`tests/cliente-programas.spec.js` → "una sola fase guardada por el coach tambien llega al cliente")
+- ❌ **VERIFIED** (falta producción)
+
+### Cómo evitar regresión
+`scripts/check-guardrails.js`: "cliente: las fases del coach llegan aunque no sean exactamente 4".
+
+---
+
 ## ESTADO RESUMEN
 
 | Error | Estado | Severity | Module | Fixed | Verified |
@@ -518,6 +646,10 @@ Guardrail: verificar que recordatorios no mencionan "Google Meet" (o si menciona
 | **ERR-ADMIN-001** | **DETECTED** | **HIGH** | **admin** | ❌ | ❌ |
 | **ERR-DEPLOY-001** | **DETECTED** | **HIGH** | **ci/cd** | ❌ | ❌ |
 | **ERR-MC-SYNTAX-001** | **DETECTED** | **MEDIUM** | **multicoach** | ❌ | ❌ |
+| **ERR-CLIPROG-001** | **FIXED / TESTED** | **HIGH** | **cliente** | ✅ | ❌ |
+| **ERR-CLIPROG-002** | **FIXED / TESTED** | **MEDIUM** | **cliente** | ✅ | ❌ |
+| **ERR-CLIPROG-003** | **FIXED / TESTED** | **HIGH** | **cliente** | ✅ | ❌ |
+| **ERR-CLIPROG-004** | **FIXED / TESTED** | **HIGH** | **cliente** | ✅ | ❌ |
 | **ERR-EMAIL-RECORDATORIO** | **DETECTED** | **LOW** | **email** | ❌ | ❌ |
 
 ---
