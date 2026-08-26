@@ -5231,6 +5231,34 @@ const RULES = [
     },
   },
   {
+    name: "dashboard del coach: el cliente de EJEMPLO nunca pasa por real",
+    bug: "Un coach sin clientes no tiene CLIENTS vacio: el panel inyecta el cliente " +
+         "de onboarding 'Maria Garcia' (_example:true). Todo el resto del dashboard lo " +
+         "excluye de sus cuentas (Mi negocio 'Clientes activos 0', tarjeta de riesgo y " +
+         "ranking filtran !c._example) y la lista de Clientes lo etiqueta con 'Ejemplo' " +
+         "(viewClientes). La tarjeta 'Tus clientes' del dashboard NO lo hacia: pintaba a " +
+         "Maria igual que a un cliente real, asi que el dashboard se contradecia consigo " +
+         "mismo (KPI '0 clientes' encima de una lista con un cliente) y un coach recien " +
+         "llegado veia un cliente inventado como suyo.",
+    check() {
+      const pv = read("panel-v2.html");
+      if (!pv) return null;
+      const js = inlineJs(pv);
+      // Region de la tarjeta 'Tus clientes' dentro de viewResumen.
+      const m = /var cliBlock = "";([\s\S]*?)var pathCard = coachPath\(\)/.exec(js);
+      if (!m) return "panel-v2.html: no se encuentra la tarjeta 'Tus clientes' del dashboard (viewResumen).";
+      const code = m[1].replace(/^[ \t]*\/\/.*$/gm, ""); // sin comentarios
+      if (!/_example/.test(code))
+        return "panel-v2.html: la tarjeta 'Tus clientes' del dashboard dejo de mirar _example (el cliente de ejemplo vuelve a pasar por real).";
+      if (!/Ejemplo/.test(code))
+        return "panel-v2.html: la tarjeta 'Tus clientes' del dashboard perdio la etiqueta 'Ejemplo'.";
+      // La lista de Clientes (viewClientes) tiene que seguir etiquetandolo tambien.
+      if (!/c\._example \? "<span class='cp-cli-tag'/.test(js))
+        return "panel-v2.html: la lista de Clientes perdio su etiqueta 'Ejemplo' (exTag).";
+      return null;
+    },
+  },
+  {
     name: "INC-039 fichas: las ramas vacias de Cliente y Coach dicen la verdad",
     bug: "Dos defectos simetricos en multicoach.html, ambos en red REAL:\n" +
          "  (a) Ficha del CLIENTE > Recursos listaba DET().prog — la plantilla de " +
