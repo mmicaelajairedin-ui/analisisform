@@ -1980,7 +1980,19 @@ function _applyCoachColor(hex){
 function _applyOrgBrand(orgId){
   if(!orgId) return;
   try{
-    fetch(SB+'/rest/v1/organizaciones?id=eq.'+encodeURIComponent(orgId)+'&select=marca',{headers:{apikey:KEY,Authorization:'Bearer '+KEY}})
+    // F2.2 — La marca se pide por IDENTIDAD, no por id. `org_marca_propia()` no
+    // acepta argumentos: resuelve la organizacion del llamante desde su JWT
+    // (equipo via usuarios.org_id, cliente via candidatos.org_id) y devuelve
+    // SOLO `marca`. Asi no hay forma de pedir la de otra red ni de enumerarlas,
+    // y deja de hacer falta que `organizaciones` sea legible por anon.
+    //
+    // `orgId` sigue siendo la puerta: si el cliente no pertenece a una red no se
+    // hace la peticion. Ya NO se envia al servidor.
+    //
+    // `_hdr()` (asincrono) en vez de la anon key: espera al token. Era el unico
+    // punto de este fichero que leia con la clave anonima cruda.
+    _hdr({'Content-Type':'application/json'})
+      .then(function(h){ return fetch(SB+'/rest/v1/rpc/org_marca_propia',{headers:h}); })
       .then(function(r){ return r.ok?r.json():[]; })
       .then(function(rows){ if(!rows||!rows.length) return; var m=(rows[0]&&rows[0].marca)||{}; if(!m||typeof m!=='object') return;
         if(m.color) _applyCoachColor(m.color);

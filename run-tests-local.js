@@ -2,11 +2,40 @@
  * Run Sprint Equipo E2E tests locally using pre-installed Chromium
  */
 
+// A-4 — El guard va ANTES que cualquier otro require. Si se carga despues de
+// `playwright`, un entorno sin dependencias instaladas revienta en el require y
+// nunca llega a comprobar el destino: el aviso que importa quedaria tapado por
+// un MODULE_NOT_FOUND.
+const { assertDestinoSeguro } = require('./scripts/e2e-guard');
+
+const BASE_URL = 'http://127.0.0.1:8000/multicoach.html';
+
+// A-4 — "Local" describe donde vive el HTML, no contra que base escribe.
+// `multicoach.html:912` lleva `var SB='https://api.pathwaycareercoach.com'`
+// HARDCODEADO, asi que manejar esa pagina desde 127.0.0.1 escribe en PRODUCCION.
+// Fue el mecanismo que dejo 27 clientes y 2 organizaciones de test en la base
+// real el 23-24 de agosto.
+//
+// Se declara el backend REAL para que el guard lo vea. Hoy esto hace que el
+// script se niegue a arrancar — que es exactamente lo correcto: no puede correr
+// sin riesgo hasta que la pagina admita un endpoint inyectado (ver PENDIENTE).
+//
+// PENDIENTE (requiere autorizacion): dar a multicoach.html el mismo punto de
+// inyeccion que ya usa pw-ia-chat.js:27 →
+//     var SB = window.PW_SB || 'https://api.pathwaycareercoach.com';
+// En produccion `window.PW_SB` no existe, asi que el comportamiento es
+// identico; el harness de E2E si puede fijarlo con page.addInitScript().
+const BACKEND_DE_LA_PAGINA = 'https://api.pathwaycareercoach.com'; // multicoach.html:912
+
+assertDestinoSeguro('run-tests-local.js', [
+  { etiqueta: 'pagina bajo prueba (BASE_URL)', valor: BASE_URL },
+  { etiqueta: 'backend que usa esa pagina', valor: BACKEND_DE_LA_PAGINA },
+]);
+
 const { chromium } = require('playwright');
 const fs = require('fs');
 const path = require('path');
 
-const BASE_URL = 'http://127.0.0.1:8000/multicoach.html';
 const EVIDENCE_DIR = './test-evidence';
 
 if (!fs.existsSync(EVIDENCE_DIR)) {

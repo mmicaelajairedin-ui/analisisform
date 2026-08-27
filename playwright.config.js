@@ -1,7 +1,23 @@
 // @ts-check
 const { defineConfig } = require('@playwright/test');
 
-const BASE_URL = process.env.BASE_URL || 'https://pathwaycareercoach.com/';
+// F2.7 — BASE_URL NO tiene valor por defecto a proposito.
+//
+// Antes caia a produccion en silencio, y por eso el cron diario
+// (.github/workflows/daily-testing-agent.yml) lleva meses escribiendo fixtures
+// en la base real: 27 de los 73 clientes, 13 usuarios y 2 organizaciones de
+// produccion son de test, y contaminan retencion, embudo y ranking de coaches.
+//
+// Ahora la suite FALLA si no se declara el entorno. Es deliberado: es preferible
+// un fallo ruidoso a un escritor silencioso contra produccion.
+const BASE_URL = process.env.BASE_URL;
+if (!BASE_URL) {
+  throw new Error(
+    'BASE_URL no definida. Declara el entorno explicitamente, por ejemplo:\n' +
+    '  BASE_URL=http://localhost:8080/ npx playwright test\n' +
+    'No se asume produccion por defecto (ver F2.7 del runbook de remediacion).'
+  );
+}
 
 // Chromium ya instalado en la maquina. Sirve para correr la suite en entornos
 // sin salida a internet para bajar el browser que trae Playwright (contenedores,
