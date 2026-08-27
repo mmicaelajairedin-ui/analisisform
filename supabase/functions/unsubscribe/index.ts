@@ -26,6 +26,12 @@ function page(title, msg, ok) {
 <a href="https://pathwaycareercoach.com" style="display:inline-block;padding:12px 26px;background:#2D6A4F;color:#fff;border-radius:10px;text-decoration:none;font-family:Arial,sans-serif;font-size:14px;font-weight:700;">Ir a Pathway</a>
 </td></tr></table></td></tr></table></body></html>`;
 }
+// Lista cerrada de bajas admitidas, con el texto de confirmacion de cada una.
+// Cualquier `k` fuera de aqui cae a `lifecycle` (comportamiento historico).
+const BAJAS = {
+  lifecycle: "No vas a recibir más correos automáticos de Pathway.",
+  weeklyReport: "No vas a recibir más el resumen semanal de tus clientes.",
+};
 function resp(html, status) {
   return new Response(html, { status: status || 200, headers: { "Content-Type": "text/html; charset=utf-8" } });
 }
@@ -33,6 +39,9 @@ function resp(html, status) {
 Deno.serve(async (req) => {
   const url = new URL(req.url);
   const coachId = (url.searchParams.get("u") || "").trim();
+  // Solo se aceptan flags de una lista cerrada: `k` viene de un enlace publico
+  // y no puede poder escribir cualquier clave dentro de configuracion.notifs.
+  const tipoBaja = (url.searchParams.get("k") || "lifecycle").trim();
   if (!coachId) {
     return resp(page("Enlace inválido", "Falta el identificador. Si querés darte de baja, respondé cualquiera de nuestros correos.", false), 400);
   }
@@ -54,7 +63,11 @@ Deno.serve(async (req) => {
     }
     const cfg = rows[0].configuracion || {};
     const notifs = cfg.notifs || {};
-    notifs.lifecycle = false;
+    // `k` = de QUE se da de baja. Sin `k` se comporta como siempre (lifecycle),
+    // asi que los enlaces ya enviados en correos antiguos siguen funcionando.
+    // AP2 lo necesita porque el resumen semanal es otro flag: sin esto, el
+    // enlace del digest apagaria los emails de ciclo de vida en su lugar.
+    notifs[BAJAS[tipoBaja] ? tipoBaja : "lifecycle"] = false;
     const newCfg = { ...cfg, notifs };
     const up = await fetch(`${SUPABASE_URL}/rest/v1/usuarios?id=eq.${id}`, {
       method: "PATCH",
@@ -62,7 +75,8 @@ Deno.serve(async (req) => {
       body: JSON.stringify({ configuracion: newCfg }),
     });
     if (!up.ok) throw new Error("patch failed " + up.status);
-    return resp(page("Listo, te diste de baja", "No vas a recibir más correos automáticos de Pathway. Podés seguir usando tu panel con normalidad, y si cambiás de idea, respondé cualquier correo y te reactivamos.", true));
+    const detalle = BAJAS[tipoBaja] || BAJAS.lifecycle;
+    return resp(page("Listo, te diste de baja", detalle + " Podés seguir usando tu panel con normalidad, y si cambiás de idea, respondé cualquier correo y te reactivamos.", true));
   } catch (_e) {
     return resp(page("Error", "No pudimos procesar la baja ahora. Probá de nuevo en un rato.", false), 500);
   }

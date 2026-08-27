@@ -1,10 +1,13 @@
 // notif-coach — Digest semanal por email a cada coach.
 //
-// Recorre los coaches activos y, si tienen activado el toggle
-// "Resumen semanal" (configuracion.notifs.weeklyReport === true en
-// panel-v2 → Configuración › Notificaciones), les manda un email con:
+// Recorre los coaches activos y les manda un email con:
 //   - clientes nuevos de los últimos 7 días (asignados a su coach_id)
 //   - total de clientes activos
+//
+// AP2 (agosto 2026): el resumen pasa de opt-in a OPT-OUT. Antes exigia
+// `configuracion.notifs.weeklyReport === true`, pero el panel dejo de tener UI
+// para activarlo: 0 de 49 coaches lo recibian. Ahora sale salvo que el coach lo
+// apague (=== false), con enlace de baja de un clic en el pie del email.
 //
 // Disparo: GitHub Actions cron (.github/workflows/coach-notifications.yml)
 // hace POST con header X-Trigger-Secret = AGENT_TRIGGER_SECRET.
@@ -17,13 +20,16 @@
 // Deploy: supabase functions deploy notif-coach --no-verify-jwt
 
 const PANEL_URL = "https://pathwaycareercoach.com/panel-v2.html";
+// Baja en un clic desde el pie del email (AP2-B). `k=weeklyReport` apaga SOLO
+// este resumen; sin `k`, la funcion apagaria los emails de ciclo de vida.
+const UNSUB_URL = "https://api.pathwaycareercoach.com/functions/v1/unsubscribe";
 
 function esc(s: unknown): string {
   return String(s == null ? "" : s)
     .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 }
 
-function digestHtml(coachName: string, nuevos: Array<Record<string, unknown>>, totalActivos: number): string {
+function digestHtml(coachName: string, nuevos: Array<Record<string, unknown>>, totalActivos: number, coachId: string): string {
   const primer = (coachName || "").split(" ")[0] || "coach";
   const lista = nuevos.length
     ? `<ul style="margin:8px 0 0;padding-left:18px;">${nuevos.map((c) =>
@@ -38,7 +44,7 @@ function digestHtml(coachName: string, nuevos: Array<Record<string, unknown>>, t
   <div style="margin-top:14px;color:#5A6A60;">Clientes activos en total: <strong style="color:#1B4332;">${totalActivos}</strong></div>
 </div>
 <p style="margin-top:20px;"><a href="${PANEL_URL}" style="display:inline-block;padding:12px 24px;background:#2D6A4F;color:#fff;border-radius:10px;text-decoration:none;font-weight:700;">Abrir mi panel →</a></p>
-<p style="font-size:12px;color:#999;margin-top:18px;">Recibís esto porque tenés activado "Resumen semanal" en Configuración › Notificaciones. Podés desactivarlo desde el panel.</p>
+<p style="font-size:12px;color:#999;margin-top:18px;">Recibes el resumen semanal porque tienes clientes en Pathway. Si no lo quieres, <a href="${UNSUB_URL}?u=${encodeURIComponent(coachId)}&amp;k=weeklyReport" style="color:#5A6A60;">date de baja en un clic</a> — tu panel sigue igual.</p>
 </body></html>`;
 }
 
@@ -76,8 +82,16 @@ Deno.serve(async (req: Request) => {
       const email = String(u.email || "").trim();
       const cfg = (u.configuracion as Record<string, unknown>) || {};
       const notifs = (cfg.notifs as Record<string, unknown>) || {};
-      // Respetar el toggle del coach: solo si activó "Resumen semanal".
-      if (notifs.weeklyReport !== true || !email) { result.saltados++; continue; }
+      // AP2 · el default se invierte: sale salvo que el coach lo apague.
+      //
+      // Antes era `!== true` (opt-in) y el panel dejo de tener UI para
+      // activarlo, asi que la condicion no la cumplia NADIE: 0 de 49 coaches
+      // recibian el resumen. No es que no lo quisieran — es que no habia donde
+      // decir que si. Un coach que lo apago a proposito (=== false) se respeta.
+      if (notifs.weeklyReport === false || !email) { result.saltados++; continue; }
+      // AP2-D · fuera cuentas de prueba y demos: la consulta ya filtra por
+      // activo=true, pero esas dos viven en `configuracion`.
+      if (cfg.cuenta_test === true || cfg.demo === true) { result.saltados++; continue; }
 
       try {
         const id = encodeURIComponent(String(u.id));
@@ -101,7 +115,7 @@ Deno.serve(async (req: Request) => {
             to: email,
             to_name: String(u.nombre || ""),
             subject: "📋 Tu resumen semanal — Pathway",
-            html: digestHtml(String(u.nombre || ""), nuevos, totalActivos),
+            html: digestHtml(String(u.nombre || ""), nuevos, totalActivos, String(u.id || "")),
             reply_to: "hi@pathwaycareercoach.com",
           }),
         });

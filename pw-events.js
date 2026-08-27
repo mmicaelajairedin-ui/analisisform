@@ -30,6 +30,51 @@
     var MAX = 300;
     var origFetch = window.fetch ? window.fetch.bind(window) : null;
 
+    // ── Deduplicacion entre cargas de pagina (OPT-IN) ────────────────────────
+    // El tope MAX solo cuenta dentro de UNA carga: recargar la pagina reiniciaba
+    // el contador y el evento se volvia a emitir. Medido en produccion: 3.564 de
+    // 3.646 eventos eran `CallRequested` de 10 personas recargando /reservar.html
+    // — el 97,5% del event store era una misma intencion contada cientos de veces.
+    //
+    // Es OPT-IN a proposito: un emisor sin `once` se comporta EXACTAMENTE igual
+    // que antes. Solo los eventos de INTENCION (llegue a esta pagina) lo usan;
+    // los de ACCION (guarde, invite, complete) deben poder repetirse.
+    //
+    //   pwEmit("CallRequested", { once: "coach:123", onceHours: 24, ... })
+    var ONCE_LS = "pw_ev_once";
+    var ONCE_MAX_KEYS = 60;   // no dejar crecer el localStorage sin limite
+
+    function onceStore() {
+      try { return JSON.parse(localStorage.getItem(ONCE_LS) || "{}") || {}; }
+      catch (e) { return {}; }
+    }
+
+    // true = ya se emitio dentro de la ventana → hay que saltarlo.
+    // Si localStorage no esta disponible (modo privado, permisos), devuelve
+    // false: preferimos un evento de mas que perder el evento entero.
+    function onceSeen(tipo, key, hours) {
+      try {
+        var k = tipo + "|" + key;
+        var now = Date.now();
+        var win = (hours > 0 ? hours : 24) * 3600000;
+        var st = onceStore();
+        if (st[k] && (now - st[k]) < win) return true;
+        st[k] = now;
+        // Poda: fuera lo caducado y, si aun sobra, lo mas viejo primero.
+        var keys = Object.keys(st);
+        for (var i = 0; i < keys.length; i++) {
+          if ((now - st[keys[i]]) > win) delete st[keys[i]];
+        }
+        keys = Object.keys(st);
+        if (keys.length > ONCE_MAX_KEYS) {
+          keys.sort(function (a, b) { return st[a] - st[b]; });
+          for (var j = 0; j < keys.length - ONCE_MAX_KEYS; j++) delete st[keys[j]];
+        }
+        localStorage.setItem(ONCE_LS, JSON.stringify(st));
+        return false;
+      } catch (e) { return false; }
+    }
+
     // Quien dispara el evento (best-effort, sin romper si no hay sesion).
     function actor() {
       try {
@@ -49,6 +94,8 @@
       try {
         if (!tipo || sent >= MAX || !origFetch) return;
         opts = opts || {};
+        // Dedup opt-in entre cargas: sin `once` el comportamiento no cambia.
+        if (opts.once && onceSeen(tipo, "" + opts.once, opts.onceHours)) return;
         var a = actor();
         var row = {
           tipo: ("" + tipo).slice(0, 80),

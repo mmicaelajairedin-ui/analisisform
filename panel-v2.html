@@ -6,6 +6,8 @@
 <script src="pw-observe.js"></script>
 <script src="/pw-modalidad.js"></script>
 <script src="pw-events.js"></script>
+<script src="pw-programa.js"></script>
+<script src="pw-pdf-text.js"></script>
 <script src="/pw-native.js"></script>
 <link rel="stylesheet" href="/pw-icons.css?v=1">
 <script src="/pw-icons.js?v=1"></script>
@@ -2199,6 +2201,53 @@ function viewMobJuego(){
   return "<button class='cp-mobjuego' data-act='juego-open' aria-label='Jugar a la cabra y sumar puntos'>"+
     "<img src='assets/cabra/frente.gif' alt='' onerror=\"this.onerror=null;this.src='assets/cabra/frente.gif'\">"+
   "</button>";
+}
+// AP4 · Enviar la invitación al portal automáticamente al dar de alta.
+//
+// NO pasa por isProV(): "Enviar email" es una función Pro dentro del modal de
+// redacción, pero la invitación de acceso no es una campaña — es el paso sin el
+// cual el cliente nunca entra al producto. Cobrar por él era lo que producía el
+// embudo 73 → 28 cuentas → 14 entradas.
+//
+// Best-effort con resultado: devuelve una promesa que resuelve true/false, para
+// que quien llama pueda abrir el modal de copiar/pegar como plan B.
+function _invitarCliente(email, nombreCorto, texto){
+  try{
+    var _cn=(REAL&&COACH&&COACH.name)||"tu coach";
+    var _cem=(REAL&&COACH&&COACH.email)||"";
+    var _cfoto=(REAL&&COACH&&COACH.photo)||"";
+    var _cslug=(REAL&&RCFG&&RCFG.slug)||"";
+    // El texto plano se pasa a HTML respetando los saltos de línea, y se escapa
+    // antes (el nombre lo escribe el coach: nunca va crudo al email).
+    var _html=esc(texto).replace(/\n/g,"<br>");
+    var _body={
+      to:email, to_name:nombreCorto||"", subject:"Tu acceso a Pathway",
+      html:"<p style='margin:0;color:#1B2E26;font-size:15px;line-height:1.7'>"+_html+"</p>",
+      reply_to:_cem||"hi@pathwaycareercoach.com",
+      signature:"coach",
+      coach:{nombre:_cn,email:_cem,photo:_cfoto,slug:_cslug}
+    };
+    return fetch(SB+"/functions/v1/send-email",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(_body)})
+      .then(function(r){
+        var ok=!!(r&&r.ok);
+        // Deja rastro del envío para poder medir AP4-G sin adivinar.
+        try{ if(ok&&window.pwEmit) pwEmit("ClientInvited",{dominio:"Coaching",entidad_tipo:"cliente",entidad_id:email}); }catch(_e){}
+        return ok;
+      })
+      .catch(function(){ return false; });
+  }catch(e){ return Promise.resolve(false); }
+}
+// AP1 · corregir la semana a mano NO rompe el reloj: lo RE-ANCLA. El coach dice
+// "va por la semana 3" y `programa_inicio` se mueve para que la semana derivada
+// sea 3 y siga corriendo desde ahi. `semana_activa` se sigue escribiendo como
+// cache/fallback — lo leen emails, consultas y MultiCoach.
+// extra = el resto de campos del mismo PATCH (notas, etapas...).
+function _progPatch(sem, extra){
+  var p = extra ? JSON.parse(JSON.stringify(extra)) : {};
+  var s = parseInt(sem,10); if(!(s>=1)) s=1;
+  p.semana_activa = s;
+  if(window.PWPROG) p.programa_inicio = PWPROG.anclaPara(s);
+  return p;
 }
 // Nicho y pestañas del cliente (fuente única: la usa la ficha y la barra móvil contextual).
 function _cliNicho(c){ return _isDemoCoach() ? (state.demoTipo||'carrera') : ((c&&c.raw&&c.raw.nicho)||(typeof RCFG!=='undefined'&&RCFG&&RCFG.coach_type)||(c&&c.raw&&c.raw.configuracion&&c.raw.configuracion.tipo)||'carrera'); }
@@ -7266,6 +7315,9 @@ function viewMailModal(){
       "<div class='cp-card-hd'><h3 class='cp-card-title'>Vista previa del email<span class='dot'>.</span></h3>"+
         "<button class='cp-icon-btn' data-act='mail-close' title='Cerrar'>"+svg(IC.close,15)+"</button></div>"+
       "<div class='cp-card-pad' style='display:flex;flex-direction:column;gap:14px'>"+
+        // AP4 · plan B: si el envío automático de la invitación falló, se dice
+        // por qué está abierto este modal en vez de dejarlo aparecer sin más.
+        (m.nota?"<div style='font-size:12.5px;line-height:1.5;color:#8E5A35;background:rgba(233,196,106,.16);border-radius:9px;padding:10px 12px'>"+esc(m.nota)+"</div>":"")+
         "<div style='font-size:12px;color:var(--pw-text-soft)'>Para: <strong style='color:var(--pw-carbon)'>"+esc(m.to||"")+"</strong></div>"+
         "<div class='cp-form-row'><label class='cp-form-label'>Asunto</label><input id='mp-sub' class='cp-form-input' value=\""+esc(m.subj||"")+"\"></div>"+
         "<div><div class='cp-form-label' style='margin-bottom:6px'>Mensaje</div>"+
@@ -7314,7 +7366,14 @@ function viewGenMatModal(){
       "<div class='cp-card-pad' style='display:flex;flex-direction:column;gap:12px'>"+
         "<div class='cp-form-hint' style='margin:0'>Pega el texto del material y la IA lo usa para generarlo.</div>"+
         "<div class='cp-form-row'><label class='cp-form-label'>"+fld.lbl+"</label><textarea id='"+fld.id+"' class='cp-form-textarea' style='min-height:120px' placeholder='"+esc(fld.ph)+"'>"+fld.val+"</textarea></div>"+
-        "<span class='cp-form-hint'>La IA lee el <strong>texto</strong> que pegas. (Subir el PDF directo es algo que podemos sumar más adelante.)</span>"+
+        // AP4 · subir el PDF en vez de copiar y pegar. El textarea de arriba
+        // sigue siendo la fuente que leen los handlers gen-*: esto solo lo
+        // rellena. Si el PDF falla, el pegado manual sigue disponible.
+        "<div style='display:flex;align-items:center;gap:10px;flex-wrap:wrap'>"+
+          "<button class='cp-btn cp-btn-ghost' style='height:34px;font-size:12.5px;padding:0 14px' data-act='pdf-pick' data-target='"+esc(fld.id)+"'>"+PWI.svg('fileText',{sm:true})+" Subir un PDF</button>"+
+          "<span id='pdf-estado' style='font-size:12px;color:var(--pw-text-soft)'></span>"+
+        "</div>"+
+        "<span class='cp-form-hint'>Sube el PDF y sacamos el texto, o pégalo tú. La IA lee el texto del campo de arriba.</span>"+
         "<div style='display:flex;gap:10px;justify-content:flex-end;padding-top:4px'>"+
           "<button class='cp-btn cp-btn-ghost' data-act='genmat-close'>Cancelar</button>"+
           "<button class='cp-btn cp-btn-primary' data-act='"+act+"' data-id='"+esc(g.id)+"'>✦ Generar</button>"+
@@ -7514,7 +7573,23 @@ function notifCard(){
       "<div class='cp-toggle-body'><div class='cp-toggle-title'>Notificaciones en este dispositivo</div>"+
       "<div class='cp-toggle-desc'>Te avisamos cuando entra un cliente nuevo, una solicitud de Pathway o un mensaje de un cliente — aunque no tengas el panel abierto.</div></div>"+
       "<button class='cp-switch "+(on?"is-on":"")+"' data-act='push-toggle' aria-label='Notificaciones en este dispositivo'><span></span></button></div>"+
+      // AP2 · el resumen semanal salia opt-in y el panel se habia quedado sin
+      // sitio donde activarlo (0 de 49 coaches lo recibian). Ahora sale por
+      // defecto, asi que hace falta el interruptor para poder apagarlo.
+      "<div class='cp-toggle' style='padding:12px 0 4px'>"+
+        "<div class='cp-toggle-body'><div class='cp-toggle-title'>Resumen semanal por email</div>"+
+        "<div class='cp-toggle-desc'>Cada lunes, tus clientes nuevos de la semana y cuántos tienes activos. Llega a "+esc((REAL&&COACH&&COACH.email)||"tu correo")+".</div></div>"+
+        "<button class='cp-switch "+(_weeklyOn()?"is-on":"")+"' data-act='weekly-toggle' aria-label='Resumen semanal por email'><span></span></button></div>"+
       note+help+"</div></div>";
+}
+// AP2 · lectura del flag con el MISMO criterio que notif-coach: encendido salvo
+// que valga exactamente false. Si aqui se leyera `=== true`, el interruptor
+// diria "apagado" mientras el email si sale.
+function _weeklyOn(){
+  try{
+    var n=(REAL&&RCFG&&RCFG.notifs)||{};
+    return n.weeklyReport!==false;
+  }catch(e){ return true; }
 }
 function cfgAccount(){
   return "<div class='cp-card'><div class='cp-card-hd'><h3 class='cp-card-title'>Cuenta<span class='dot'>.</span></h3></div>"+
@@ -12072,6 +12147,45 @@ document.addEventListener("click", function(ev){
     return;
   }
   if(act==="pw-optin"){ state.pathwayOptIn=!state.pathwayOptIn; if(REAL){ saveCfg({ pathway_optin: state.pathwayOptIn }); } else { render(); } return; }
+  // AP4 · elegir un PDF y volcar su texto en el campo que la IA ya leía. No se
+  // toca el estado ni se re-renderiza: se escribe directo en el DOM para no
+  // perder lo que el coach hubiera pegado en los otros campos del modal.
+  if(act==="pdf-pick"){
+    var _tgt=el.getAttribute("data-target")||"pa-cv";
+    var _est=function(txt,err){ var n=document.getElementById("pdf-estado"); if(n){ n.textContent=txt; n.style.color=err?"var(--pw-danger)":"var(--pw-text-soft)"; } };
+    var _inp=document.getElementById("_pdfpick");
+    if(!_inp){ _inp=document.createElement("input"); _inp.type="file"; _inp.accept="application/pdf,.pdf"; _inp.id="_pdfpick"; _inp.style.display="none"; document.body.appendChild(_inp); }
+    _inp.onchange=function(){
+      var f=_inp.files&&_inp.files[0]; _inp.value="";
+      if(!f) return;
+      if(!window.PWPDF){ _est("El lector de PDF no está disponible. Pega el texto a mano.",true); return; }
+      _est("Leyendo "+f.name+"…");
+      PWPDF.texto(f).then(function(txt){
+        var ta=document.getElementById(_tgt);
+        if(!ta){ _est("No se encontró el campo de texto.",true); return; }
+        ta.value=txt;
+        _est("Texto extraído de "+f.name+" ("+txt.length.toLocaleString("es-ES")+" caracteres) ✓");
+      }).catch(function(e){ _est((e&&e.message)||"No pudimos leer el PDF.",true); });
+    };
+    _inp.click();
+    return;
+  }
+  // AP2 · encender/apagar el resumen semanal. Se guarda SIEMPRE el booleano
+  // explicito (no se borra la clave) para que `!== false` en notif-coach lea lo
+  // que el coach decidio y no el default.
+  if(act==="weekly-toggle"){
+    var _wOn=!_weeklyOn();
+    if(!REAL){ render(); return; }
+    var _wn={}; try{ var _pn=(RCFG&&RCFG.notifs)||{}; for(var _wk in _pn){ if(_pn.hasOwnProperty(_wk)) _wn[_wk]=_pn[_wk]; } }catch(e){}
+    _wn.weeklyReport=_wOn;
+    // Optimista: `saveCfg` solo actualiza RCFG cuando vuelve el servidor, y con
+    // noRender no repinta. Sin esto el interruptor se quedaria en su sitio hasta
+    // el siguiente render. Si el guardado falla, saveCfg ya avisa.
+    try{ if(RCFG) RCFG.notifs=_wn; }catch(e){}
+    saveCfg({ notifs:_wn }, null, null, { noRender:true, toast:(_wOn?"Resumen semanal activado ✓":"Resumen semanal desactivado") });
+    render();
+    return;
+  }
   if(act==="pw-connect"){ pwConnect(); return; }
   if(act==="pw-connect-check"){ state.stripe=null; _stripeReq=false; render(); return; }
   if(act==="sol-pick"){ var pkid=el.getAttribute("data-id"); state.solSel = pkid || null; render(); return; }
@@ -13045,7 +13159,7 @@ document.addEventListener("click", function(ev){
     // etapa (4), no en cada guardado estando ya en la 4.
     var _wkOld=0, _wkC=CLIENTS.filter(function(x){return String(x.id)===String(wkid);})[0];
     try{ _wkOld=(_wkC&&parseInt(_wkC.week,10))||0; }catch(e){}
-    _sbw("candidatos?id=eq."+encodeURIComponent(wkid),"PATCH",{semana_activa:wkvv})
+    _sbw("candidatos?id=eq."+encodeURIComponent(wkid),"PATCH",_progPatch(wkvv))
       .then(function(r){ if(!r.ok) throw 0; CLIENTS.forEach(function(x){ if(String(x.id)===String(wkid)) x.week=wkvv; }); state.cliWeek=null; toast("Semana actualizada ✓ — el cliente la ve");
         // OS Core: el cliente llegó a la última etapa (4) → cierre del programa
         // (ventana de renovación). Best-effort, 1 vez por transición.
@@ -13231,6 +13345,8 @@ document.addEventListener("click", function(ev){
     if(pw && pw.length<6){ alert("La contraseña debe tener al menos 6 caracteres (o déjala vacía)."); return; }
     var nfn=(nm.split(" ")[0]||nm);
     var resetLink="https://pathwaycareercoach.com/recuperar-password.html?email="+encodeURIComponent(em);
+    // Texto de la invitación — el mismo que antes había que copiar a Gmail.
+    var _invTxt="Hola "+nfn+", ¡te damos la bienvenida a tu proceso con Pathway!\n\nYa tienes acceso a tu portal:\nhttps://pathwaycareercoach.com/cliente.html\n\nUsuario: "+em+(pw?"\nContraseña: "+pw:"")+"\n\nPara crear o cambiar tu contraseña cuando quieras, entra aquí:\n"+resetLink+"\n\nAhí verás tu plan, tus documentos y los recursos de cada semana. Cualquier duda, escríbeme.";
     var finish=function(){
       state.newOpen=false; toast("Cliente creado ✓");
       try{ pwAddXP(50,"Cliente nuevo"); }catch(e){}
@@ -13238,8 +13354,16 @@ document.addEventListener("click", function(ev){
       // Si el alta vino desde el juego, al cerrar el email de bienvenida volvemos
       // al Resumen para ver a la cabra caminar al próximo paso.
       if(state.fromGame){ state.fromGame=false; state._gameReturn=true; }
-      state.mail={ open:true, to:em, subj:"Tu acceso a Pathway",
-        body:"Hola "+nfn+", ¡te damos la bienvenida a tu proceso con Pathway!\n\nYa tienes acceso a tu portal:\nhttps://pathwaycareercoach.com/cliente.html\n\nUsuario: "+em+(pw?"\nContraseña: "+pw:"")+"\n\nPara crear o cambiar tu contraseña cuando quieras, entra aquí:\n"+resetLink+"\n\nAhí verás tu plan, tus documentos y los recursos de cada semana. Cualquier duda, escríbeme." };
+      // AP4 · la invitación SALE SOLA. Antes se abría este modal y el coach tenía
+      // que copiar el texto a Gmail — y "Enviar email" era función Pro, así que
+      // para un coach Standard el camino obligatorio era el portapapeles. Medido:
+      // 73 clientes dados de alta, 28 con cuenta, 14 que llegaron a entrar.
+      // El modal sigue existiendo (pestaña Mensajes de la ficha) y aquí se abre
+      // solo como PLAN B, si el envío falla de verdad.
+      _invitarCliente(em, nfn, _invTxt).then(function(okEnv){
+        if(okEnv){ toast("Invitación enviada a "+em+" ✓"); }
+        else { state.mail={ open:true, to:em, subj:"Tu acceso a Pathway", body:_invTxt, nota:"No pudimos enviarlo automáticamente. Copia el texto y mándaselo tú." }; render(); }
+      });
       loadReal();
     };
     var doCreate=function(hash){
@@ -13248,7 +13372,7 @@ document.addEventListener("click", function(ev){
       // del usuario es best-effort: si el email ya existe, no rompe el alta.
       var ub={ email:em, rol:"cliente", nombre:nm, activo:true }; if(hash) ub.password_hash=hash;
       _sbw("usuarios","POST",ub).catch(function(){});
-      _sbw("candidatos","POST",{nombre:nm,email:em,cargo:cg,coach_id:RME.id,nicho:((typeof RCFG!=='undefined'&&RCFG&&RCFG.coach_type)||"carrera"),semana_activa:1,activo:true})
+      _sbw("candidatos","POST",{nombre:nm,email:em,cargo:cg,coach_id:RME.id,nicho:((typeof RCFG!=='undefined'&&RCFG&&RCFG.coach_type)||"carrera"),semana_activa:1,programa_inicio:(window.PWPROG?PWPROG.anclaPara(1):null),activo:true})
         .then(function(r){ if(!r.ok) throw 0; finish(); })
         .catch(function(){ alert("No se pudo crear. Revisa el email (¿ya existe?) o créalo desde tu panel actual."); });
     };
@@ -13357,7 +13481,7 @@ document.addEventListener("click", function(ev){
     var mc=CLIENTS.filter(function(x){return String(x.id)===String(mid);})[0]||{};
     var wkv=state.cliWeek!=null?state.cliWeek:(mc.week||1);
     var _nv=_val("cf-notas");
-    _sbw("candidatos?id=eq."+encodeURIComponent(mid),"PATCH",{notas_privadas:_nv,semana_activa:wkv})
+    _sbw("candidatos?id=eq."+encodeURIComponent(mid),"PATCH",_progPatch(wkv,{notas_privadas:_nv}))
       .then(function(r){ if(!r.ok) throw 0;
         CLIENTS.forEach(function(x){ if(String(x.id)===String(mid)){ x.notas=_nv; x.week=wkv; } });
         state.cliWeek=null; toast("Nota y semana guardadas ✓"); render(); })
@@ -13448,7 +13572,7 @@ document.addEventListener("click", function(ev){
     var esc2=CLIENTS.filter(function(x){return String(x.id)===String(esid);})[0]||{};
     var ewk=state.cliWeek!=null?state.cliWeek:(esc2.week||1);
     var enames=[0,1,2,3].map(function(i){ return (_val("et-"+i)||"").trim() || ETAPAS_DEFAULT[i]; });
-    _sbw("candidatos?id=eq."+encodeURIComponent(esid),"PATCH",{semana_activa:ewk,etapas:JSON.stringify(enames)})
+    _sbw("candidatos?id=eq."+encodeURIComponent(esid),"PATCH",_progPatch(ewk,{etapas:JSON.stringify(enames)}))
       .then(function(r){ if(!r.ok) throw 0;
         CLIENTS.forEach(function(x){ if(String(x.id)===String(esid)){ x.week=ewk; if(x.raw) x.raw.etapas=JSON.stringify(enames); } });
         state.cliWeek=null; toast("Etapa y nombres guardados ✓ — el cliente lo ve"); render(); })
@@ -16290,7 +16414,12 @@ function loadReal(){
     });
     CLIENTS = list.map(function(c,i){
       var em=(""+(c.email||"")).toLowerCase().trim();
-      var wk=parseInt(c.semana_activa,10); if(!(wk>=1)) wk=1;
+      // AP1 · el reloj: la semana se DERIVA de programa_inicio (pw-programa.js),
+      // no del PATCH manual que nadie hacia. Sin ancla cae a semana_activa, que
+      // es exactamente el comportamiento anterior.
+      var wk=(window.PWPROG?PWPROG.semana(c):(parseInt(c.semana_activa,10)||1)); if(!(wk>=1)) wk=1;
+      var wkTotal=(window.PWPROG?PWPROG.total(c):4);
+      var wkFin=(window.PWPROG?PWPROG.terminado(c):false);
       // Medalla UNIFICADA con el portal del cliente: por PUNTOS (candidatos.puntos,
       // mismos umbrales 200/400/600 que PWJ.MEDALS). Antes se calculaba por
       // semana_activa → coach y cliente veían medallas distintas para la misma
@@ -16319,7 +16448,7 @@ function loadReal(){
       }catch(e){}
       return {
         id: String(c.id||em||("c"+i)), name: c.nombre||c.email||"Cliente", role: c.cargo||"",
-        email: c.email||"", week: wk, medal: medal, last:{txt:lastTxt,state:lastSt},
+        email: c.email||"", week: wk, weekTotal: wkTotal, weekDone: wkFin, medal: medal, last:{txt:lastTxt,state:lastSt},
         cvState: cvSet[em]?"published":"pending", reportState: rpSet[em]?"published":"pending",
         cvContenido: cvMap[em]||"",
         source: (c.pago_recibido ? "pathway" : "directo"), notas: (c.notas_privadas!=null ? c.notas_privadas : (_isChat(c.notas_coach) ? "" : (c.notas_coach||""))), chat: _chatArr(c.notas_coach), raw:c, inf: infMap[em]||null, ses:(function(){try{return JSON.parse(c.sesiones_registro||"[]")||[];}catch(e){return [];}})(), photo: (function(){ var _f=c.foto_perfil||c.foto_url||_cvPhoto(cvMap[em]); return (_f && /^https?:\/\//.test(_f))?_f:makeAvatar(c.nombre||c.email||"Cliente"); })()

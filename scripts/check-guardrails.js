@@ -5287,6 +5287,89 @@ const RULES = [
     },
   },
 
+  {
+    name: "eventos: CallRequested se emite UNA vez por dia, no en cada carga",
+    bug: "reservar.html emitia CallRequested en cada carga de pagina. El tope " +
+         "MAX de pw-events.js solo cuenta dentro de UNA carga, asi que recargar " +
+         "reiniciaba el contador. Medido el 2026-08-27: 3.564 de 3.646 eventos " +
+         "de la tabla eran ese evento, de 10 personas. Cualquier metrica de " +
+         "activacion construida sobre `eventos` mentia — y con ella los criterios a 30 " +
+         "dias de AP1/AP2/AP4. Fix (dependencia de medicion, no una apuesta): " +
+         "pwEmit acepta " +
+         "`once` (dedup opt-in entre cargas, en localStorage) y reservar.html lo usa.",
+    check() {
+      const ev = read("pw-events.js");
+      if (!/opts\.once\s*&&\s*onceSeen\(/.test(ev))
+        return "pw-events.js: pwEmit dejo de honrar la opcion `once` (vuelve el evento en bucle).";
+      const rv = read("reservar.html");
+      const m = rv.match(/pwEmit\("CallRequested"[^;]*/);
+      if (!m) return null; // si ya no se emite, no hay nada que proteger
+      if (!/once\s*:/.test(m[0]))
+        return "reservar.html: CallRequested volvio a emitirse sin `once` — se contara una vez por recarga.";
+      return null;
+    },
+  },
+  {
+    name: "reloj: la semana del cliente se deriva, no se lee de semana_activa",
+    bug: "semana_activa solo cambiaba con un PATCH manual del coach y nadie lo " +
+         "hacia: 58 de 73 clientes llevaban meses en la semana 1, y con ellos los " +
+         "recursos por semana, el roadmap y las medallas. Fix (AP1): pw-programa.js " +
+         "deriva la semana de programa_inicio, y panel y portal usan ESE calculo. " +
+         "Si alguno vuelve a leer semana_activa a pelo, coach y cliente vuelven a " +
+         "ver semanas distintas de la misma persona.",
+    check() {
+      if (!/window\.PWPROG/.test(read("pw-programa.js")) )
+        return "pw-programa.js: desaparecio la fuente unica del reloj.";
+      const p = read("panel-v2.html");
+      if (!/pw-programa\.js/.test(p)) return "panel-v2.html: dejo de cargar pw-programa.js.";
+      if (!/PWPROG\.semana\(/.test(p)) return "panel-v2.html: la semana del cliente volvio a leerse sin PWPROG.";
+      const c = read("cliente.html");
+      if (!/pw-programa\.js/.test(c)) return "cliente.html: dejo de cargar pw-programa.js.";
+      if (!/PWPROG\.semana\(/.test(c)) return "cliente.html: la semana volvio a leerse sin PWPROG.";
+      return null;
+    },
+  },
+  {
+    name: "avisos: el resumen semanal sale por defecto (opt-out, no opt-in)",
+    bug: "notif-coach exigia configuracion.notifs.weeklyReport === true, pero el " +
+         "panel se habia quedado sin UI para activarlo: 1 de 49 coaches tenia " +
+         "preferencias de notificacion y 0 el resumen semanal. El producto no " +
+         "tenia ningun canal de vuelta. Fix (AP2): sale salvo que el coach lo " +
+         "apague explicitamente, con baja de un clic en el pie del email.",
+    check() {
+      const n = read("supabase/functions/notif-coach/index.ts");
+      if (/notifs\.weeklyReport\s*!==\s*true/.test(n))
+        return "notif-coach: el resumen semanal volvio a ser opt-in (`!== true`) — no lo recibira nadie.";
+      if (!/notifs\.weeklyReport\s*===\s*false/.test(n))
+        return "notif-coach: se perdio el respeto a la baja explicita del coach (`=== false`).";
+      if (!/k=weeklyReport/.test(n))
+        return "notif-coach: el email perdio el enlace de baja (obligatorio si sale por defecto).";
+      const u = read("supabase/functions/unsubscribe/index.ts");
+      if (!/weeklyReport/.test(u))
+        return "unsubscribe: dejo de aceptar la baja del resumen semanal (el enlace apagaria otra cosa).";
+      return null;
+    },
+  },
+  {
+    name: "alta de cliente: la invitacion al portal se envia sola",
+    bug: "Al dar de alta un cliente se abria un modal y el coach tenia que copiar " +
+         "el texto a Gmail; ademas 'Enviar email' era funcion Pro. Resultado: 73 " +
+         "clientes, 28 con cuenta, 14 que llegaron a entrar al portal. Fix (AP4): " +
+         "se envia por send-email al crear, sin pasar por isProV(); el modal queda " +
+         "como plan B si el envio falla.",
+    check() {
+      const p = read("panel-v2.html");
+      if (!/function _invitarCliente\(/.test(p))
+        return "panel-v2.html: desaparecio _invitarCliente — el alta vuelve a depender del copiar y pegar.";
+      if (!/_invitarCliente\(em/.test(p))
+        return "panel-v2.html: el alta de cliente dejo de llamar a _invitarCliente.";
+      const fn = p.slice(p.indexOf("function _invitarCliente("), p.indexOf("function _invitarCliente(") + 1600);
+      if (/isProV\(\)/.test(fn))
+        return "panel-v2.html: la invitacion volvio a depender del plan Pro.";
+      return null;
+    },
+  },
+
 ];
 
 
