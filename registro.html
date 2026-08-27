@@ -592,62 +592,62 @@ async function registrar(){
     // Cuando ese coach entre a su panel, desbloquea el badge Comunidad.
     try { var _rf = new URLSearchParams(location.search).get('ref'); if (_rf) userData.referido_por = _rf; } catch(e){}
 
-    // Si es activación → PATCH sobre la fila existente. Si no → POST nuevo.
-    var res = activatingRow
-      ? await fetch(SB + '/rest/v1/usuarios?id=eq.' + encodeURIComponent(activatingRow.id) + '&select=id,email,rol,nombre,activo,configuracion', {
-          method: 'PATCH',
-          headers: {
-            'apikey': KEY,
-            'Authorization': 'Bearer ' + KEY,
-            'Content-Type': 'application/json',
-            'Prefer': 'return=representation'
-          },
-          body: JSON.stringify(userData)
-        })
-      : await fetch(SB + '/rest/v1/usuarios?select=id,email,rol,nombre,activo,configuracion', {
-          method: 'POST',
-          headers: {
-            'apikey': KEY,
-            'Authorization': 'Bearer ' + KEY,
-            'Content-Type': 'application/json',
-            'Prefer': 'return=representation'
-          },
-          body: JSON.stringify(userData)
-        });
-
+    // RC-12 — RUTA PRIMARIA: el alta va SIEMPRE por la edge function.
+    //
+    // Antes esto intentaba primero un POST/PATCH anónimo directo a `usuarios` y
+    // solo llegaba a `registrar-coach` desde el `catch` del 403. Pero ninguna
+    // policy de INSERT admite `rol='coach'`, así que el 403 era seguro: el
+    // camino feliz pasaba por la ruta de error. Cualquier retoque en el manejo
+    // de códigos de estado tumbaba TODAS las altas.
+    //
+    // `registrar-coach` decide sola si crea o activa (y valida que el email no
+    // tenga ya dueño — RC-14), así que aquí no hace falta la bifurcación.
+    // `password` viaja para que la función estrene la identidad de Auth; no se
+    // persiste en ninguna parte.
     var coach;
-    if(res.ok){
-      coach = (await res.json())[0];
-    } else if(res.status === 401 || res.status === 403){
-      // RLS estricto (Fase 5): el POST/PATCH anon con rol='coach' está bloqueado
-      // por policy. Fallback: crear/activar la cuenta vía la edge function
-      // registrar-coach (service role, sanitiza campos peligrosos). Hoy —sin RLS—
-      // este camino NO se usa (el POST anon entra directo), así que no cambia nada.
-      try {
-        var _rr = await fetch(SB + '/functions/v1/registrar-coach', {
-          method: 'POST',
-          headers: {'apikey':KEY,'Authorization':'Bearer '+KEY,'Content-Type':'application/json'},
-          body: JSON.stringify(userData)
-        });
-        var _rj = await _rr.json().catch(function(){ return {}; });
-        if(!_rr.ok || !_rj.ok){
+    try {
+      var _rr = await fetch(SB + '/functions/v1/registrar-coach', {
+        method: 'POST',
+        headers: {'apikey':KEY,'Authorization':'Bearer '+KEY,'Content-Type':'application/json'},
+        body: JSON.stringify(Object.assign({}, userData, {password: password}))
+      });
+      var _rj = await _rr.json().catch(function(){ return {}; });
+      if(!_rr.ok || !_rj.ok){
+        if(_rj.error === 'email_taken'){
+          showError('Ya existe una cuenta con ese email. <a href="/login.html" style="color:#2D6A4F;font-weight:600;">Inicia sesión</a> o <a href="/recuperar-password.html?email=' + encodeURIComponent(email) + '" style="color:#2D6A4F;font-weight:600;">recupera tu contraseña</a>.');
+        } else if(_rj.error === 'auth_lookup_failed'){
+          showError('No pudimos comprobar tu email ahora mismo. Inténtalo de nuevo en un minuto.');
+        } else {
           showError('Error al crear la cuenta: ' + (_rj.error || _rr.status));
-          btn.disabled = false; loading.style.display = 'none';
-          return;
         }
-        coach = _rj;
-      } catch(_e){
-        showError('Error de red al crear la cuenta. Probá de nuevo.');
         btn.disabled = false; loading.style.display = 'none';
         return;
       }
-    } else {
-      var errBody = await res.text();
-      console.error('Error creando usuario:', errBody);
-      showError('Error al crear la cuenta: ' + (errBody.slice(0, 100) || res.status));
+      coach = _rj;
+    } catch(_e){
+      showError('Error de red al crear la cuenta. Inténtalo de nuevo.');
       btn.disabled = false; loading.style.display = 'none';
       return;
     }
+
+    // RC-12 — SESIÓN AUTENTICADA antes de entrar al panel.
+    //
+    // El alta redirige DIRECTO a panel-v2.html, saltándose login.html. Sin este
+    // paso la coach llegaba con `mj_user` en localStorage pero SIN sesión de
+    // Supabase Auth: `PWAUTH.tokenSync()` devolvía null, todo caía a la anon key
+    // y `usuarios_self_update` (lower(email)=pw_email()) no matcheaba ninguna
+    // fila — no podía guardar su perfil ni su configuración. El alta "terminaba"
+    // en un panel que no persistía nada.
+    //
+    // `registrar-coach` ya creó la identidad, así que este signIn entra a la
+    // primera. Si aun así fallara, seguimos al panel: el peor caso es el estado
+    // anterior, y login.html sabe recuperarlo.
+    var _authOk = false;
+    try {
+      var _sbReg = window.supabase.createClient(SB, KEY);
+      var _si = await _sbReg.auth.signInWithPassword({email: email, password: password});
+      _authOk = !!(_si && _si.data && _si.data.session);
+    } catch(_e){ _authOk = false; }
 
     // Eventos de conversión a Meta: registro completo + arranque del trial gratis.
     // Es la señal que Meta usa para optimizar los anuncios hacia altas reales.
@@ -658,7 +658,9 @@ async function registrar(){
       id: coach.id,
       email: email,
       rol: 'coach',
-      nombre: nombre
+      nombre: nombre,
+      auth_id: coach.auth_id || null,
+      configuracion: coach.configuracion || configuracion
     }));
 
     // Notificación admin: avísale a Micaela que hay nuevo coach.
@@ -865,7 +867,12 @@ async function registrar(){
     // Marcar este dispositivo: ya uso una prueba (anti-abuso del trial).
     try{ localStorage.setItem('pw_trial_used','1'); }catch(e){}
 
-    var primerLogin = 'panel-v2.html?welcome=1';
+    // Si la sesión no llegó a crearse, el panel no podría escribir: lo mandamos
+    // a login.html, que es el camino que sabe reparar la identidad. No es un
+    // fallback decorativo — es la ruta real de recuperación.
+    var primerLogin = _authOk
+      ? 'panel-v2.html?welcome=1'
+      : ('login.html?email=' + encodeURIComponent(email) + '&nuevo=1');
     setTimeout(function(){
       window.location.href = primerLogin;
     }, 1200);

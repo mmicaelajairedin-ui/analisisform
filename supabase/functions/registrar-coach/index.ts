@@ -23,8 +23,10 @@
 // de las tres rutas que cierra) y la señal decisiva es si YA existe una
 // identidad de Auth para ese email.
 //
-// Body: { email, password_hash, nombre, nombre_practica?, bio?, foto_url?, configuracion? }
-// Respuesta: { ok, mode:'created'|'activated', id, email, rol, nombre, activo, configuracion } | { error }
+// Body: { email, password_hash, password?, nombre, nombre_practica?, bio?, foto_url?, configuracion? }
+//   `password` (plaintext) es opcional y se usa SOLO para estrenar la identidad
+//   de Auth del coach (RC-12). No se persiste en ningún sitio.
+// Respuesta: { ok, mode:'created'|'activated', auth_id, id, email, rol, nombre, activo, configuracion } | { error }
 //
 // Env (auto-inyectadas): SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY
 // Deploy: supabase functions deploy registrar-coach --no-verify-jwt
@@ -102,6 +104,45 @@ async function identidadAuthExiste(email: string): Promise<boolean> {
   throw new Error("auth_lookup_failed: too_many_pages");
 }
 
+// ── RC-12 — provisionar la identidad de Auth del coach recién dado de alta ──
+// Antes el alta creaba SOLO la fila de `usuarios`: `auth_id` quedaba NULL hasta
+// que la persona pasara por login.html (que dispara migrate-user-to-auth). Pero
+// registro.html redirige DIRECTO al panel, saltándose el login — así que el
+// coach llegaba sin sesión de Auth, `pw_coach_id()` devolvía NULL y no podía ni
+// leer ni guardar su propia fila (`usuarios_self_update` exige el JWT).
+//
+// SEGURIDAD (RC-14): aquí solo se llega con estado 'libre' o 'invitada', y
+// ambos garantizan que NO existe identidad de Auth para este email. Por eso se
+// usa POST (crear) y NUNCA PUT/PATCH: esta función no puede sobrescribir la
+// credencial de una cuenta ajena, solo estrenar una.
+//
+// BEST-EFFORT a propósito: si falla, la fila de `usuarios` ya quedó bien y el
+// coach entra por login.html, que crea la identidad por la vía de siempre. Se
+// degrada al comportamiento anterior, no se rompe el alta.
+async function provisionarAuth(email: string, password: string, usuarioId: string): Promise<string | null> {
+  try {
+    const r = await fetch(`${SB_URL}/auth/v1/admin/users`, {
+      method: "POST",
+      headers: authAdmin,
+      // email_confirm:true → no manda el correo de confirmación de Supabase.
+      // La verificación de email de Pathway es la suya (verify.html).
+      body: JSON.stringify({ email, password, email_confirm: true }),
+    });
+    if (!r.ok) return null;
+    const u = await r.json();
+    const authId = (u && u.id) ? String(u.id) : "";
+    if (!authId) return null;
+    // Enlazar la fila con su identidad → pw_coach_id() ya resuelve para este coach.
+    const up = await fetch(
+      `${SB_URL}/rest/v1/usuarios?id=eq.${encodeURIComponent(usuarioId)}&select=id`,
+      { method: "PATCH", headers: { ...svc, "Content-Type": "application/json", Prefer: "return=representation" },
+        body: JSON.stringify({ auth_id: authId }) },
+    );
+    if (!up.ok) return null;
+    return authId;
+  } catch { return null; }
+}
+
 // Quita del configuracion que manda el cliente los campos que NO puede setear él
 // (privilegios / marcas internas). El resto (plan, estado_sub, fecha_fin_prueba,
 // coach_type, verification_token, referred_by, from_popup…) se conserva: es el
@@ -132,6 +173,10 @@ Deno.serve(async (req: Request) => {
   if (!EMAIL_RE.test(email)) return json({ error: "email_invalid" }, 400);
   const passwordHash = (body.password_hash || "").toString();
   if (!passwordHash) return json({ error: "password_required" }, 400);
+  // RC-12: el plaintext se usa SOLO para estrenar la identidad de Auth (ver
+  // provisionarAuth). Es opcional: sin él, el alta se comporta como antes y la
+  // identidad se crea en el primer login. Nunca se persiste.
+  const password = (body.password || "").toString();
   const nombre = (body.nombre || "").toString().trim();
   if (!nombre) return json({ error: "nombre_required" }, 400);
   const cfg = sanitizeCfg(body.configuracion);
@@ -196,7 +241,9 @@ Deno.serve(async (req: Request) => {
       );
       if (!r.ok) return json({ error: "activate_failed", status: r.status }, 502);
       const out = await r.json();
-      return json({ ok: true, mode: "activated", ...safeRow((out && out[0]) || {}) });
+      const fila = (out && out[0]) || {};
+      const authId = password && fila.id ? await provisionarAuth(email, password, String(fila.id)) : null;
+      return json({ ok: true, mode: "activated", auth_id: authId, ...safeRow(fila) });
     } catch { return json({ error: "write_failed" }, 502); }
   }
 
@@ -215,10 +262,11 @@ Deno.serve(async (req: Request) => {
     if (!r.ok) return json({ error: "insert_failed", status: r.status }, 502);
     const out = await r.json();
     const nuevo = (out && out[0]) || {};
+    const authId = password && nuevo.id ? await provisionarAuth(email, password, String(nuevo.id)) : null;
     // Embudo: arranca la prueba del coach (auto-registro desde la web). En el
     // path 'activated' NO se emite: ese coach fue invitado y crear-coach ya
     // registró su TrialStarted — emitir de nuevo lo contaría doble.
     await emitEvento({ tipo: "TrialStarted", dominio: "Billing", actor_email: email, actor_rol: "coach", actor_id: nuevo.id ? String(nuevo.id) : null, entidad_tipo: "coach", entidad_id: email, page: "registrar-coach", payload: { via: "self" } });
-    return json({ ok: true, mode: "created", ...safeRow(nuevo) });
+    return json({ ok: true, mode: "created", auth_id: authId, ...safeRow(nuevo) });
   } catch { return json({ error: "write_failed" }, 502); }
 });

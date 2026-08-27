@@ -1935,14 +1935,30 @@ const RULES = [
          "sobre otra cosa (jul-2026), contradiciendo la landing que promete trial " +
          "gratis. Reabierto: coach nuevo se auto-registra (POST) y el invitado activa " +
          "(PATCH). El anti-abuso es la verificación de email, NO cerrar el registro.",
+    // RC-12 (ago-2026): la regla comprobaba el MECANISMO (los dos fetch del
+    // navegador: PATCH para activar, POST para crear) en vez de la PROPIEDAD que
+    // da nombre a la regla. Al pasar el alta a `registrar-coach` como ruta
+    // primaria esos dos fetch desaparecieron y la regla saltaba en falso, aunque
+    // el registro seguía igual de abierto. Ahora se comprueba la propiedad: que
+    // nadie gatee el alta a "solo invitados" y que exista de verdad un camino de
+    // creación para un coach que nadie invitó.
     check() {
       const s = read("registro.html");
       if (!s) return null;
       const flat = s.replace(/\s+/g, " ");
-      if (/if \( ?!activatingRow ?\) \{[^}]{0,260}(por invitación|showError\()/.test(flat))
+      // Tolerante al formato: `if(!x){`, `if ( !x ) {`… La versión anterior exigía
+      // un espacio exacto tras `if` y no cazaba `if(!activatingRow){`.
+      if (/if\s*\(\s*!\s*activatingRow\s*\)\s*\{[^}]{0,260}(por invitación|showError\(|alert\()/.test(flat))
         return "registro.html: volvió a cerrar el alta abierta (bloquea a quien no fue invitado). La landing promete trial gratis.";
-      if (!/activatingRow[\s\S]{0,400}method: 'PATCH'[\s\S]{0,600}method: 'POST'/.test(s))
-        return "registro.html: se perdió el camino POST (crear cuenta nueva para un coach no invitado).";
+      // El alta llega al backend sin exigir invitación previa.
+      if (!/functions\/v1\/registrar-coach/.test(s))
+        return "registro.html: el alta ya no llega a registrar-coach (¿se cerró el auto-registro?).";
+      // Y el backend conserva el camino de CREAR (no solo el de activar).
+      const fn = read("supabase/functions/registrar-coach/index.ts");
+      if (fn && !/mode: "created"/.test(fn))
+        return "registrar-coach: se perdió el camino de creación (alta de un coach no invitado).";
+      if (fn && !/mode: "activated"/.test(fn))
+        return "registrar-coach: se perdió el camino de activación (coach invitado por un admin).";
       return null;
     },
   },

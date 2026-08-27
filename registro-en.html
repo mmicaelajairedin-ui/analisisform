@@ -583,61 +583,62 @@ async function registrar(){
       configuracion: configuracion
     };
 
-    // Si es activación → PATCH sobre la fila existente. Si no → POST nuevo.
-    var res = activatingRow
-      ? await fetch(SB + '/rest/v1/usuarios?id=eq.' + encodeURIComponent(activatingRow.id) + '&select=id,email,rol,nombre,activo,configuracion', {
-          method: 'PATCH',
-          headers: {
-            'apikey': KEY,
-            'Authorization': 'Bearer ' + KEY,
-            'Content-Type': 'application/json',
-            'Prefer': 'return=representation'
-          },
-          body: JSON.stringify(userData)
-        })
-      : await fetch(SB + '/rest/v1/usuarios?select=id,email,rol,nombre,activo,configuracion', {
-          method: 'POST',
-          headers: {
-            'apikey': KEY,
-            'Authorization': 'Bearer ' + KEY,
-            'Content-Type': 'application/json',
-            'Prefer': 'return=representation'
-          },
-          body: JSON.stringify(userData)
-        });
-
+    // RC-12 — PRIMARY PATH: sign-up always goes through the edge function.
+    //
+    // This used to try an anonymous POST/PATCH straight at `usuarios` and only
+    // reached `registrar-coach` from the 403 `catch`. But no INSERT policy
+    // allows `rol='coach'`, so the 403 was guaranteed: the happy path ran
+    // through the error route. Any change to status-code handling broke every
+    // sign-up.
+    //
+    // `registrar-coach` decides on its own whether to create or activate (and
+    // checks the email has no owner yet — RC-14), so no branching here.
+    // `password` travels so the function can provision the Auth identity; it is
+    // never persisted.
     var coach;
-    if(res.ok){
-      coach = (await res.json())[0];
-    } else if(res.status === 401 || res.status === 403){
-      // Strict RLS (Phase 5): anon POST/PATCH with rol='coach' is blocked by
-      // policy. Fallback: create/activate via the registrar-coach edge function
-      // (service role, sanitizes fields). Today —no RLS— this path is NOT used.
-      try {
-        var _rr = await fetch(SB + '/functions/v1/registrar-coach', {
-          method: 'POST',
-          headers: {'apikey':KEY,'Authorization':'Bearer '+KEY,'Content-Type':'application/json'},
-          body: JSON.stringify(userData)
-        });
-        var _rj = await _rr.json().catch(function(){ return {}; });
-        if(!_rr.ok || !_rj.ok){
-          showError('Error creating the account: ' + (_rj.error || _rr.status));
-          btn.disabled = false; loading.style.display = 'none';
-          return;
+    try {
+      var _rr = await fetch(SB + '/functions/v1/registrar-coach', {
+        method: 'POST',
+        headers: {'apikey':KEY,'Authorization':'Bearer '+KEY,'Content-Type':'application/json'},
+        body: JSON.stringify(Object.assign({}, userData, {password: password}))
+      });
+      var _rj = await _rr.json().catch(function(){ return {}; });
+      if(!_rr.ok || !_rj.ok){
+        if(_rj.error === 'email_taken'){
+          showError('An account with that email already exists. <a href="/login-en.html" style="color:#2D6A4F;font-weight:600;">Log in</a> or <a href="/recuperar-password.html?email=' + encodeURIComponent(email) + '" style="color:#2D6A4F;font-weight:600;">reset your password</a>.');
+        } else if(_rj.error === 'auth_lookup_failed'){
+          showError('We could not check your email right now. Please try again in a minute.');
+        } else {
+          showError('Could not create the account: ' + (_rj.error || _rr.status));
         }
-        coach = _rj;
-      } catch(_e){
-        showError('Network error creating the account. Please try again.');
         btn.disabled = false; loading.style.display = 'none';
         return;
       }
-    } else {
-      var errBody = await res.text();
-      console.error('Error creando usuario:', errBody);
-      showError('Error creating the account: ' + (errBody.slice(0, 100) || res.status));
+      coach = _rj;
+    } catch(_e){
+      showError('Network error creating the account. Please try again.');
       btn.disabled = false; loading.style.display = 'none';
       return;
     }
+
+    // RC-12 — AUTHENTICATED SESSION before entering the panel.
+    //
+    // Sign-up redirects straight to panel-v2.html, skipping login. Without this
+    // the coach arrived with `mj_user` in localStorage but NO Supabase Auth
+    // session: `PWAUTH.tokenSync()` returned null, everything fell back to the
+    // anon key, and `usuarios_self_update` (lower(email)=pw_email()) matched no
+    // row — she could not save her profile or settings. Sign-up "finished" in a
+    // panel that persisted nothing.
+    //
+    // `registrar-coach` already created the identity, so this signs in on the
+    // first try. If it still failed we send her to login, which knows how to
+    // repair the identity.
+    var _authOk = false;
+    try {
+      var _sbReg = window.supabase.createClient(SB, KEY);
+      var _si = await _sbReg.auth.signInWithPassword({email: email, password: password});
+      _authOk = !!(_si && _si.data && _si.data.session);
+    } catch(_e){ _authOk = false; }
 
     // Meta conversion events: completed registration + trial start (ad optimization signal).
     try { if(window.pwTrackReg) pwTrackReg(); if(window.pwTrackTrial) pwTrackTrial(); } catch(e){}
@@ -647,7 +648,9 @@ async function registrar(){
       id: coach.id,
       email: email,
       rol: 'coach',
-      nombre: nombre
+      nombre: nombre,
+      auth_id: coach.auth_id || null,
+      configuracion: coach.configuracion || configuracion
     }));
 
     // Notificación admin: avísale a Micaela que hay nuevo coach.
@@ -845,7 +848,11 @@ async function registrar(){
     // Marcar este dispositivo: ya uso una prueba (anti-abuso del trial).
     try{ localStorage.setItem('pw_trial_used','1'); }catch(e){}
 
-    var primerLogin = 'panel-v2.html?welcome=1';
+    // No session → the panel could not write. Send her to login, the real
+    // recovery route, not a decorative fallback.
+    var primerLogin = _authOk
+      ? 'panel-v2.html?welcome=1'
+      : ('login-en.html?email=' + encodeURIComponent(email) + '&nuevo=1');
     setTimeout(function(){
       window.location.href = primerLogin;
     }, 1200);
