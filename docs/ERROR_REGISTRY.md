@@ -708,6 +708,92 @@ en `scripts/check-guardrails.js`. Falla si:
 - desaparece `_mcSesCoachReal`, deja de leer `MC_CITAS`, la ficha del coach deja
   de usarlo, o el estado vacío vuelve a decidirse solo con `sesCount`.
 
+## ERR-AUTH-001 — Toma de control de cuenta vía el registro público (RC-14)
+
+**Fecha detected:** 2026-08-27
+**Fecha triaged:** 2026-08-27
+**Severity:** CRITICAL
+
+### Scope Metadata
+- **Module:** `registrar-coach` (alta pública de coach)
+- **Scope Type:** `CROSS_CUTTING`
+- **Scope Belongs To:** `pathway`
+- **Blocking Scope:** `RC-12`
+- **Blocks Current Branch:** Sí — se descubrió ejecutando RC-12 y lo bloqueaba
+
+### Síntoma
+Un anónimo podía quedarse con la cuenta de cualquier persona ya migrada a
+Supabase Auth (coach, cliente u **owner**) conociendo solo su email.
+
+### Categoría
+`SECURITY` · `AUTH` · `ACCOUNT_TAKEOVER`
+
+### Módulo
+`supabase/functions/registrar-coach/index.ts` → guard de "email ya tomado"
+
+### Root Cause
+`registrar-coach` es pública por diseño (quien se registra no tiene sesión). Su
+único guard era `if (existing && existing.password_hash) → 409`, es decir usaba
+`password_hash IS NULL` como sinónimo de *"fila invitada, actívala"*.
+
+Pero `migrate-user-to-auth` **vacía** `password_hash` al migrar a Auth
+(`clearLegacyHash`). Desde ese momento una cuenta viva es indistinguible de una
+invitación pendiente, y la rama de activación la sobrescribe.
+
+Cadena completa:
+1. POST a `registrar-coach` con el email de la víctima y un `password_hash` propio.
+2. El guard no dispara → la fila se sobrescribe con ese hash.
+3. `login.html`: `signInWithPassword` falla (la contraseña de Auth no cambió).
+4. Cae a `migrate-user-to-auth` con el plaintext del atacante → el SHA-256
+   coincide con el hash recién plantado → verificación OK.
+5. `PUT /auth/v1/admin/users/<id>` → la credencial de Auth pasa al atacante.
+
+El paso 2 es el **único eslabón escribible sin credenciales**; los demás son
+comportamiento legítimo. Cerrarlo corta la cadena entera.
+
+### Evidencia
+- **Estado medido en producción (27-ago-2026, solo lectura):**
+  - Ruta A · `password_hash IS NULL AND auth_id IS NOT NULL` → **51 cuentas**
+    (33 coaches, 15 clientes, **2 owners**, 1 empleado)
+  - Ruta B · `auth_id` sin enlazar pero con identidad de Auth → 0 hoy, alcanzable
+  - Ruta C · identidad de Auth **sin fila** en `usuarios` → **21 identidades**
+  - Invitaciones legítimas pendientes que NO se podían romper → **17 filas**
+- **Files affected:**
+  - `supabase/functions/_shared/auth/estado-cuenta.ts` (nuevo — la regla)
+  - `supabase/functions/registrar-coach/index.ts` (guard + lookup de Auth)
+- **Test:** `tests/rc14-registro-guard.mjs` — 24 casos; el guard viejo deja 3/3
+  rutas abiertas y el test las marca FALLA.
+- **El exploit NO se ejecutó** contra producción: la cadena está demostrada por
+  lectura de código más conteos agregados.
+
+### Fix
+La señal correcta no es la forma de la fila sino **¿existe ya una identidad de
+Auth para este email?** `estadoCuenta()` devuelve `libre | invitada |
+provisionada` combinando `password_hash`, `auth_id` y la existencia en
+`auth.users`. Solo `invitada` puede activarse; solo `libre` puede crearse.
+El lookup contra el admin API **falla cerrado** (503) y **pagina** — mirar solo
+la primera página de 200 daría un falso "no existe" a partir del usuario 201.
+
+### Estado actual
+- ✅ **DETECTED:** durante la ejecución de RC-12
+- ✅ **ROOT_CAUSE_CONFIRMED_STATIC:** código + conteos de producción
+- ✅ **FIXED:** rama `claude/pathway-e2e-workflow-audit-y7dlxb`
+- ✅ **TESTED:** `tests/rc14-registro-guard.mjs` — 24/24
+- ❌ **VERIFIED:** pendiente de deploy (`registrar-coach` no desplegada aún)
+
+### Cómo evitar regresión
+`tests/rc14-registro-guard.mjs` §4 es el centinela: falla si `registrar-coach`
+vuelve a decidir con `existing.password_hash`, si pierde la consulta de
+identidad de Auth, si deja de fallar cerrado, o si deja de paginar.
+
+### Pendiente tras el deploy
+Las 51 cuentas de la ruta A siguen con `password_hash IS NULL`; eso ya no es
+explotable con el guard cerrado, pero conviene decidir si `clearLegacyHash`
+debería dejar un centinela en vez de NULL. **No se tocó ningún dato de usuarios
+reales** — fuera del alcance autorizado de RC-14.
+
+---
+
 ---
 
 ## ESTADO RESUMEN
@@ -718,6 +804,7 @@ en `scripts/check-guardrails.js`. Falla si:
 | ERR-UPLOAD-002 | TRIAGED | CRITICAL | exercise | ✅ | ✅ |
 | ERR-UPLOAD-003 | TRIAGED | HIGH | exercise | ✅ | ✅ |
 | ERR-ENV-001 | DETECTED | CRITICAL | infra | ❌ | ❌ |
+| ERR-AUTH-001 | TRIAGED | CRITICAL | registrar-coach | ✅ | ❌ |
 | **ERR-APP-004** | **DETECTED** | **CRITICAL** | **auth** | ❌ | ❌ |
 | **ERR-MULTICOACH-001** | **DETECTED** | **CRITICAL** | **nav** | ❌ | ❌ |
 | **ERR-ADMIN-001** | **DETECTED** | **HIGH** | **admin** | ❌ | ❌ |

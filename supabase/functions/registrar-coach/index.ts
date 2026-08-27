@@ -14,6 +14,15 @@
 // del registro anónimo que ya existía; solo lo hace compatible con RLS y encima
 // SANITIZA campos peligrosos que un cliente no debería poder setear.
 //
+// RC-14 — quién puede reclamar un email:
+// Esta función es pública, así que el guard de "email ya tomado" es lo único
+// que separa un alta legítima de una toma de control. Ese guard NO puede
+// deducirse de `password_hash IS NULL`: `migrate-user-to-auth` vacía ese campo
+// al migrar a Auth, y desde entonces una cuenta viva parece una invitación
+// pendiente. La regla vive en `_shared/auth/estado-cuenta.ts` (con el detalle
+// de las tres rutas que cierra) y la señal decisiva es si YA existe una
+// identidad de Auth para ese email.
+//
 // Body: { email, password_hash, nombre, nombre_practica?, bio?, foto_url?, configuracion? }
 // Respuesta: { ok, mode:'created'|'activated', id, email, rol, nombre, activo, configuracion } | { error }
 //
@@ -21,9 +30,12 @@
 // Deploy: supabase functions deploy registrar-coach --no-verify-jwt
 // ===================================================================
 
+import { estadoCuenta } from "../_shared/auth/estado-cuenta.ts";
+
 const SB_URL = Deno.env.get("SUPABASE_URL") || "";
 const SERVICE = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || "";
 const svc = { apikey: SERVICE, Authorization: `Bearer ${SERVICE}` };
+const authAdmin = { apikey: SERVICE, Authorization: `Bearer ${SERVICE}`, "Content-Type": "application/json" };
 
 const CORS: Record<string, string> = {
   "Access-Control-Allow-Origin": "*",
@@ -50,6 +62,44 @@ async function emitEvento(ev: Record<string, unknown>): Promise<void> {
       body: JSON.stringify({ source: "server", ...ev }),
     });
   } catch { /* best-effort, jamás bloquea */ }
+}
+
+// ── RC-14 — ¿existe ya una identidad de Auth con este email? ───────────────
+// Es la señal que decide si el email está tomado (ver _shared/auth/estado-cuenta.ts).
+//
+// FALLA CERRADO A PROPÓSITO: si el admin API no responde, lanza. Quien llama lo
+// traduce en 503 y NO activa ni crea nada. Un atacante que consiga tumbar esta
+// consulta no debe obtener por ello el permiso de reclamar un email ajeno; el
+// coste es que un alta legítima se pospone mientras GoTrue no responda.
+//
+// Pagina de verdad: `migrate-user-to-auth` mira solo la primera página de 200,
+// lo que a partir del usuario 201 daría un falso "no existe". Para un guard de
+// seguridad eso no sirve, así que recorremos hasta agotar.
+const AUTH_PAGE_SIZE = 200;
+const AUTH_MAX_PAGES = 50; // 10.000 identidades; más que eso → fallamos cerrado.
+
+async function identidadAuthExiste(email: string): Promise<boolean> {
+  const buscado = email.trim().toLowerCase();
+  for (let page = 1; page <= AUTH_MAX_PAGES; page++) {
+    let lote: Array<{ email?: string }>;
+    try {
+      const r = await fetch(
+        `${SB_URL}/auth/v1/admin/users?page=${page}&per_page=${AUTH_PAGE_SIZE}`,
+        { headers: authAdmin },
+      );
+      if (!r.ok) throw new Error(`admin_users_${r.status}`);
+      const data = await r.json();
+      lote = (data && data.users) || [];
+      if (!Array.isArray(lote)) throw new Error("admin_users_shape");
+    } catch (e) {
+      throw new Error(`auth_lookup_failed: ${String(e).slice(0, 120)}`);
+    }
+    for (const u of lote) {
+      if ((u.email || "").trim().toLowerCase() === buscado) return true;
+    }
+    if (lote.length < AUTH_PAGE_SIZE) return false; // última página, no está
+  }
+  throw new Error("auth_lookup_failed: too_many_pages");
 }
 
 // Quita del configuracion que manda el cliente los campos que NO puede setear él
@@ -87,11 +137,11 @@ Deno.serve(async (req: Request) => {
   const cfg = sanitizeCfg(body.configuracion);
 
   // ── ¿Ya existe ese email? ──────────────────────────────────────────────────
-  type Urow = { id: string; email: string; rol: string; nombre: string | null; activo: boolean; password_hash: string | null; configuracion: Record<string, unknown> | null };
+  type Urow = { id: string; email: string; rol: string; nombre: string | null; activo: boolean; password_hash: string | null; auth_id: string | null; configuracion: Record<string, unknown> | null };
   let rows: Urow[] = [];
   try {
     const r = await fetch(
-      `${SB_URL}/rest/v1/usuarios?email=eq.${encodeURIComponent(email)}&select=id,email,rol,nombre,activo,password_hash,configuracion`,
+      `${SB_URL}/rest/v1/usuarios?email=eq.${encodeURIComponent(email)}&select=id,email,rol,nombre,activo,password_hash,auth_id,configuracion`,
       { headers: svc },
     );
     if (!r.ok) return json({ error: "lookup_failed", status: r.status }, 502);
@@ -100,9 +150,21 @@ Deno.serve(async (req: Request) => {
 
   const existing = (rows && rows[0]) || null;
 
-  // Email ya en uso por una cuenta CON contraseña (coach activo o cliente) → no pisar.
-  if (existing && existing.password_hash) {
-    return json({ error: "email_taken", rol: existing.rol || "?" }, 409);
+  // ── RC-14 — guard de "email ya tomado" ─────────────────────────────────────
+  // La pregunta NO es "¿tiene password_hash?" sino "¿ya hay una credencial
+  // detrás de este email?". Incluye la identidad de Auth, porque es lo único
+  // que `migrate-user-to-auth` necesita para acabar cambiando una contraseña.
+  let existeEnAuth: boolean;
+  try {
+    existeEnAuth = await identidadAuthExiste(email);
+  } catch {
+    // Falla cerrado: sin poder comprobarlo, no reclamamos ningún email.
+    return json({ error: "auth_lookup_failed" }, 503);
+  }
+
+  const estado = estadoCuenta(existing, existeEnAuth);
+  if (estado === "provisionada") {
+    return json({ error: "email_taken", rol: (existing && existing.rol) || "?" }, 409);
   }
 
   const commonFields = {
@@ -116,8 +178,11 @@ Deno.serve(async (req: Request) => {
     foto_url: body.foto_url != null ? String(body.foto_url) : null,
   };
 
-  // ── Activar una fila INVITADA (existe sin contraseña) → PATCH ───────────────
-  if (existing && !existing.password_hash) {
+  // ── Activar una fila INVITADA → PATCH ──────────────────────────────────────
+  // `estado === 'invitada'` garantiza: sin password_hash, sin auth_id y sin
+  // identidad de Auth. Es decir, una fila que creó un alta privilegiada
+  // (crear-coach / agregar-coach-red / admin) y que nadie reclamó todavía.
+  if (estado === "invitada" && existing) {
     // Conservar lo que puso el admin al invitar (días de acceso, marca de origen).
     const prev = (existing.configuracion && typeof existing.configuracion === "object") ? existing.configuracion as Record<string, unknown> : {};
     const merged = { ...cfg };
@@ -136,6 +201,11 @@ Deno.serve(async (req: Request) => {
   }
 
   // ── Coach NUEVO → INSERT ────────────────────────────────────────────────────
+  // Solo se llega con estado 'libre' (sin fila y sin identidad de Auth): el
+  // 'provisionada' devolvió 409 y el 'invitada' devolvió arriba. El cinturón
+  // extra es para que un refactor futuro no pueda colar un INSERT sobre un
+  // email que ya tiene fila.
+  if (existing) return json({ error: "email_taken", rol: existing.rol || "?" }, 409);
   try {
     const r = await fetch(
       `${SB_URL}/rest/v1/usuarios?select=id,email,rol,nombre,activo,configuracion`,
