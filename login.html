@@ -331,7 +331,14 @@ function signInWithApple(){
 // Helper: Procesar tokens de Google y completar login (compartido por iOS nativo y web)
 function _handleGoogleAuthSuccess(access_token, refresh_token, btn){
   var sb = _sbGlobal || window.supabase.createClient(SB, KEY);
+  // setSession es rápido (solo valida JWT locally), no esperes más de 2s
+  var sessionTimeout = setTimeout(function(){
+    if(btn){btn.disabled = false; btn.style.opacity = '1'; var span = btn.querySelector('span'); if(span) span.textContent = 'Continuar con Google';}
+    alert('La sesión tardó demasiado. Inténtalo de nuevo.');
+  }, 2000);
+
   sb.auth.setSession({ access_token: access_token, refresh_token: refresh_token }).then(function(){
+    clearTimeout(sessionTimeout);
     // Sesión seteada → redirigir según rol guardado o crear usuario
     try {
       var usrStr = localStorage.getItem('mj_user');
@@ -349,6 +356,7 @@ function _handleGoogleAuthSuccess(access_token, refresh_token, btn){
     // Sin sesión → redirigir a auth-callback para crear usuario
     window.location.href = 'https://pathwaycareercoach.com/auth-callback.html?source=login&v=' + Date.now();
   }).catch(function(err){
+    clearTimeout(sessionTimeout);
     console.error('[setSession error]', err);
     if(btn){btn.disabled = false; btn.style.opacity = '1'; var span = btn.querySelector('span'); if(span) span.textContent = 'Continuar con Google';}
     alert('Error completando sesión: ' + (err && err.message || 'desconocido'));
@@ -396,6 +404,7 @@ function signInWithGoogle(){
   }
 
   // En web, usar flujo OAuth estándar
+  var redirectTo = 'https://pathwaycareercoach.com/auth-callback.html?source=login';
   var sb = _sbGlobal || window.supabase.createClient(SB, KEY);
   sb.auth.signInWithOAuth({
     provider: 'google',
@@ -453,24 +462,28 @@ if (window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.App
         throw new Error('Sin email en JWT');
       }
 
-      // Buscar usuario existente
-      const { data: existingUser, error: fetchError } = await sb
-        .from('usuarios')
-        .select('*')
-        .eq('email', email)
-        .single();
+      // Buscar usuario existente (timeout 3s por si la BD es lenta)
+      var existingUser = null;
+      try {
+        var _fetchTimeout = setTimeout(function(){}, 3000);
+        const { data, error } = await sb
+          .from('usuarios')
+          .select('*')
+          .eq('email', email)
+          .single();
+        clearTimeout(_fetchTimeout);
+        existingUser = data;
+      } catch(e) {
+        console.error('[user fetch error]', e);
+      }
 
       if (existingUser) {
-        // USUARIO EXISTENTE: actualizar last_login
+        // USUARIO EXISTENTE: actualizar last_login (best-effort, no bloquea)
         const cfg = Object.assign({}, existingUser.configuracion || {});
         cfg.last_login = new Date().toISOString();
-
         try {
-          await sb
-            .from('usuarios')
-            .update({ configuracion: cfg })
-            .eq('id', existingUser.id);
-        } catch(e) {} // best-effort
+          sb.from('usuarios').update({ configuracion: cfg }).eq('id', existingUser.id);
+        } catch(e) {}
 
         localStorage.setItem('mj_user', JSON.stringify({
           id: existingUser.id,
@@ -481,11 +494,9 @@ if (window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.App
           configuracion: cfg
         }));
 
-        // Cerrar browser desde main context (SÍ tiene acceso a bridge)
+        // Cerrar browser inmediatamente (no esperes 300ms)
         if (window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.Browser) {
-          setTimeout(() => {
-            try { window.Capacitor.Plugins.Browser.close(); } catch(e) {}
-          }, 300);
+          try { window.Capacitor.Plugins.Browser.close(); } catch(e) {}
         }
 
         // Redirigir según rol
@@ -497,6 +508,7 @@ if (window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.App
         const meta = user.user_metadata || {};
         const name = meta.full_name || meta.name || meta.given_name || email.split('@')[0];
         const trialDays = 14;
+        const now = new Date().toISOString();
 
         const newUser = {
           email,
@@ -515,7 +527,7 @@ if (window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.App
             visible_directorio: true,
             max_candidatos: 5,
             fecha_fin_prueba: new Date(Date.now() + trialDays * 24 * 60 * 60 * 1000).toISOString(),
-            last_login: new Date().toISOString()
+            last_login: now
           }
         };
 
@@ -536,9 +548,17 @@ if (window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.App
           configuracion: createdUser.configuracion || {}
         }));
 
-        // Email de bienvenida (best-effort, no bloquea)
+        // Cierre inmediato (no esperes)
+        if (window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.Browser) {
+          try { window.Capacitor.Plugins.Browser.close(); } catch(e) {}
+        }
+
+        // Redirigir SIN esperar email (se envía en bg)
+        window.location.href = '/panel-v2.html?welcome=1&v=' + Date.now();
+
+        // Email de bienvenida en BACKGROUND (no bloquea redirect)
         try {
-          await fetch(SB + '/functions/v1/send-email', {
+          fetch(SB + '/functions/v1/send-email', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
@@ -550,18 +570,8 @@ if (window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.App
                 + '<p style="margin-top:20px;"><a href="https://pathwaycareercoach.com/panel-v2.html" style="display:inline-block;padding:13px 28px;background:#2D6A4F;color:#fff;border-radius:10px;text-decoration:none;font-weight:700;">Ir a mi panel →</a></p>'
                 + '<p style="font-size:13px;color:#888;margin-top:18px;">Cualquier duda, responde este mail. — Mica</p>'
             })
-          });
+          }).catch(function(){});
         } catch(e) {}
-
-        // Cerrar browser desde main context (SÍ tiene acceso a bridge)
-        if (window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.Browser) {
-          setTimeout(() => {
-            try { window.Capacitor.Plugins.Browser.close(); } catch(e) {}
-          }, 300);
-        }
-
-        // Redirigir
-        window.location.href = '/panel-v2.html?welcome=1&v=' + Date.now();
       }
 
     } catch (err) {
