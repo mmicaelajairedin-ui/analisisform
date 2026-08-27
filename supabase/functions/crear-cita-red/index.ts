@@ -68,6 +68,36 @@ async function coachInOrg(coachId: string, orgId: string): Promise<boolean> {
     return Array.isArray(rows) && rows.length > 0;
   } catch { return false; }
 }
+/** F2.5 — Resuelve el CLIENTE de la red a partir del correo, para poder guardar
+ *  `citas.client_id`. Hoy ninguna escritura la rellena y por eso las 66 citas de
+ *  produccion la tienen NULL: la relacion cita->cliente se resolvia por string
+ *  de correo, que se rompe en cuanto el cliente cambia de email.
+ *
+ *  Solo devuelve id cuando la resolucion es INEQUIVOCA: un unico candidato con
+ *  ese correo DENTRO de la organizacion. Si hay cero (alguien que todavia no es
+ *  cliente) o mas de uno, devuelve null — NULL es un estado legitimo, no un
+ *  hueco, y es preferible a inventar una relacion falsa.
+ *
+ *  El correo se compara en minusculas y se re-verifica exacto: PostgREST no
+ *  escapa `_`, que en LIKE es comodin de un caracter (mismo motivo por el que
+ *  `_shared/agenda/identidad.ts` tiene `soloCorreoExacto`). */
+async function clienteDeLaRed(email: string, orgId: string): Promise<number | null> {
+  const buscado = (email || "").trim().toLowerCase();
+  if (!buscado) return null;
+  try {
+    const r = await fetch(
+      `${SB_URL}/rest/v1/candidatos?email=eq.${encodeURIComponent(buscado)}&org_id=eq.${encodeURIComponent(orgId)}&select=id,email&limit=2`,
+      { headers: svc },
+    );
+    if (!r.ok) return null;
+    const rows = await r.json();
+    if (!Array.isArray(rows)) return null;
+    const exactos = rows.filter(
+      (c: { email?: string }) => (c.email || "").trim().toLowerCase() === buscado,
+    );
+    return exactos.length === 1 ? (exactos[0] as { id: number }).id : null;
+  } catch { return null; }
+}
 /** `usuarios.configuracion` del coach: su eleccion de modalidad y lo que tiene
  *  conectado. Best-effort — si no se puede leer, la regla cae a Sala, que es su
  *  valor seguro, y no se promete ningun enlace que dependa de un tercero. */
@@ -167,7 +197,13 @@ Deno.serve(async (req: Request) => {
   const modalidad = modalidadDeCita(proveedor);
 
   // ── Crear la cita ────────────────────────────────────────────────
-  const base: Record<string, unknown> = { coach_id, nombre, email: cliEmail, tipo, inicio, estado: "confirmada", origen: "red" };
+  // F2.5 — `client_id` obligatorio CUANDO la cita representa a un cliente ya
+  // existente de la red. Si no resuelve de forma inequivoca queda NULL, que es
+  // el estado correcto para quien todavia no es cliente. Va en `base` (no en el
+  // objeto opcional) porque la columna existe desde la migracion de `citas` y
+  // tiene FK a candidatos(id): no participa del reintento por columna ausente.
+  const clientId = await clienteDeLaRed(cliEmail, orgId);
+  const base: Record<string, unknown> = { coach_id, nombre, email: cliEmail, tipo, inicio, estado: "confirmada", origen: "red", ...(clientId !== null ? { client_id: clientId } : {}) };
   // `video_proveedor` viaja con `modalidad` en el mismo objeto opcional: si el
   // reintento por columna inexistente se dispara, caen las dos juntas y la fila
   // nunca queda con una sin la otra.
