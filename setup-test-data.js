@@ -3,12 +3,23 @@
  * Creates organizations, users, and clients for automated testing
  */
 
-const { createClient } = require('@supabase/supabase-js');
+// A-4 — El guard va ANTES que cualquier otro require, para que un entorno sin
+// dependencias no tape el aviso de destino con un MODULE_NOT_FOUND.
+const { assertDestinoSeguro } = require('./scripts/e2e-guard');
 
 // Decode JWT to get project ref: ref: "ddxnrsnjdvtqhxunxnwj"
 const SB_URL = 'https://ddxnrsnjdvtqhxunxnwj.supabase.co';
 const SB_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRkeG5yc25qZHZ0cWh4dW54bndsIiwicm9sZSI6ImFub24iLCJpYXQiOjE3MjM5ODAwMDAsImV4cCI6MTg4MTc0NjAwMH0.t82X1x-PDgFDGYhKC7YXoRKhga9I8Hjet60QUYvtZLU';
 
+// A-4 — Antes de crear NADA. Este script escribe organizaciones, usuarios y
+// clientes; hoy apunta a produccion, asi que el guard lo rechaza hasta que se le
+// de un destino de test real.
+assertDestinoSeguro('setup-test-data.js', [
+  { etiqueta: 'Supabase (SB_URL)', valor: SB_URL },
+  { etiqueta: 'clave anon (project ref)', valor: SB_KEY },
+]);
+
+const { createClient } = require('@supabase/supabase-js');
 const sb = createClient(SB_URL, SB_KEY);
 
 async function setupTestData() {
