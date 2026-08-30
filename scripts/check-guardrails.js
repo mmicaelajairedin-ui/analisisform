@@ -1080,9 +1080,10 @@ const RULES = [
          "[].questions). NO hay preguntas predefinidas del sistema: reservar.html " +
          "dejó de tener f-msg/f-src hardcodeados y solo muestra lo que el coach " +
          "cargó (qFields). Las respuestas se guardan en citas.respuestas y el coach " +
-         "las ve en su lista de reservas (_citaAnswers). El INSERT reintenta sin " +
-         "'respuestas' si la columna no existe, y el panel lee con select=* para no " +
-         "romper la lista donde falta la migración.",
+         "las ve en su lista de reservas (_citaAnswers). El panel lee con select=* " +
+         "para no romper la lista donde falta la migración. La reserva se crea por " +
+         "la RPC `crear_cita` (firma fija: ya no hace falta el reintento que omitía " +
+         "'respuestas'), NUNCA por INSERT anónimo directo a citas.",
     check() {
       const p = read("panel-v2.html"), r = read("reservar.html");
       if (!p || !r) return null;
@@ -1098,8 +1099,15 @@ const RULES = [
         return "reservar.html: volvieron las preguntas predefinidas del sistema (f-msg/f-src); deben salir SOLO las del coach.";
       if (!/function qFields/.test(r) || !/function collectAnswers/.test(r))
         return "reservar.html: se perdió el render/colecta de las preguntas del coach.";
-      if (!/_postCita\(false\)/.test(r))
-        return "reservar.html: el guardado de la reserva perdió el reintento sin 'respuestas' (rompe si falta la columna).";
+      // El guardado dejó de ser un INSERT directo con reintento: va por la RPC
+      // `crear_cita`, que deriva org_id, fija estado/grupal y genera el token.
+      // El reintento sin 'respuestas' ya no aplica (firma fija, columna existe).
+      if (!/rpc\/crear_cita/.test(r))
+        return "reservar.html: la reserva ya no pasa por la RPC crear_cita (volvería el INSERT anónimo directo).";
+      if (/\/rest\/v1\/citas'\s*,\s*\{\s*method:\s*'POST'/.test(r))
+        return "reservar.html: volvió el INSERT directo a citas; la reserva debe nacer SOLO por crear_cita.";
+      if (/function _tok\s*\(/.test(r))
+        return "reservar.html: volvió a generarse el token en el navegador; lo emite crear_cita (es la credencial de cancelación).";
       return null;
     },
   },

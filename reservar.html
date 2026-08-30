@@ -920,7 +920,6 @@ function confirmar(){
     return;
   }
   var answers=_qa.answers;
-  var answersJson=answers.length?JSON.stringify(answers):'';
   var answersTxt=answers.map(function(x){ return x.q+': '+x.a; }).join('\n');
   // Atribución de canal SIN pregunta fija del sistema: si el coach agregó una
   // pregunta del estilo "de dónde nos conocés / cómo me encontraste", usamos su
@@ -970,52 +969,59 @@ function confirmar(){
   // Cada persona agrega el evento a SU propio calendario al tocar el botón.
 
   var _cid=(CID||qp('c')), _iso=start.toISOString();
-  // Token único de la reserva → link para cancelar/reprogramar (va en el email).
-  var _tk=_tok(), _manage=location.origin+'/gestionar-cita.html?t='+_tk;
+  // Token de la reserva: lo genera el SERVIDOR (crear_cita) y llega en su
+  // respuesta. El navegador ya no lo inventa. Es la credencial para cancelar y
+  // reprogramar la cita: elegirla desde el cliente permitia fijarla de antemano.
+  // Se rellenan en _finish, cuando la RPC ya respondio.
+  var _tk='', _manage='';
   // Invitación de calendario (.ics) con SOLO nuestro link (sin Meet de Google).
+  // Lee `_tk` en el momento de la llamada, que ya es despues de _finish.
   var _buildIcs=function(link){ return _icsBuild(title, +start, +end, link||'', _tk); };
-  // Guarda la cita. Reintenta SIN 'respuestas' si esa columna todavía no existe
-  // en la base (así la reserva nunca se pierde por falta de la migración).
-  var _postCita=function(withResp){
-    var b={ coach_id:_cid, nombre:name, email:email, tipo:tlabel, inicio:_iso, telefono:tel, cliente_tz:vtz, token:_tk, origen:origen };
+  // Guarda la cita por `crear_cita` (RPC SECURITY DEFINER). Ya NO se hace INSERT
+  // directo a `citas`: el servidor deriva org_id, fija estado='pendiente' y
+  // grupal=false, genera el token y valida coach activo, email, fecha y hueco.
+  //
+  // SIN reintento que omita campos. El antiguo servia para sobrevivir a columnas
+  // que aun no existian (`lang`, `kind`, `respuestas`); existen desde hace meses
+  // y la firma de la RPC es fija. Mantener una segunda via solo daria dos formas
+  // distintas de nacer una cita.
+  //
+  // `meet_link` NO viaja: para Zoom lo resuelve la propia RPC leyendo la
+  // configuracion del coach. El enlace es suyo, no del visitante.
+  var _postCita=function(){
     // La modalidad y el proveedor se deciden UNA vez, aqui, y quedan en la fila.
     // Todo lo de aguas abajo —correo, recordatorio, panel, agenda-list— LEE esto
     // en vez de volver a adivinar. Es lo que garantiza que pantalla, cita y
     // correo hablen del mismo sitio.
-    //
-    // VAN SIEMPRE, tambien en el reintento. Antes iban dentro de `if(withResp)`,
-    // asi que un INSERT que fallara por CUALQUIER motivo se reintentaba SIN
-    // proveedor y nacia una cita nueva con `video_proveedor` NULL — justo la
-    // rama de compatibilidad que `recordatorios-citas` reserva para las citas
-    // anteriores al selector. Esas columnas existen desde hace meses; el
-    // reintento sigue protegiendo a las que de verdad pueden faltar (`lang`,
-    // `kind`, `respuestas`), no a estas.
     var _pl=_videoPlan();
-    b.modalidad=_pl.modalidad;
-    b.video_proveedor=_pl.proveedor;
-    if(_pl.proveedor==='presencial' && _pl.lugar) b.lugar=_pl.lugar;
-    // El enlace propio del coach ya se conoce: se guarda desde el minuto cero.
-    // Meet y Sala no: los dos necesitan el id de la cita, que aun no existe.
-    // Se escriben despues, con `_persistir`, cuando el INSERT lo devuelve.
-    if(_pl.proveedor==='zoom' && _pl.url) b.meet_link=_pl.url;
-    // Idioma del cliente → así el RECORDATORIO automático (que se manda después,
-    // del lado servidor) sale en el mismo idioma que la reserva. Va con 'withResp'
-    // para que, si la columna citas.lang aún no existe, el reintento la omita.
-    if(withResp) b.lang=LANG;
-    if(withResp && answersJson) b.respuestas=answersJson;
-    // kind viaja con el reintento 'withResp': si la columna citas.kind todavía no
-    // existe en la base, el reintento (withResp=false) la omite → la reserva nunca se pierde.
-    if(withResp) b.kind=_kind;
-    return fetch(SB+'/rest/v1/citas',{ method:'POST', headers:{ apikey:KEY, Authorization:'Bearer '+KEY, 'content-type':'application/json', Prefer:'return=representation' }, body:JSON.stringify(b) })
-      .then(function(r){ if(r && !r.ok && withResp) return _postCita(false); return r; })
-      .catch(function(){ if(withResp) return _postCita(false); });
+    var b={
+      p_coach_id:_cid, p_nombre:name, p_email:email, p_tipo:tlabel,
+      p_inicio:_iso, p_cliente_tz:vtz,
+      p_telefono:tel||null,
+      p_origen:origen||null,
+      p_modalidad:_pl.modalidad,
+      p_video_proveedor:_pl.proveedor,
+      p_lugar:(_pl.proveedor==='presencial' && _pl.lugar)?_pl.lugar:null,
+      // Idioma del cliente → el RECORDATORIO automatico (server-side) sale en el
+      // mismo idioma que la reserva.
+      p_lang:LANG,
+      // jsonb de verdad: el array, no una cadena con JSON dentro.
+      p_respuestas:answers.length?answers:null,
+      p_kind:_kind
+    };
+    return fetch(SB+'/rest/v1/rpc/crear_cita',{ method:'POST', headers:{ apikey:KEY, Authorization:'Bearer '+KEY, 'content-type':'application/json' }, body:JSON.stringify(b) });
   };
   var _commit=function(){
     // 1) Guarda la cita y ESPERA el resultado. Antes era fire-and-forget: si el
-    //    INSERT fallaba (red, body raro), igual salía "¡Reserva enviada!" sin fila
-    //    en la base → no aparecía en el panel, sin recordatorios. Ahora se verifica
-    //    (_postCita ya reintenta una vez) y se avisa suave si no quedó guardada.
-    var _finish=function(saved, citaId){
+    //    guardado fallaba (red, body raro), igual salía "¡Reserva enviada!" sin
+    //    fila en la base → no aparecía en el panel, sin recordatorios. Ahora se
+    //    verifica la respuesta de la RPC y se avisa suave si no quedó guardada.
+    //    Ya no hay reintento: la RPC decide una vez, y su error es definitivo.
+    var _finish=function(saved, citaId, token){
+      // El token de gestion llega del servidor. Si no hubo cita no hay token, y
+      // entonces no se ofrece enlace de gestion: sendEmails ya contempla vacio.
+      _tk=token||'';
+      _manage=_tk?(location.origin+'/gestionar-cita.html?t='+_tk):'';
       // CAMBIO CRÍTICO: marcar slot como tomado INMEDIATAMENTE (no esperar confirmación)
       // para prevenir que otro cliente lo reserve en la ventana de latencia
       TAKEN[start.getTime()]=true;
@@ -1113,12 +1119,22 @@ function confirmar(){
       // Solo si realmente quedó guardada. Best-effort, nunca frena la confirmación.
       try{ if(saved && window.pwEmit) pwEmit("CallBooked",{dominio:"Coaching",entidad_tipo:"cita",entidad_id:(""+(email||"")).toLowerCase().slice(0,80),payload:{tipo:tlabel,kind:_kind,origen:origen,coach_id:_cid}}); }catch(e){}
     };
-    var _p; try{ _p=_postCita(true); }catch(e){ _p=null; }
+    var _p; try{ _p=_postCita(); }catch(e){ _p=null; }
     if(_p && _p.then){
       _p.then(function(r){
-        var ok=!!(r && r.ok);
-        if(ok && r.json){ return r.json().then(function(rows){ var cid=null; if(Array.isArray(rows) && rows[0]) cid=rows[0].id; _finish(true, cid); }).catch(function(){ _finish(true); }); }
-        _finish(ok);
+        // La RPC responde no-2xx ante datos_invalidos / email_invalido /
+        // coach_inexistente / coach_inactivo / hueco_ocupado. No hay fila.
+        if(!(r && r.ok)) return _finish(false);
+        return r.json().then(function(rows){
+          // crear_cita devuelve un array con UNA fila: {id, token, inicio}.
+          var f=(Array.isArray(rows) && rows[0])?rows[0]:null;
+          // Sin id o sin token la cita no es gestionable: se trata como fallo en
+          // vez de confirmar algo que el cliente no podria cancelar.
+          if(!f || f.id==null || !f.token) return _finish(false);
+          _finish(true, f.id, f.token);
+        // Cuerpo ilegible con 2xx: la fila casi seguro existe, asi que se
+        // mantiene el criterio anterior (guardada) aunque sin enlace de gestion.
+        }).catch(function(){ _finish(true); });
       }).catch(function(){ _finish(false); });
     } else { _finish(false); }
   };
@@ -1144,8 +1160,8 @@ function confirmar(){
     }); // si no pudimos verificar, seguimos best-effort
 }
 
-// Token aleatorio para el link de gestionar la cita (cancelar/reprogramar).
-function _tok(){ try{ var a=new Uint8Array(16); crypto.getRandomValues(a); return Array.prototype.map.call(a,function(b){return ('0'+b.toString(16)).slice(-2);}).join(''); }catch(e){ return (Date.now().toString(36)+Math.random().toString(36).slice(2,10)); } }
+// El token de gestion lo genera el servidor en `crear_cita`. Aqui ya no se
+// fabrica ninguno: era la credencial de cancelacion y no debe elegirla el cliente.
 // Invitación de calendario (.ics) — se agrega a CUALQUIER calendario (Google/
 // Apple/Outlook) con SOLO nuestro link, SIN el Meet que Google pega solo. Es la
 // forma limpia de "agregar al calendario" sin que queden dos links.
