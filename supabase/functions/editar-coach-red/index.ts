@@ -3,14 +3,15 @@
 // - member_role: 'coach' (da clases) ↔ 'colaborador' (sin clases)
 // - nombre, email, especialidad (campos usuarios)
 // - servicios, permisos (campos configuracion)
+// - mc_permisos (campo configuracion, de MultiCoach — ver mas abajo)
 //
 // Service role tras verificar owner + que el miembro es de su org.
 // La distinción vive en usuarios.configuracion.member_role. PostgREST no hace
 // merge de un JSONB, así que leemos la configuracion actual, mergeamos y reescribimos.
 //
-// Body:   { coach_id, member_role?, nombre?, email?, especialidad?, servicios?, permisos? }
+// Body:   { coach_id, member_role?, nombre?, email?, especialidad?, servicios?, permisos?, mc_permisos? }
 // Header: Authorization: Bearer <JWT del owner logueado>
-// Resp:   { ok, member_role?, nombre?, email?, especialidad? } | { error }
+// Resp:   { ok, member_role?, nombre?, email?, especialidad?, servicios?, mc_permisos? } | { error }
 //
 // Deploy: supabase functions deploy editar-coach-red --no-verify-jwt
 // ===================================================================
@@ -64,7 +65,7 @@ Deno.serve(async (req: Request) => {
   const orgId = await ownerOrg(email);
   if (!orgId) return json({ error: "not_owner" }, 403);
 
-  let body: { coach_id?: string; member_role?: string; nombre?: string; email?: string; especialidad?: string; servicios?: unknown; permisos?: unknown };
+  let body: { coach_id?: string; member_role?: string; nombre?: string; email?: string; especialidad?: string; servicios?: unknown; permisos?: unknown; mc_permisos?: unknown };
   try { body = await req.json(); } catch { return json({ error: "bad_json" }, 400); }
   const coachId = (body.coach_id || "").toString().trim();
   if (!coachId) return json({ error: "missing_coach" }, 400);
@@ -75,7 +76,8 @@ Deno.serve(async (req: Request) => {
   const hasEsp = typeof body.especialidad === "string" && body.especialidad.trim().length > 0;
   const hasSvcs = Array.isArray(body.servicios);
   const hasPerms = !!body.permisos && typeof body.permisos === "object" && !Array.isArray(body.permisos);
-  if (!hasRole && !hasNombre && !hasEmail && !hasEsp && !hasSvcs && !hasPerms) return json({ error: "nothing_to_update" }, 400);
+  const hasMcPerms = body.mc_permisos !== undefined;
+  if (!hasRole && !hasNombre && !hasEmail && !hasEsp && !hasSvcs && !hasPerms && !hasMcPerms) return json({ error: "nothing_to_update" }, 400);
 
   // El target tiene que ser de ESTA org, o el propio dueño (que también ofrece
   // servicios). Leemos su configuracion para mergear.
@@ -134,6 +136,44 @@ Deno.serve(async (req: Request) => {
     cfg.permisos = out;
   }
 
+  // El recuento se guarda AQUI, no se relee de `cfg` al responder: MultiCoach
+  // lo compara con lo que envio para saber si se guardo de verdad (R-23), y una
+  // respuesta que relee el objeto se cae si alguna edicion futura hace que la
+  // asignacion sea condicional. Lo encontro el canario del banco de pruebas.
+  let mcGrants: number | undefined = undefined;
+
+  // MultiCoach: permisos por miembro de SU producto, en SU clave.
+  //
+  // Deliberadamente APARTE de `permisos`, que son los tres de este panel
+  // (negocio, perfil_publico, marketplace) y se siguen tratando arriba sin
+  // cambio ninguno. Son dos vocabularios distintos y no se mezclan: el bloque
+  // de arriba reconstruye su objeto desde cero, asi que una clave ajena metida
+  // ahi se perderia en la primera edicion.
+  //
+  // Aqui NO hay lista blanca de permisos a proposito: el vocabulario es de
+  // MultiCoach y va a cambiar, y validarlo aqui convertiria cada permiso nuevo
+  // suyo en un despliegue de esta funcion. Lo que si se valida es la FORMA y el
+  // tamano, para que la clave no acabe siendo almacenamiento libre.
+  //
+  // Contrato completo: docs/CONTRATO-MC-PERMISOS.md, del repositorio multicoach.
+  if (hasMcPerms) {
+    const mc = body.mc_permisos;
+    if (!mc || typeof mc !== "object" || Array.isArray(mc)) return json({ error: "mc_permisos_invalido" }, 400);
+    const o = mc as Record<string, unknown>;
+    const grants = o.grants;
+    if (typeof o.v !== "number" || typeof o.org_id !== "string" || !o.org_id) {
+      return json({ error: "mc_permisos_invalido" }, 400);
+    }
+    if (!Array.isArray(grants) || grants.length > 32) return json({ error: "mc_permisos_invalido" }, 400);
+    if (grants.some((g) => typeof g !== "string" || (g as string).length > 64)) {
+      return json({ error: "mc_permisos_invalido" }, 400);
+    }
+    // Reemplazo ENTERO del objeto: `grants` es una lista completa, no un
+    // incremento, y por eso retirar un permiso es mandar la lista sin el.
+    cfg.mc_permisos = { v: o.v, org_id: o.org_id, grants: grants as string[] };
+    mcGrants = (grants as string[]).length;
+  }
+
   // Preparar cambios de usuarios (nombre, email) y configuracion
   const usuariosUpdate: Record<string, unknown> = { configuracion: cfg };
   if (hasNombre) usuariosUpdate.nombre = body.nombre!.trim().slice(0, 200);
@@ -158,6 +198,7 @@ Deno.serve(async (req: Request) => {
     nombre: hasNombre ? usuariosUpdate.nombre : undefined,
     email: hasEmail ? usuariosUpdate.email : undefined,
     especialidad: hasEsp ? cfg.especialidad : undefined,
-    servicios: hasSvcs ? (cfg.servicios as unknown[]).length : undefined
+    servicios: hasSvcs ? (cfg.servicios as unknown[]).length : undefined,
+    mc_permisos: mcGrants
   });
 });

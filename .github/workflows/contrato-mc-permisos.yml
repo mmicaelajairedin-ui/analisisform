@@ -1,0 +1,54 @@
+name: Contrato mc_permisos (editar-coach-red)
+
+# Comprueba que `editar-coach-red` acepta y PRESERVA `configuracion.mc_permisos`,
+# la clave que usa MultiCoach para sus permisos por miembro.
+#
+# POR QUÉ EXISTE
+#
+# `usuarios.configuracion` es un JSONB compartido, y PostgREST no mezcla JSONB:
+# esta función lee la configuración actual, muta lo suyo y la reescribe entera.
+# Ese patrón es correcto y frágil a la vez — el día que un bloque reconstruya el
+# objeto desde cero se lleva por delante lo del vecino, y la llamada sigue
+# devolviendo `{ok:true}`. Aquí se comprueba la preservación EN LAS DOS
+# DIRECCIONES: escribir `mc_permisos` no toca `negocio`/`perfil_publico`/
+# `marketplace` ni las demás claves, y escribir ésas no borra `mc_permisos`.
+#
+# No habla con Supabase ni con la red: shimea `Deno`, carga el `index.ts` tal
+# cual y pone detrás un PostgREST de mentira que devuelve solo las columnas
+# pedidas. Sin secretos, sin base de datos y sin tocar producción.
+#
+# Lleva canario: muta el propio código quitándole la línea que guarda y exige
+# que la prueba se ponga roja.
+#
+# VA APARTE DE `npm run verify` a propósito: necesita Node 22 (despojado de
+# tipos) y el hook de pre-commit corre con la 20. Meterlo ahí obligaría a subir
+# la versión de Node de todo el mundo para una comprobación de una función.
+
+on:
+  push:
+    paths:
+      - 'supabase/functions/editar-coach-red/**'
+      - 'scripts/probar-editar-coach-red-mc-permisos.mjs'
+      - '.github/workflows/contrato-mc-permisos.yml'
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: contrato-mc-permisos-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  contrato:
+    name: Preservación bidireccional + canario
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Contrato de mc_permisos
+        run: node --experimental-strip-types scripts/probar-editar-coach-red-mc-permisos.mjs
