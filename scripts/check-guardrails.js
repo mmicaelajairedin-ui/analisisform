@@ -1098,8 +1098,17 @@ const RULES = [
         return "reservar.html: volvieron las preguntas predefinidas del sistema (f-msg/f-src); deben salir SOLO las del coach.";
       if (!/function qFields/.test(r) || !/function collectAnswers/.test(r))
         return "reservar.html: se perdió el render/colecta de las preguntas del coach.";
-      if (!/_postCita\(false\)/.test(r))
-        return "reservar.html: el guardado de la reserva perdió el reintento sin 'respuestas' (rompe si falta la columna).";
+      // Lo que se blinda es que las RESPUESTAS del coach lleguen a la fila, y que
+      // el alta no se pierda. Valen las dos vias:
+      //   · la historica: INSERT directo con reintento sin 'respuestas';
+      //   · la de G2: la RPC `crear_cita`, de firma fija (o estan los argumentos
+      //     o no compila), donde ese reintento ya no protege de nada.
+      const viaReintento = /_postCita\(false\)/.test(r);
+      const viaRpc = /rpc\/crear_cita/.test(r);
+      if (!viaReintento && !viaRpc)
+        return "reservar.html: el guardado de la reserva perdió su red de seguridad (ni reintento ni crear_cita).";
+      if (!/\bb\.(p_)?respuestas\s*=\s*answersJson/.test(r))
+        return "reservar.html: las respuestas del coach ya no viajan con el alta de la cita.";
       return null;
     },
   },

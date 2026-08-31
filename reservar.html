@@ -981,44 +981,59 @@ function confirmar(){
 
   var _cid=(CID||qp('c')), _iso=start.toISOString();
   // Token único de la reserva → link para cancelar/reprogramar (va en el email).
-  var _tk=_tok(), _manage=location.origin+'/gestionar-cita.html?t='+_tk;
+  // El token de gestion lo emite `crear_cita` en el servidor (gen_random_bytes).
+  // Antes lo sorteaba el navegador y viajaba en el INSERT; ahora se rellenan
+  // estas dos variables con lo que devuelve la RPC, ANTES de que las usen el
+  // .ics y el correo (los dos se construyen dentro de _finish, ya con la fila
+  // creada).
+  var _tk='', _manage='';
   // Invitación de calendario (.ics) con SOLO nuestro link (sin Meet de Google).
   var _buildIcs=function(link){ return _icsBuild(title, +start, +end, link||'', _tk); };
-  // Guarda la cita. Reintenta SIN 'respuestas' si esa columna todavía no existe
-  // en la base (así la reserva nunca se pierde por falta de la migración).
-  var _postCita=function(withResp){
-    var b={ coach_id:_cid, nombre:name, email:email, tipo:tlabel, inicio:_iso, telefono:tel, cliente_tz:vtz, token:_tk, origen:origen };
+  // Guarda la cita por `crear_cita`, la RPC que ya vive en produccion.
+  //
+  // ANTES era un INSERT directo a `citas` con la anon key y
+  // `Prefer: return=representation`, que necesita SELECT anon para devolver la
+  // fila. Es la razon por la que no se podia cerrar `citas_anon_select` sin
+  // romper la reserva. La RPC es SECURITY DEFINER: inserta y devuelve
+  // (id, token, inicio) sin que el visitante lea nada de la tabla.
+  //
+  // Ademas la RPC hace del lado servidor lo que aqui no se podia garantizar:
+  // comprueba que el coach exista y este activo, rechaza el hueco si se ocupo
+  // ('hueco_ocupado'), emite el token, deriva `org_id` y decide el enlace de
+  // Zoom con la misma regla que `pw-modalidad.js`.
+  //
+  // Desaparece el reintento `withResp`: existia para sobrevivir a columnas que
+  // faltaran en la tabla (`lang`, `kind`, `respuestas`). La RPC tiene una firma
+  // fija —o estan los tres argumentos o no compila— asi que ese reintento ya no
+  // protege de nada; un fallo ahora es un fallo real y se trata como tal.
+  var _postCita=function(){
+    var b={ p_coach_id:_cid, p_nombre:name, p_email:email, p_tipo:tlabel, p_inicio:_iso,
+            p_telefono:tel, p_cliente_tz:vtz, p_origen:origen, p_lang:LANG, p_kind:_kind };
     // La modalidad y el proveedor se deciden UNA vez, aqui, y quedan en la fila.
     // Todo lo de aguas abajo —correo, recordatorio, panel, agenda-list— LEE esto
     // en vez de volver a adivinar. Es lo que garantiza que pantalla, cita y
     // correo hablen del mismo sitio.
-    //
-    // VAN SIEMPRE, tambien en el reintento. Antes iban dentro de `if(withResp)`,
-    // asi que un INSERT que fallara por CUALQUIER motivo se reintentaba SIN
-    // proveedor y nacia una cita nueva con `video_proveedor` NULL — justo la
-    // rama de compatibilidad que `recordatorios-citas` reserva para las citas
-    // anteriores al selector. Esas columnas existen desde hace meses; el
-    // reintento sigue protegiendo a las que de verdad pueden faltar (`lang`,
-    // `kind`, `respuestas`), no a estas.
     var _pl=_videoPlan();
-    b.modalidad=_pl.modalidad;
-    b.video_proveedor=_pl.proveedor;
-    if(_pl.proveedor==='presencial' && _pl.lugar) b.lugar=_pl.lugar;
-    // El enlace propio del coach ya se conoce: se guarda desde el minuto cero.
-    // Meet y Sala no: los dos necesitan el id de la cita, que aun no existe.
-    // Se escriben despues, con `_persistir`, cuando el INSERT lo devuelve.
-    if(_pl.proveedor==='zoom' && _pl.url) b.meet_link=_pl.url;
-    // Idioma del cliente → así el RECORDATORIO automático (que se manda después,
-    // del lado servidor) sale en el mismo idioma que la reserva. Va con 'withResp'
-    // para que, si la columna citas.lang aún no existe, el reintento la omita.
-    if(withResp) b.lang=LANG;
-    if(withResp && answersJson) b.respuestas=answersJson;
-    // kind viaja con el reintento 'withResp': si la columna citas.kind todavía no
-    // existe en la base, el reintento (withResp=false) la omite → la reserva nunca se pierde.
-    if(withResp) b.kind=_kind;
-    return fetch(SB+'/rest/v1/citas',{ method:'POST', headers:{ apikey:KEY, Authorization:'Bearer '+KEY, 'content-type':'application/json', Prefer:'return=representation' }, body:JSON.stringify(b) })
-      .then(function(r){ if(r && !r.ok && withResp) return _postCita(false); return r; })
-      .catch(function(){ if(withResp) return _postCita(false); });
+    b.p_modalidad=_pl.modalidad;
+    b.p_video_proveedor=_pl.proveedor;
+    if(_pl.proveedor==='presencial' && _pl.lugar) b.p_lugar=_pl.lugar;
+    // El enlace de Zoom ya NO se manda desde aqui: la RPC lo saca de
+    // `usuarios.configuracion.zoom_url` del propio coach y solo lo acepta si es
+    // una sala de verdad. Un visitante no puede colar un enlace suyo.
+    if(answersJson) b.p_respuestas=answersJson;
+    return fetch(SB+'/rest/v1/rpc/crear_cita',{ method:'POST', headers:{ apikey:KEY, Authorization:'Bearer '+KEY, 'content-type':'application/json' }, body:JSON.stringify(b) })
+      .then(function(r){
+        if(!r.ok) return r.text().then(function(t){ return { ok:false, err:(t||'') }; }, function(){ return { ok:false, err:'' }; });
+        return r.json().then(function(rows){
+          var row=(Object.prototype.toString.call(rows)==='[object Array]'?rows[0]:rows)||null;
+          if(!row || !row.token) return { ok:false, err:'' };
+          // Con el token ya emitido se puede armar el link de gestion, que es lo
+          // que van a leer el .ics y el correo un instante despues.
+          _tk=row.token; _manage=location.origin+'/gestionar-cita.html?t='+_tk;
+          return { ok:true, id:row.id };
+        }, function(){ return { ok:false, err:'' }; });
+      })
+      .catch(function(){ return { ok:false, err:'' }; });
   };
   var _commit=function(){
     // 1) Guarda la cita y ESPERA el resultado. Antes era fire-and-forget: si el
@@ -1123,12 +1138,22 @@ function confirmar(){
       // Solo si realmente quedó guardada. Best-effort, nunca frena la confirmación.
       try{ if(saved && window.pwEmit) pwEmit("CallBooked",{dominio:"Coaching",entidad_tipo:"cita",entidad_id:(""+(email||"")).toLowerCase().slice(0,80),payload:{tipo:tlabel,kind:_kind,origen:origen,coach_id:_cid}}); }catch(e){}
     };
-    var _p; try{ _p=_postCita(true); }catch(e){ _p=null; }
+    var _p; try{ _p=_postCita(); }catch(e){ _p=null; }
     if(_p && _p.then){
-      _p.then(function(r){
-        var ok=!!(r && r.ok);
-        if(ok && r.json){ return r.json().then(function(rows){ var cid=null; if(Array.isArray(rows) && rows[0]) cid=rows[0].id; _finish(true, cid); }).catch(function(){ _finish(true); }); }
-        _finish(ok);
+      _p.then(function(res){
+        if(res && res.ok){ _finish(true, res.id); return; }
+        // `crear_cita` rechaza el hueco si se ocupo entre el re-chequeo y el alta.
+        // Es la MISMA carrera que cubre el re-chequeo, pero cerrada del lado del
+        // servidor, que es el unico sitio donde no hay ventana: se trata igual.
+        if(res && /hueco_ocupado/.test(res.err||'')){
+          $('msg').textContent=t('ocupadoJusto');
+          TAKEN[start.getTime()]=true;
+          sel.ms=null;
+          renderPicker();
+          if(confirmBtn) confirmBtn.disabled=false;
+          return;
+        }
+        _finish(false);
       }).catch(function(){ _finish(false); });
     } else { _finish(false); }
   };

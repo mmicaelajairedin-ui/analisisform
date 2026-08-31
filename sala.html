@@ -397,24 +397,29 @@ var SALA_SERVICIOS = null, SALA_SLUG = '', SALA_MONEDA = 'eur', SALA_COACHNAME =
 
   // Si no hay token Y hay EMAIL, validar que el email + estado permitan acceso
   if(TOKEN){
-    // Cliente con token: validar en citas.token (V1) O citas.sala_token (V2) — compatibilidad bidireccional
-    var h={apikey:KEY};
-    fetch(SB+'/rest/v1/citas?or=(token.eq.'+TOKEN+',sala_token.eq.'+TOKEN+')&select=id,coach_id,email,estado',{headers:h})
+    // Cliente con token: validar en citas.token (V1) O citas.sala_token (V2) — compatibilidad bidireccional.
+    //
+    // ANTES esto era un SELECT sobre `citas` con la anon key que pedía cuatro
+    // columnas (id, coach_id, email, estado) y usaba UNA: coach_id. Como la
+    // policy anon decía USING(true), esa lectura alcanzaba toda la tabla.
+    // AHORA pregunta por `pw_sala_coach`, que acepta cualquiera de los dos
+    // tokens y devuelve solo el coach de esa cita — nada más.
+    var h={'Content-Type':'application/json',apikey:KEY,Authorization:'Bearer '+KEY};
+    fetch(SB+'/rest/v1/rpc/pw_sala_coach',{method:'POST',headers:h,body:JSON.stringify({p_token:TOKEN})})
       .then(function(r){
         if(r.ok) return r.json();
         console.warn('[SALA] Token validation failed (HTTP '+r.status+')');
-        return [];
+        return null;
       })
-      .then(function(rows){
-        if(!rows || !rows[0]){
+      .then(function(citaCoach){
+        if(!citaCoach){
           console.warn('[SALA] Invalid token: '+TOKEN);
           return;
         }
-        var c=rows[0];
-        // Token existe: validar que sea para esta sesión (mismo coach_id + email aproximado si está en la cita)
+        // Token existe: validar que sea para esta sesión (mismo coach_id)
         var m=(''+ROOM).match(/^Pathway-(.+)-(\d+)$/);
         var roomCoach=m?m[1]:'';
-        if(roomCoach && String(c.coach_id)!==roomCoach){
+        if(roomCoach && String(citaCoach)!==roomCoach){
           console.warn('[SALA] Token belongs to different coach');
           return;
         }
