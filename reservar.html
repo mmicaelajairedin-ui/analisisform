@@ -994,9 +994,9 @@ function confirmar(){
     // en vez de volver a adivinar. Es lo que garantiza que pantalla, cita y
     // correo hablen del mismo sitio.
     var _pl=_videoPlan();
-    var b={
-      p_coach_id:_cid, p_nombre:name, p_email:email, p_tipo:tlabel,
-      p_inicio:_iso, p_cliente_tz:vtz,
+    // Campos que ambas RPC comparten, con los MISMOS nombres.
+    var _campos={
+      p_cliente_tz:vtz,
       p_telefono:tel||null,
       p_origen:origen||null,
       p_modalidad:_pl.modalidad,
@@ -1009,7 +1009,25 @@ function confirmar(){
       p_respuestas:answers.length?answers:null,
       p_kind:_kind
     };
-    return fetch(SB+'/rest/v1/rpc/crear_cita',{ method:'POST', headers:{ apikey:KEY, Authorization:'Bearer '+KEY, 'content-type':'application/json' }, body:JSON.stringify(b) });
+    var _rp=qp('reprog'), _fn, b;
+    if(_rp){
+      // REPROGRAMAR. Una sola llamada ATOMICA: la RPC cancela la vieja y crea la
+      // nueva en la misma transaccion, o no toca nada. Antes eran dos peticiones
+      // —crear y luego PATCH de la vieja— y la segunda fallaba en silencio
+      // (anon no tiene UPDATE sobre citas), asi que el cliente se quedaba con
+      // DOS turnos activos: el hueco viejo bloqueado y recordatorios con el
+      // enlace antiguo.
+      //
+      // `coach_id` NO viaja: la RPC lo toma de la cita vieja, asi que con un
+      // token no se puede mover una cita a otro coach.
+      _fn='reprogramar_cita';
+      b={ p_token:_rp, p_nuevo_inicio:_iso, p_nombre:name, p_email:email, p_tipo:tlabel };
+    } else {
+      _fn='crear_cita';
+      b={ p_coach_id:_cid, p_nombre:name, p_email:email, p_tipo:tlabel, p_inicio:_iso };
+    }
+    for(var k in _campos){ if(Object.prototype.hasOwnProperty.call(_campos,k)) b[k]=_campos[k]; }
+    return fetch(SB+'/rest/v1/rpc/'+_fn,{ method:'POST', headers:{ apikey:KEY, Authorization:'Bearer '+KEY, 'content-type':'application/json' }, body:JSON.stringify(b) });
   };
   var _commit=function(){
     // 1) Guarda la cita y ESPERA el resultado. Antes era fire-and-forget: si el
@@ -1085,28 +1103,6 @@ function confirmar(){
         // Sala de Pathway. Se escribe AHORA, que es cuando ya hay id de cita.
         _persistir('sala', _sala); _finalizar(_sala, 'sala');
       }
-      // 1b) Si viene de "reprogramar" (gestionar-cita manda &reprog=<token viejo>),
-      //     recién AHORA que la nueva quedó guardada cancelamos la vieja → el cliente
-      //     nunca se queda sin turno si abandonaba a mitad.
-      // return=representation + verificación + reintento: si la vieja NO se cancela,
-      // el cliente quedaba con DOS turnos activos (bloqueaba el slot + recordatorios
-      // con el link viejo). return=minimal ocultaba 0 filas escritas.
-      try{ var _rp=qp('reprog'); if(saved && _rp){
-        var _cancelOld=function(n){ return fetch(SB+'/rest/v1/citas?token=eq.'+encodeURIComponent(_rp),{ method:'PATCH', headers:{ apikey:KEY, Authorization:'Bearer '+KEY, 'content-type':'application/json', Prefer:'return=representation' }, body:JSON.stringify({ estado:'cancelada' }) }).then(function(r){ return r.ok?r.json():[]; }).then(function(a){ if((!a||!a.length)&&n>0) return _cancelOld(n-1); return a; }).catch(function(){ if(n>0) return _cancelOld(n-1); return []; }); };
-        // El evento de Google de la cita VIEJA tambien tiene que irse. Antes se
-        // quedaba vivo para siempre: la fila pasaba a 'cancelada' pero el evento
-        // seguia ocupando el hueco en el calendario del coach, y ademas con el
-        // enlace antiguo dentro. Se hace DESPUES de tener la fila —para conocer su
-        // id— y ANTES de olvidarnos de ella. `sync-cita-to-gcal` con op:'cancelar'
-        // ya hace lo correcto en los dos casos raros: sin `google_event_id` no
-        // inventa nada, y si el evento ya no existe en Google no crea sustituto.
-        _cancelOld(2).then(function(_a){
-          try{
-            var _vieja=(_a&&_a[0])||null;
-            if(_vieja&&_vieja.id) fetch(SB+'/functions/v1/sync-cita-to-gcal',{ method:'POST', headers:{ 'content-type':'application/json', apikey:KEY, Authorization:'Bearer '+KEY }, body:JSON.stringify({ cita_id:_vieja.id, op:'cancelar' }) }).catch(function(){});
-          }catch(e){}
-        }).catch(function(){});
-      } }catch(e){}
       // 1c) MARKETPLACE ("busco coach", mp=1): el sistema detecta el email y lo marca
       //     como cliente 'pathway' (comisión) DESDE la reserva — no solo al pagar. Crea
       //     el candidato si no existe (ignore-duplicates) y estampa origen='pathway'
@@ -1131,6 +1127,15 @@ function confirmar(){
           // Sin id o sin token la cita no es gestionable: se trata como fallo en
           // vez de confirmar algo que el cliente no podria cancelar.
           if(!f || f.id==null || !f.token) return _finish(false);
+          // Reprogramacion: `reprogramar_cita` ya dejo la vieja cancelada en la
+          // base y devuelve su id. Falta retirar SU evento de Google, que si no
+          // sigue ocupando el hueco en el calendario del coach y ademas con el
+          // enlace antiguo dentro. `sync-cita-to-gcal` con op:'cancelar' hace lo
+          // correcto en los dos casos raros: sin `google_event_id` no inventa
+          // nada, y si el evento ya no existe en Google no crea sustituto.
+          if(f.id_anterior!=null){
+            try{ fetch(SB+'/functions/v1/sync-cita-to-gcal',{ method:'POST', headers:{ 'content-type':'application/json', apikey:KEY, Authorization:'Bearer '+KEY }, body:JSON.stringify({ cita_id:f.id_anterior, op:'cancelar' }) }).catch(function(){}); }catch(e){}
+          }
           _finish(true, f.id, f.token);
         // Cuerpo ilegible con 2xx: la fila casi seguro existe, asi que se
         // mantiene el criterio anterior (guardada) aunque sin enlace de gestion.

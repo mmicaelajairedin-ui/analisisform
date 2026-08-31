@@ -1102,8 +1102,13 @@ const RULES = [
       // El guardado dejó de ser un INSERT directo con reintento: va por la RPC
       // `crear_cita`, que deriva org_id, fija estado/grupal y genera el token.
       // El reintento sin 'respuestas' ya no aplica (firma fija, columna existe).
-      if (!/rpc\/crear_cita/.test(r))
+      if (!/rest\/v1\/rpc\//.test(r) || !/'crear_cita'/.test(r))
         return "reservar.html: la reserva ya no pasa por la RPC crear_cita (volvería el INSERT anónimo directo).";
+      // Fase 3: reprogramar es UNA llamada atómica, no crear + PATCH de la vieja.
+      if (!/'reprogramar_cita'/.test(r))
+        return "reservar.html: la reprogramación ya no pasa por reprogramar_cita (volvería la cita duplicada).";
+      if (/citas\?token=eq/.test(r))
+        return "reservar.html: volvió el PATCH anónimo de la cita vieja por token (falla en silencio y duplica la cita).";
       if (/\/rest\/v1\/citas'\s*,\s*\{\s*method:\s*'POST'/.test(r))
         return "reservar.html: volvió el INSERT directo a citas; la reserva debe nacer SOLO por crear_cita.";
       if (/function _tok\s*\(/.test(r))
@@ -2237,16 +2242,19 @@ const RULES = [
     name: "recordatorios: la reserva guarda teléfono + zona del cliente",
     bug: "Los recordatorios (email 24h/1h y el botón de WhatsApp) necesitan que al " +
          "reservar se guarde el teléfono (para WhatsApp) y la zona horaria del " +
-         "cliente (para mostrar la hora en SU hora en el email). Si el POST a citas " +
-         "deja de mandar telefono/cliente_tz, los recordatorios quedan cojos.",
+         "cliente (para mostrar la hora en SU hora en el email). Si la reserva " +
+         "deja de mandar telefono/cliente_tz, los recordatorios quedan cojos. " +
+         "Desde la Fase 2 la reserva no es un POST con el payload de la tabla: " +
+         "va por RPC (crear_cita / reprogramar_cita) y los campos viajan como " +
+         "parametros en `_campos`, que comparten ambas.",
     check() {
       const s = read("reservar.html");
       if (!s) return null;
-      const i = s.indexOf("coach_id:_cid");
-      if (i < 0) return "reservar.html: no se encuentra el POST a citas.";
-      const blk = s.slice(i, i + 200);
-      if (!/telefono:/.test(blk) || !/cliente_tz:/.test(blk))
-        return "reservar.html: el POST a citas ya no guarda telefono/cliente_tz (los recordatorios quedan sin datos).";
+      const i = s.indexOf("var _campos=");
+      if (i < 0) return "reservar.html: no se encuentra el payload de la reserva (_campos).";
+      const blk = s.slice(i, i + 900);
+      if (!/p_telefono:/.test(blk) || !/p_cliente_tz:/.test(blk))
+        return "reservar.html: la reserva ya no manda telefono/cliente_tz (los recordatorios quedan sin datos).";
       return null;
     },
   },
@@ -2258,9 +2266,12 @@ const RULES = [
     check() {
       const r = read("reservar.html");
       if (r) {
-        const i = r.indexOf("coach_id:_cid");
-        const blk = i >= 0 ? r.slice(i, i + 200) : "";
-        if (!/token:/.test(blk)) return "reservar.html: el POST a citas ya no guarda el token (sin token no hay link de cancelar/reprogramar).";
+        // Desde la Fase 2 el token NO viaja en el payload: lo emite el servidor
+        // (crear_cita / reprogramar_cita) y llega en la respuesta. El invariante
+        // sigue siendo el mismo —sin token no hay link de cancelar/reprogramar—
+        // pero ahora se comprueba sobre el token DEVUELTO.
+        if (!/_tk\s*=\s*token\s*\|\|\s*''/.test(r) || !/_manage\s*=\s*_tk\s*\?/.test(r))
+          return "reservar.html: el link de gestión ya no se arma con el token que devuelve la RPC.";
       }
       const g = read("gestionar-cita.html");
       if (!g) return "falta gestionar-cita.html (cancelar/reprogramar por el cliente).";
@@ -3107,9 +3118,9 @@ const RULES = [
     check() {
       const r = read("reservar.html");
       if (r) {
-        const i = r.indexOf("coach_id:_cid");
-        const blk = i >= 0 ? r.slice(i, i + 260) : "";
-        if (!/origen:/.test(blk)) return "reservar.html: el POST a citas ya no guarda origen (se pierde la atribución).";
+        const i = r.indexOf("var _campos=");
+        const blk = i >= 0 ? r.slice(i, i + 900) : "";
+        if (!/p_origen:/.test(blk)) return "reservar.html: la reserva ya no manda origen (se pierde la atribución).";
         // La atribución ahora se deriva de una pregunta del coach → origen.
         if (!/origen\s*=\s*x\.a/.test(r)) return "reservar.html: se perdió el mapeo de la pregunta de canal a origen.";
       }
