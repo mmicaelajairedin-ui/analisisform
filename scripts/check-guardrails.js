@@ -2100,9 +2100,18 @@ const RULES = [
         const s = read(f); if (!s) continue;
         if (!/function loadCitas\(/.test(s) || !/TAKEN/.test(s))
           return f + ": ya no carga/marca los horarios tomados (riesgo de doble-booking).";
-        // Debe re-chequear en confirmar antes del POST.
-        if (!/inicio=eq\.[\s\S]{0,80}estado=neq\.cancelada[\s\S]{0,400}_commit/.test(s.replace(/\n/g, " ")))
-          return f + ": confirmar ya no re-chequea el hueco contra citas antes de reservar.";
+        // Debe re-chequear en confirmar antes del POST. Vale por cualquiera de las
+        // dos vias: la lectura directa de `citas` (historica) o la RPC acotada
+        // `pw_franjas_ocupadas` (G2, que no expone datos del cliente). Lo que se
+        // blinda es el RE-CHEQUEO, no por donde se pide.
+        const plano = s.replace(/\n/g, " ");
+        const viaTabla = /inicio=eq\.[\s\S]{0,80}estado=neq\.cancelada[\s\S]{0,400}_commit/.test(plano);
+        const viaRpc = /rpc\/pw_franjas_ocupadas[\s\S]{0,600}_commit/.test(plano);
+        if (!viaTabla && !viaRpc)
+          return f + ": confirmar ya no re-chequea el hueco antes de reservar.";
+        // Y el selector tiene que llenar TAKEN desde el servidor, no solo local.
+        if (!/rest\/v1\/citas\?coach_id=eq\.|rpc\/pw_franjas_ocupadas/.test(plano))
+          return f + ": loadCitas ya no pide al servidor los horarios tomados.";
       }
       return null;
     },

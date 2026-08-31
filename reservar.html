@@ -421,7 +421,17 @@ function _viewerGroups(){
   return groups.slice(0,10);
 }
 function _tzLabel(){ try{ var z=Intl.DateTimeFormat().resolvedOptions().timeZone; return z?(' ('+z+')'):''; }catch(e){ return ''; } }
-function loadCitas(){ TAKEN={}; if(!CID) return; var _abort=new AbortController(); var _tm=setTimeout(function(){ _abort.abort(); }, 6000); fetch(SB+'/rest/v1/citas?coach_id=eq.'+encodeURIComponent(CID)+'&estado=neq.cancelada&select=inicio',{headers:{apikey:KEY},signal:_abort.signal}).then(function(r){ clearTimeout(_tm); return r.ok?r.json():[]; }).then(function(rows){ var T={}; (rows||[]).forEach(function(c){ if(!c||!c.inicio) return; var t=new Date(c.inicio).getTime(); if(!isNaN(t)) T[t]=true; }); TAKEN=T; renderPicker(); }).catch(function(){ clearTimeout(_tm); }); }
+// Instantes ya ocupados del coach, para pintarlos en gris.
+//
+// ANTES leia la tabla `citas` directamente con la anon key. Eso funcionaba
+// porque la policy `citas_anon_select` decia USING(true): cualquiera con la
+// anon key —que viaja en el HTML— se llevaba las 66 filas con sus 33 columnas,
+// token y sala_token incluidos, de todos los coaches. Para pintar el selector
+// solo hace falta UNA columna: `inicio`.
+//
+// AHORA lo pide por `pw_franjas_ocupadas`, que devuelve exactamente esa columna,
+// solo del coach que se le pasa, solo de hoy en adelante y con techo de 62 dias.
+function loadCitas(){ TAKEN={}; if(!CID) return; var _abort=new AbortController(); var _tm=setTimeout(function(){ _abort.abort(); }, 6000); var _d0=new Date(), _d1=new Date(_d0.getTime()+29*86400000); fetch(SB+'/rest/v1/rpc/pw_franjas_ocupadas',{method:'POST',headers:{'Content-Type':'application/json',apikey:KEY,Authorization:'Bearer '+KEY},body:JSON.stringify({p_coach_id:CID,p_desde:_d0.toISOString(),p_hasta:_d1.toISOString()}),signal:_abort.signal}).then(function(r){ clearTimeout(_tm); return r.ok?r.json():[]; }).then(function(rows){ var T={}; (rows||[]).forEach(function(c){ if(!c||!c.inicio) return; var t=new Date(c.inicio).getTime(); if(!isNaN(t)) T[t]=true; }); TAKEN=T; renderPicker(); }).catch(function(){ clearTimeout(_tm); }); }
 // Eventos REALES del calendario del coach (su iCal público, vía edge function
 // `calendar`). Con esto NO te reservan un hueco donde ya tienes algo — además de
 // las reservas de Pathway. Solo eventos con hora (los de "todo el día" tipo
@@ -1125,7 +1135,9 @@ function confirmar(){
   // Re-chequeo anti doble-booking JUSTO antes de confirmar: si el hueco se ocupó
   // recién (otra persona reservó mientras), no confirmamos y pedimos elegir otro.
   $('msg').textContent=t('confirmando');
-  fetch(SB+'/rest/v1/citas?coach_id=eq.'+encodeURIComponent(_cid)+'&inicio=eq.'+encodeURIComponent(_iso)+'&estado=neq.cancelada&select=id',{headers:{apikey:KEY}})
+  // Misma via que loadCitas(): la ventana se cierra sobre el propio instante,
+  // asi que devolver una fila significa que ese hueco ya esta tomado.
+  fetch(SB+'/rest/v1/rpc/pw_franjas_ocupadas',{method:'POST',headers:{'Content-Type':'application/json',apikey:KEY,Authorization:'Bearer '+KEY},body:JSON.stringify({p_coach_id:_cid,p_desde:_iso,p_hasta:_iso})})
     .then(function(r){ return r.ok?r.json():null; })
     .then(function(ex){
       if(ex && ex.length){
