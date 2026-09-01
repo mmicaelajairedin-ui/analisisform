@@ -104,9 +104,11 @@ async function getDashboard(
     const today = new Date().toISOString().split("T")[0];
     const tomorrow = new Date(Date.now() + 86400000).toISOString().split("T")[0];
 
+    // `hora` es imprescindible: `fecha` es un DATE, y sin la hora no se puede
+    // saber si una sesion de hoy cae dentro de las proximas 2h (ver mas abajo).
     const { data: todayStats, error: todayError } = await supabase
       .from("sesiones_registro")
-      .select("fecha, estado")
+      .select("fecha, hora, estado")
       .eq("org_id", orgId)
       .gte("fecha", today)
       .lt("fecha", tomorrow);
@@ -167,11 +169,29 @@ async function getDashboard(
 
       const total = sessions.length;
       const upcoming = sessions.filter((s: any) => {
-        const sesionTime = new Date(s.fecha);
+        // `fecha` es un DATE ("2026-09-01") y `hora` un TIME ("17:00:00"). Con
+        // `new Date(s.fecha)` a secas toda sesion de hoy quedaba en medianoche
+        // UTC, es decir SIEMPRE en el pasado, y `upcoming_2h` daba 0 siempre.
+        // Se combinan las dos columnas con la misma convencion que usa el unico
+        // escritor de la tabla (pw-scheduler.js:535): la hora guardada se
+        // interpreta como UTC.
+        if (!s.fecha) return false;
+        const sesionTime = new Date(
+          s.fecha + "T" + String(s.hora || "12:00:00").slice(0, 8) + "Z"
+        );
+        if (isNaN(sesionTime.getTime())) return false;
         return sesionTime > now && sesionTime <= nowPlus2h;
       }).length;
-      const cancelled = sessions.filter((s: any) => s.estado === "cancelada")
-        .length;
+      // El vocabulario de `estado` en ESTA tabla es ingles: el default de la
+      // columna es 'scheduled' y el unico escritor guarda 'cancelled' /
+      // 'confirmed' (pw-scheduler.js:663 y :668). "cancelada" es el vocabulario
+      // de `citas`, que es otra tabla: comparar contra el dejaba `cancelled` en
+      // 0 y `completion_rate` clavado en 100 aunque se cancelara todo. Se
+      // aceptan las dos formas para no volver a depender de un solo idioma.
+      const cancelled = sessions.filter((s: any) => {
+        const e = String(s.estado || "").toLowerCase();
+        return e === "cancelled" || e === "cancelada" || e === "canceled";
+      }).length;
 
       return {
         total_sessions: total,

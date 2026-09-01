@@ -5563,6 +5563,92 @@ const RULES = [
     },
   },
 
+  // ── INC-B ──────────────────────────────────────────────────────────────────
+  // `f2_3_cierre_sesiones_registro` encendio la RLS de `sesiones_registro` y no
+  // dejo ninguna policy, razonando que "ninguna edge function ni pantalla la
+  // lee". Si la leia: `dashboard/index.ts` consulta con la anon key + el JWT del
+  // llamante, o sea como `authenticated`. Como el GRANT de SELECT seguia vivo,
+  // PostgREST no devolvia 403 sino 200 con `[]`, el `if (todayError) throw` no
+  // saltaba, y el panel de red mostro "0 sesiones hoy" durante dias sin que
+  // nada avisara. La regla vigila el acoplamiento, no la historia: mientras
+  // exista un lector sujeto a RLS, tiene que existir por lo menos una policy de
+  // lectura; si el lector desaparece, la regla se apaga sola.
+  {
+    name: "sesiones_registro: no puede quedarse sin lectura mientras el dashboard la lea (INC-B)",
+    bug:
+      "Encender RLS sin policies sobre una tabla con GRANT de SELECT no da 403: " +
+      "da 200 con [] y el consumidor calcula ceros como si fueran datos reales.",
+    check() {
+      const DIR = "supabase/migrations";
+      const CIERRE = "20260901104533_incb_sesiones_registro_rls_lectura_minima.sql";
+      const DASH = "supabase/functions/dashboard/index.ts";
+      const limpio = (s) => s.replace(/--[^\n]*/g, " ").replace(/\s+/g, " ");
+
+      // 1 · ¿Sigue habiendo un lector al que le aplique la RLS?
+      const dash = read(DASH);
+      if (!dash) return `falta ${DASH}: era el consumidor de sesiones_registro. Si se elimino a proposito, quitar tambien esta regla.`;
+      const lee = /\.from\(\s*["']sesiones_registro["']\s*\)/.test(dash);
+      if (!lee) return null; // ya nadie la lee desde un cliente con RLS: nada que defender
+
+      // 2 · Ese lector NO usa service_role: por eso depende de las policies.
+      if (!/SUPABASE_ANON_KEY/.test(dash))
+        return `${DASH} ya no construye su cliente con SUPABASE_ANON_KEY. Si paso a service_role la RLS deja de aplicarle: revisar esta regla y las policies, que quiza sobren.`;
+
+      // 3 · La migracion que devuelve la lectura sigue en su sitio y completa.
+      const cierre = read(`${DIR}/${CIERRE}`);
+      if (!cierre)
+        return `falta ${CIERRE}: es la migracion que devuelve la lectura a sesiones_registro. Sin ella el dashboard vuelve a leer [] en silencio.`;
+      const c = limpio(cierre);
+      for (const pol of ["sesiones_registro_coach_select", "sesiones_registro_org_admin_select"]) {
+        if (!new RegExp("CREATE POLICY " + pol, "i").test(c))
+          return `${CIERRE} ya no crea la policy ${pol}.`;
+      }
+      if (!/CREATE OR REPLACE FUNCTION public\.pw_org_admin_id/i.test(c))
+        return `${CIERRE} ya no define pw_org_admin_id(), de la que depende la policy de organizacion.`;
+      if (/USING\s*\(\s*true\s*\)/i.test(c))
+        return `${CIERRE} contiene USING (true): eso abre la tabla entera, y guarda notas de sesion de clientes.`;
+
+      // 4 · Ninguna migracion posterior puede quitar la lectura sin reponerla.
+      const CON_FECHA = /^\d{8,14}_/;
+      const LEGADO_SUPERADO = new Set([
+        "0103_seed_test_coach.sql",
+        "sprint-5-5-staging-setup.sql",
+        "coach_metrics_existing_tables.sql",
+        "fit_fotos.sql",
+        "007_rls_policies.sql",
+      ]);
+      let ficheros = [];
+      try { ficheros = fs.readdirSync(DIR).filter((f) => f.endsWith(".sql")); }
+      catch (e) { return "no se pudo leer supabase/migrations."; }
+
+      for (const f of ficheros.sort()) {
+        if (CON_FECHA.test(f)) { if (f <= CIERRE) continue; }
+        else if (LEGADO_SUPERADO.has(f)) continue;
+        const t = limpio(read(`${DIR}/${f}`) || "");
+        if (!/sesiones_registro/i.test(t)) continue;
+        const quita =
+          /DROP\s+POLICY[^;]*sesiones_registro/i.test(t) ||
+          /ALTER\s+TABLE[^;]*sesiones_registro[^;]*DISABLE\s+ROW\s+LEVEL\s+SECURITY/i.test(t) ||
+          /REVOKE[^;]*SELECT[^;]*ON[^;]*sesiones_registro[^;]*FROM[^;]*authenticated/i.test(t);
+        if (!quita) continue;
+        const repone = /CREATE\s+POLICY[^;]*ON\s+public\.sesiones_registro[^;]*FOR\s+SELECT/i.test(t);
+        if (!repone)
+          return `${f} le quita la lectura a sesiones_registro y no la repone, pero ${DASH} sigue consultandola como authenticated. Volveria el 200 con [].`;
+      }
+
+      // 5 · El consumidor no puede volver a descartar filas en silencio.
+      const sel = /\.from\(\s*["']sesiones_registro["']\s*\)\s*\n\s*\.select\(\s*["']([^"']+)["']/.exec(dash);
+      if (!sel) return `${DASH}: no se pudo leer el .select() de sesiones_registro.`;
+      const cols = sel[1].split(",").map((x) => x.trim());
+      if (!cols.includes("hora"))
+        return `${DASH} pide sesiones_registro sin la columna 'hora'. 'fecha' es un DATE: sin la hora, upcoming_2h vuelve a dar 0 siempre.`;
+      if (/estado\s*===\s*["']cancelada["']/.test(dash))
+        return `${DASH} compara estado contra "cancelada", que es el vocabulario de 'citas'. En sesiones_registro el estado es ingles ('scheduled'/'confirmed'/'cancelled') y esa comparacion deja completion_rate clavado en 100.`;
+
+      return null;
+    },
+  },
+
 ];
 
 
