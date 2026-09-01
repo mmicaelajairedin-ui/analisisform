@@ -172,7 +172,10 @@ sustitución**. Ver «P0 retirado del lote» más abajo.
 > de golpe. El backfill conserva el estado visible actual y arranca el reloj
 > desde ahí.
 
-### AP2 — El canal de vuelta
+### AP2 — El canal de vuelta 🟢 CERRADO (2026-09-01)
+
+> Verificado en producción con el run #16. El detalle, abajo:
+> **"AP2 — cierre definitivo"**.
 
 | # | Criterio | Cómo se verifica |
 |---|---|---|
@@ -302,6 +305,110 @@ ni MCP, ni workflow), por decisión expresa.
 Queda pendiente de una vía de despliegue de migraciones segura. Mientras no se
 aplique, `pw-programa.js` cae al comportamiento anterior (`semana_activa`) sin
 error visible: degradación limpia, pero **AP1 no surte efecto**.
+
+## AP2 — cierre definitivo (2026-09-01) 🟢
+
+**Cerrado por el objetivo, no por el `success` del workflow:** los destinatarios
+elegibles reciben el digest.
+
+### Los dos runs que lo demuestran
+
+Se conservan ambos como evidencia. **No re-ejecutar el workflow.**
+
+| | **#15** — evidencia del defecto | **#16** — evidencia de la corrección |
+|---|---|---|
+| Cuándo | 2026-08-31 14:38 UTC (`schedule`) | 2026-09-01 09:37 UTC (`workflow_dispatch`) |
+| Commit | `146b2dd` (AP2 sin la corrección) | `28c0b26` (con la corrección) |
+| Conclusión | success | success |
+| Duración del envío | 33 s | 67 s (≈34 s = la única espera) |
+| coaches | 40 | 40 |
+| **enviados** | **30** | **38** |
+| saltados | 2 | 2 |
+| **errores** | **8 × RateLimitError** | **0** |
+| reintentos | — (no existía) | **1** |
+
+Run #15: https://github.com/mmicaelajairedin-ui/analisisform/actions/runs/33403776745
+Run #16: https://github.com/mmicaelajairedin-ui/analisisform/actions/runs/33493172040
+
+### El defecto (run #15)
+
+```
+{"coaches":40,"enviados":30,"saltados":2,"errores":[8 x RateLimitError]}
+
+ftcharlie95@gmail.com: RateLimitError: Rate limit exceeded for trace
+01a058418a9b7703883af5768f6a6b93. Retry after 32872ms.
+```
+
+Las ocho comparten el mismo `trace`, y ese texto **no lo produce `send-email`**
+(devuelve 502 con `{ok:false,status,error}`, nunca "RateLimitError"): es
+`String(e)` de un `fetch` que LANZÓ. Quien cortaba no era Brevo sino la
+plataforma de Supabase, limitando las invocaciones anidadas
+`notif-coach → send-email`. El bucle las hacía seguidas y sin pausa; al llegar
+a ~30 se topaba con el límite y descartaba el resto. El error decía cuánto
+esperar y nadie lo leía: **8 de 40 coaches se quedaron sin su resumen.**
+
+Salió en `success`: por eso el criterio de cierre no puede ser el estado del
+workflow.
+
+### La corrección (`28c0b26`)
+
+`supabase/functions/notif-coach/enviar.ts` — reintento acotado que respeta el
+`Retry after` del proveedor (2 reintentos máx., 30 s de reserva, techo de 45 s
+por espera, presupuesto de 120 s para no agotar el `curl --max-time 200` del
+workflow). Alcance: sólo `notif-coach`, su test y el guardrail.
+
+**Por qué no puede duplicar un email:** sólo se reintenta un rechazo EXPLÍCITO
+por límite de tasa, que es el único fallo del que consta que el proveedor **no
+aceptó** el mensaje — la petición se corta en la puerta y nunca llega a Brevo.
+Un corte de red, un timeout, una respuesta perdida o un 5xx son ambiguos y
+**no** se reintentan. Es una garantía estructural, no un candado añadido.
+
+### Verificación en producción (run #16)
+
+- **38 de 38 destinatarios elegibles** recibieron el digest. Los 8 del #15 —
+  `ftcharlie95`, `hola@ninateucilide.com`, `soyelcandidatoperfecto`,
+  `ajairedin`, `jrbrembilla.taxes`, `abrilfitch.consultoria`, `rbrembilla42`,
+  `gonzaloalcalde97` — siguen activos, sin opt-out ni test/demo, y entraron.
+- **Los 2 saltados son los justificables, y sólo esos:**
+  `demo.coach@pathway.com` (`demo:true` + opt-out) y
+  `bot-gym@pathwaycareercoach.com` (`cuenta_test:true`). Cero sin email.
+- **`reintentos: 1`** es la prueba de que el límite se tocó igual que ayer y se
+  absorbió: un solo destinatario esperó, y esa espera recargó el cupo para los
+  demás. Lo corrobora el tiempo (67 s vs 33 s).
+- **Sin duplicados:** 39 intentos para 38 envíos. Un duplicado exigiría que el
+  primer intento entregara *y* devolviera un rechazo por límite de tasa a la vez.
+- `notificaciones` 0 y `coach_nudges` 0 — correcto: el digest sólo manda email
+  por `send-email`, y los nudges los escribe `coach-lifecycle`.
+- `client_errors` del día: 3, **ninguno** relacionado con el digest.
+- Desplegado: **`notif-coach` v39 · ACTIVE** (deploy `#205`, success 09:17:13).
+
+### Trayectoria de la apuesta
+
+**0 de 49** coaches recibían el resumen antes de AP2 → **30 de 40** con AP2 →
+**38 de 38** con la corrección.
+
+### Blindaje
+
+- `tests/ap2-reintento-rate-limit.mjs` — 44 casos, con el error literal del
+  run #15 como fixture.
+- Guardrail *"avisos: el resumen semanal sobrevive al límite de tasa"*.
+- Guardrail *"avisos: el resumen semanal sale por defecto (opt-out, no opt-in)"*.
+
+---
+
+## Frentes abiertos — NO tocar sin autorización explícita
+
+Cuatro trabajos separados, deliberadamente fuera de AP2. Ninguno se rozó al
+cerrarlo.
+
+| Frente | Estado |
+|---|---|
+| **AP1 — el reloj del programa** | Migración `ap1_programa_reloj.sql` **preparada, NO aplicada**: 0 de 3 columnas en producción (`programa_inicio`, `programa_semanas`, `programa_pausado`). El código convive con su ausencia (`PWPROG` cae al comportamiento histórico). Al aplicarla hay que repetir la validación 73/73. |
+| **Historial de migraciones de Supabase** | `supabase db push` aborta: hay versiones remotas sin fichero local. Ninguna migración del repo llega a aplicarse. Ver *"El workflow de migraciones está roto"*. |
+| **RLS pendiente** | `ranking_mensual` (RLS desactivada, UPDATE anónimo abierto) y la lectura anónima de `organizaciones` que le queda a `sala.html`. |
+| **Google Calendar** | 3 `client_errors` observados el 2026-09-01 09:19 UTC en `panel-v2.html`: 2× `http_502` en `gcal-refresh` (`{error=refresh_failed}`) y 1× `neterror` en `/functions/v1/calendar`. Detectados durante el post-deploy de AP2, **ajenos a AP2**. Sin investigar. |
+
+---
 
 ## Lo que este sprint NO hace
 

@@ -816,6 +816,84 @@ reales** — fuera del alcance autorizado de RC-14.
 | **ERR-CLIPROG-004** | **FIXED / TESTED** | **HIGH** | **cliente** | ✅ | ❌ |
 | **ERR-EMAIL-RECORDATORIO** | **DETECTED** | **LOW** | **email** | ❌ | ❌ |
 | **INC-039** | **FIXED** | **MEDIUM** | **multicoach** | ✅ | ❌ |
+| **ERR-NOTIF-001** | **VERIFIED** | **HIGH** | **notificaciones** | ✅ | ✅ |
+
+---
+
+## ERR-NOTIF-001: Digest semanal perdido por límite de tasa
+
+**Estado:** VERIFIED
+**Fecha detectado:** 2026-08-31
+**Fecha triaged:** 2026-09-01
+**Fecha fixed/tested:** 2026-09-01
+**Fecha verified:** 2026-09-01 (run #16 en producción)
+**Severity:** HIGH
+
+### Scope Metadata
+- **Module:** `notificaciones`
+- **Scope Type:** `MODULE_SPECIFIC`
+- **Scope Belongs To:** `notif-coach` (edge function)
+- **Blocking Scope:** `AP2`
+- **Blocks Current Branch:** No (cerrado)
+
+### Síntoma
+El workflow `Coach Notifications` termina en `success` pero la entrega es
+incompleta: 8 de 40 coaches no reciben su resumen semanal. El estado verde del
+job oculta el fallo — no hay ninguna señal de que falten envíos.
+
+### Categoría
+`BACKEND_ERROR` · `RATE_LIMIT` · `SILENT_PARTIAL_FAILURE`
+
+### Módulo
+`supabase/functions/notif-coach` — bucle de envío del digest semanal
+
+### Root Cause
+El bucle invocaba `send-email` 38 veces seguidas y sin pausa. La **plataforma de
+Supabase** limita las invocaciones anidadas (`notif-coach → send-email`) y a
+partir de ~30 las rechaza. El `fetch` LANZA (no devuelve respuesta), el `catch`
+anotaba el error y pasaba al siguiente: sin reintento, ese coach se quedaba sin
+email.
+
+Diagnóstico inicial equivocado a descartar: **no es Brevo**. `send-email` nunca
+devuelve ese texto (responde 502 con `{ok:false,status,error}`). Las 8 líneas
+comparten el mismo `trace`, que es el de la invocación de `notif-coach`.
+
+```
+ftcharlie95@gmail.com: RateLimitError: Rate limit exceeded for trace
+01a058418a9b7703883af5768f6a6b93. Retry after 32872ms.
+```
+
+El error decía cuánto esperar y nadie lo leía.
+
+### Evidencia
+- **Commit del fix:** `28c0b26` (AP2: el resumen semanal deja de perderse por el limite de tasa)
+- **Files affected:**
+  - `supabase/functions/notif-coach/enviar.ts` (nuevo — reintento acotado)
+  - `supabase/functions/notif-coach/index.ts` (el envío pasa por `enviarConReintento`)
+- **Test:** `tests/ap2-reintento-rate-limit.mjs` (44 casos; el error literal del run #15 como fixture)
+- **Run del defecto (#15):** 2026-08-31 14:38 UTC → `{"coaches":40,"enviados":30,"saltados":2,"errores":[8 x RateLimitError]}`
+- **Run de la corrección (#16):** 2026-09-01 09:37 UTC → `{"coaches":40,"enviados":38,"saltados":2,"reintentos":1,"errores":[]}`
+- **Desplegado:** `notif-coach` v39 · ACTIVE (deploy #205)
+
+### Estado actual
+- ✅ **FIXED:** Reintento que respeta el `Retry after` del proveedor (2 máx., 30 s de reserva, techo 45 s, presupuesto 120 s)
+- ✅ **TEST:** `tests/ap2-reintento-rate-limit.mjs`, 44/44
+- ✅ **VERIFIED:** run #16 en producción — 38/38 destinatarios elegibles, 0 errores, 1 reintento absorbido
+- ✅ **AUTO-GUARDRAIL:** "avisos: el resumen semanal sobrevive al limite de tasa"
+
+### Cómo evitar regresión
+El guardrail falla si desaparece `enviar.ts`, si se deja de respetar el
+`Retry after`, si se pierde el backoff de 30 s o el presupuesto de tiempo, o si
+`index.ts` vuelve a enviar con un `fetch` pelado.
+
+**Regla general que deja este error:** un job de envío masivo en verde no
+significa entrega completa. El criterio de cierre es *"los destinatarios
+elegibles recibieron el mensaje"*, no *"el workflow terminó en success"*.
+
+**Y una regla de seguridad al reintentar:** reintentar sólo el rechazo
+EXPLÍCITO por límite de tasa — el único fallo del que consta que el proveedor
+NO aceptó el mensaje. Los fallos ambiguos (corte de red, timeout, respuesta
+perdida, 5xx) no se reintentan: un email duplicado es peor que uno que falta.
 
 ---
 
@@ -838,5 +916,5 @@ reales** — fuera del alcance autorizado de RC-14.
 
 ---
 
-*Actualizado: 2026-08-10*  
+*Actualizado: 2026-09-01*  
 *Fase 1.5 en progreso*
