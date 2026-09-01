@@ -4,6 +4,11 @@
 <meta charset="UTF-8">
 <link rel="stylesheet" href="/pw-icons.css?v=1">
 <script src="/pw-icons.js?v=1"></script>
+<!-- pw-auth.js: da la sesion REAL de Supabase para poder llamar a
+     admin-express-op con el JWT del admin. Su interceptor de fetch solo
+     reescribe candidatos|informes|cv_publicados|usuarios, asi que NO altera
+     ninguna de las llamadas que esta pagina ya hacia a cv_express. -->
+<script src="/pw-auth.js?v=1"></script>
 
 <meta name="viewport" content="width=device-width, initial-scale=1.0"><style>html{scrollbar-gutter:stable;overflow-x:hidden;max-width:100%;}body{overflow-x:hidden;max-width:100%;}</style>
 <link rel="icon" href="/favicon-app.svg?v=6" type="image/svg+xml">
@@ -172,14 +177,56 @@ h1 .accent{color:var(--sendero);}
     document.getElementById('main').innerHTML=h;
   }
 
+  // Mensajes para lo que la Edge Function puede responder. Cada error dice qué
+  // hacer, en vez de un número de estado que no le sirve a nadie.
+  var MSG_BORRADO={
+    no_session:'Tu sesión no está activa. Cierra sesión, vuelve a entrar y reinténtalo.',
+    not_admin:'Tu cuenta no tiene permiso para borrar Packs.',
+    not_found:'Ese Pack ya no existía. Actualizo la lista.',
+    delete_no_match:'No se borró nada: puede que alguien lo borrara a la vez.',
+    op_invalid:'Operación no reconocida.',
+    email_invalid:'Ese email no es válido.'
+  };
+
+  // El borrado YA NO SE HACE DESDE AQUÍ.
+  //
+  // Antes esto era un DELETE directo a PostgREST con la ANON KEY, y la tabla
+  // tenía una política `using(true)` para `anon`. O sea que la única
+  // autorización real era el `ME.rol==='admin'` de más arriba, que sale de
+  // localStorage: dos líneas en la consola y cualquiera borraba el Pack
+  // pagado de cualquiera.
+  //
+  // Ese `ME.rol` sigue estando arriba y sigue sirviendo, pero para lo único
+  // que puede servir: no enseñar una pantalla que no va a funcionar. Es
+  // cosmética, no autorización. Quien autoriza es `admin-express-op`, que
+  // valida el JWT contra Supabase Auth y comprueba el rol en el SERVIDOR.
   window.deleteRow=function(email){
     if(!confirm('¿Borrar el Pack de '+email+'? Esta acción es irreversible.'))return;
-    fetch(SB+'/rest/v1/cv_express?email=eq.'+encodeURIComponent(email),{
-      method:'DELETE',
-      headers:{apikey:KEY,Authorization:'Bearer '+KEY,Prefer:'return=minimal'}
+    if(!window.PWAUTH||!PWAUTH.headers){
+      alert('No se pudo cargar la sesión. Recarga la página e inténtalo otra vez.');
+      return;
+    }
+    PWAUTH.headers({'Content-Type':'application/json'}).then(function(h){
+      // PWAUTH cae a la anon key cuando no hay sesión. Mandarla sería pedir un
+      // 401 sabiendo que va a fallar; mejor decirlo aquí con palabras.
+      if(!h||!h.Authorization||h.Authorization==='Bearer '+KEY){
+        alert('Tu sesión de admin no está activa. Cierra sesión, vuelve a entrar y reinténtalo.');
+        return null;
+      }
+      return fetch(SB+'/functions/v1/admin-express-op',{
+        method:'POST',
+        headers:h,
+        body:JSON.stringify({op:'delete_pack',email:email})
+      });
     }).then(function(r){
-      if(r.ok)load();
-      else alert('Error al borrar: '+r.status);
+      if(!r)return;
+      return r.json().catch(function(){return {};}).then(function(d){
+        if(r.ok&&d&&d.ok){load();return;}
+        var err=(d&&d.error)||'';
+        alert(MSG_BORRADO[err]||('No se pudo borrar (error '+r.status+').'));
+        // Si ya no existía, la lista que se está viendo está vieja.
+        if(err==='not_found')load();
+      });
     }).catch(function(){alert('Error de conexión');});
   };
 
