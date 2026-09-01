@@ -5369,6 +5369,32 @@ const RULES = [
     },
   },
   {
+    name: "avisos: el resumen semanal sobrevive al limite de tasa",
+    bug: "Run #15 (2026-08-31 14:38 UTC), el primero con AP2 en opt-out: " +
+         '{"coaches":40,"enviados":30,"saltados":2,"errores":[8 x RateLimitError]}. ' +
+         "El job salio en `success` pero 8 de 40 coaches se quedaron sin resumen. " +
+         "El bucle invocaba send-email 38 veces seguidas sin pausa y la plataforma " +
+         "corto las invocaciones anidadas (las 8 comparten `trace`); el error " +
+         "decia 'Retry after 32872ms' y nadie lo leia. Fix: reintento acotado " +
+         "que respeta ese valor. Reintentar SOLO el rechazo por limite de tasa " +
+         "es lo que impide duplicar un email: es el unico fallo del que consta " +
+         "que el proveedor NO acepto el mensaje.",
+    check() {
+      const e = read("supabase/functions/notif-coach/enviar.ts");
+      if (!e) return "notif-coach: desaparecio enviar.ts (el reintento ante limite de tasa).";
+      if (!/retry\[\\s_-\]\?after/i.test(e))
+        return "notif-coach: dejo de respetar el `Retry after` que devuelve el proveedor.";
+      if (!/ESPERA_POR_DEFECTO_MS\s*=\s*30_?000/.test(e))
+        return "notif-coach: se perdio el backoff conservador de 30 s cuando el proveedor no dice cuanto esperar.";
+      if (!/PRESUPUESTO_MS/.test(e))
+        return "notif-coach: sin presupuesto de tiempo, una tanda de esperas hace que curl (--max-time 200) corte el digest entero.";
+      const n = read("supabase/functions/notif-coach/index.ts");
+      if (!/enviarConReintento\(/.test(n))
+        return "notif-coach: el envio volvio a hacerse con fetch pelado — un limite de tasa vuelve a perder emails.";
+      return null;
+    },
+  },
+  {
     name: "alta de cliente: la invitacion al portal se envia sola",
     bug: "Al dar de alta un cliente se abria un modal y el coach tenia que copiar " +
          "el texto a Gmail; ademas 'Enviar email' era funcion Pro. Resultado: 73 " +

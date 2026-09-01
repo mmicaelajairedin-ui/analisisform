@@ -19,6 +19,11 @@
 //
 // Deploy: supabase functions deploy notif-coach --no-verify-jwt
 
+// Reintento acotado ante el limite de tasa de las invocaciones anidadas
+// (notif-coach -> send-email). El run #15 perdio 8 de 38 digests por eso; el
+// porque, y por que reintentar ahi no puede duplicar un envio, en ese fichero.
+import { enviarConReintento } from "./enviar.ts";
+
 const PANEL_URL = "https://pathwaycareercoach.com/panel-v2.html";
 // Baja en un clic desde el pie del email (AP2-B). `k=weeklyReport` apaga SOLO
 // este resumen; sin `k`, la funcion apagaria los emails de ciclo de vida.
@@ -48,6 +53,8 @@ function digestHtml(coachName: string, nuevos: Array<Record<string, unknown>>, t
 </body></html>`;
 }
 
+const dormir = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
+
 Deno.serve(async (req: Request) => {
   const triggerSecret = Deno.env.get("AGENT_TRIGGER_SECRET") || "";
   const provided = req.headers.get("x-trigger-secret") || "";
@@ -68,7 +75,11 @@ Deno.serve(async (req: Request) => {
   const sbHeaders = { apikey: SERVICE_KEY, Authorization: `Bearer ${SERVICE_KEY}` };
   const sinceISO = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
 
-  const result = { coaches: 0, enviados: 0, saltados: 0, errores: [] as string[] };
+  // `reintentos` es informativo: mide cuanto esta pegando el limite de tasa.
+  const result = {
+    coaches: 0, enviados: 0, saltados: 0, reintentos: 0, errores: [] as string[],
+  };
+  const inicio = Date.now();
 
   try {
     const cRes = await fetch(
@@ -108,20 +119,27 @@ Deno.serve(async (req: Request) => {
         const cr = tRes.headers.get("content-range") || "0/0";
         const totalActivos = parseInt(cr.split("/")[1] || "0", 10) || 0;
 
-        const emailRes = await fetch(`${SUPABASE_URL}/functions/v1/send-email`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json", Authorization: `Bearer ${SERVICE_KEY}` },
-          body: JSON.stringify({
-            to: email,
-            to_name: String(u.nombre || ""),
-            subject: "📋 Tu resumen semanal — Pathway",
-            html: digestHtml(String(u.nombre || ""), nuevos, totalActivos, String(u.id || "")),
-            reply_to: "hi@pathwaycareercoach.com",
-          }),
-        });
-        if (emailRes.ok) result.enviados++;
-        else result.errores.push(`${email}: send-email ${emailRes.status}`);
+        const envio = await enviarConReintento(
+          `${SUPABASE_URL}/functions/v1/send-email`,
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json", Authorization: `Bearer ${SERVICE_KEY}` },
+            body: JSON.stringify({
+              to: email,
+              to_name: String(u.nombre || ""),
+              subject: "📋 Tu resumen semanal — Pathway",
+              html: digestHtml(String(u.nombre || ""), nuevos, totalActivos, String(u.id || "")),
+              reply_to: "hi@pathwaycareercoach.com",
+            }),
+          },
+          { fetchImpl: fetch, dormir, ahora: Date.now, inicio },
+        );
+        result.reintentos += envio.intentos - 1;
+        if (envio.estado === "enviado") result.enviados++;
+        else result.errores.push(`${email}: ${envio.detalle}`);
       } catch (e) {
+        // Fallo al reunir los datos del coach (las consultas de arriba). El
+        // envio ya no lanza: enviarConReintento devuelve su desenlace.
         result.errores.push(`${email}: ${String(e).slice(0, 120)}`);
       }
     }
