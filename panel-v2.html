@@ -1365,6 +1365,8 @@ html.pw-private input.pw-sens:focus,html.pw-private textarea.pw-sens:focus{filte
   .cp-btn-primary{ background:var(--pw-bosque) !important; color:#fff !important; }
   .cp-btn-ghost{ background:#fff !important; color:var(--pw-bosque) !important; }
 }
+/* iOS app: ocultar sección de planes/pagos (modelo "reader") */
+.pw-app-mode [data-app-hide]{ display:none !important; }
 </style>
 <script src="/pw-push.js?v=3"></script>
 <script src="/pw-auth.js?v=1"></script>
@@ -1376,6 +1378,9 @@ html.pw-private input.pw-sens:focus,html.pw-private textarea.pw-sens:focus{filte
 
 <script>
 "use strict";
+
+// iOS app: set app-mode class to hide payment section (reader model)
+if(window.PW_IN_APP) { try{ document.documentElement.classList.add("pw-app-mode"); }catch(e){} }
 
 /* ═══ Data (port of v2-data.jsx) ═══ */
 function makeAvatar(name, hueOverride){
@@ -11342,6 +11347,26 @@ document.addEventListener("click", function(ev){
     return;
   }
   if(act==="open"){ var ou=el.getAttribute("data-url"); if(ou){
+      // iOS: bloquear monetización. Si estamos en app (PW_IN_APP) e intentamos abrir
+      // un link de pago (UPGRADE_URL, Stripe), mostrar modal neutral en lugar de abrir.
+      if(window.PW_IN_APP && /(upgrade\.html|buy\.stripe\.com|billing\.stripe\.com|stripeSubUrl)/.test(ou)){
+        // Modal neutral para iOS: sin mencionar dónde/cómo comprar (cumple 3.1.3(f))
+        var _isEN=(navigator.language||"").toLowerCase().indexOf("en")===0;
+        var _title=_isEN?"This feature requires a higher-tier plan":"Esta función requiere un plan superior";
+        var _msg=_isEN?"Please contact our team for more information.":"Contacta con nuestro equipo para obtener más información.";
+        var _btn=_isEN?"Got it":"Entendido";
+        var _oldMod=document.getElementById("pw-io-paywall"); if(_oldMod) _oldMod.remove();
+        var _mod=document.createElement("div"); _mod.id="pw-io-paywall";
+        _mod.style.cssText="position:fixed;inset:0;z-index:4001;display:flex;align-items:center;justify-content:center;padding:22px;background:rgba(20,40,30,.55)";
+        _mod.innerHTML="<div style='width:100%;max-width:380px;background:#fff;border-radius:18px;padding:26px 24px;text-align:center;font-family:var(--pw-sans);box-shadow:0 30px 70px rgba(20,55,38,.32)'>"+
+          "<div style='font-family:var(--pw-serif);font-size:18px;font-weight:600;color:var(--pw-carbon);margin-bottom:8px'>"+_title+"</div>"+
+          "<p style='font-size:13.5px;color:var(--pw-text-soft);line-height:1.55;margin:0 0 18px'>"+_msg+"</p>"+
+          "<button id='pw-io-close' type='button' style='width:100%;background:var(--pw-bosque);color:#fff;border:0;border-radius:11px;padding:12px;font-size:14px;font-weight:700;cursor:pointer'>"+_btn+"</button></div>";
+        document.body.appendChild(_mod);
+        var _xb=document.getElementById("pw-io-close"); if(_xb) _xb.onclick=function(){ _mod.remove(); };
+        _mod.onclick=function(e){ if(e.target===_mod) _mod.remove(); };
+        return;
+      }
       // Freno anti doble-abrir: en móvil un doble-tap (o un click fantasma) abría
       // Stripe DOS VECES. Si es la misma URL en <1.8s, ignoramos el segundo.
       var _on=Date.now();
