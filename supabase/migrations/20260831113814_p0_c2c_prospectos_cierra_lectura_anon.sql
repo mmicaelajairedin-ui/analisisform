@@ -1,0 +1,24 @@
+-- P0 · C-2c — cerrar la lectura anónima de `prospectos`.
+--
+-- QUE CIERRA
+-- La policy `Permitir leer prospectos` era `FOR SELECT TO anon USING (true)`:
+-- con la anon key publica (va en el JS del navegador) se leian las 65 filas
+-- completas — nombre, linkedin_url, email, telefono, notas.
+--
+-- POR QUE NO ROMPE NADA
+-- No hay ni un lector de `prospectos` en el frontend (0 coincidencias de
+-- `rest/v1/prospectos` fuera de `tests/api-connectivity.spec.js`). El unico
+-- consumidor real es `supabase/functions/send-queued-emails/index.ts:164`, que
+-- usa SUPABASE_SERVICE_ROLE_KEY y por tanto ignora RLS.
+--
+-- QUE NO SE TOCA, A PROPOSITO
+-- · `Permitir insertar prospectos` (INSERT) queda intacta.
+-- · Los GRANT de la tabla quedan intactos: el candado es la RLS, no el permiso.
+--   Asi, si apareciera un INSERT con `Prefer: return=representation`, seguiria
+--   funcionando el privilegio y solo se le negaria la fila.
+--
+-- ROLLBACK
+--   CREATE POLICY "Permitir leer prospectos" ON public.prospectos
+--     FOR SELECT TO anon USING (true);
+
+DROP POLICY IF EXISTS "Permitir leer prospectos" ON public.prospectos;

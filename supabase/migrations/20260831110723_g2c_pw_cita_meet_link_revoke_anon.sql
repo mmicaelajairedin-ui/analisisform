@@ -1,0 +1,13 @@
+-- G2-C (correccion) — `pw_cita_meet_link` nacio ejecutable por anon.
+--
+-- No fue el EXECUTE de PUBLIC (ese si se retiro): en este proyecto hay un
+-- ALTER DEFAULT PRIVILEGES de `postgres` sobre el esquema `public` que concede
+-- EXECUTE a anon, authenticated y service_role a TODA funcion nueva. O sea que
+-- una funcion nace con un grant DIRECTO a anon, ademas del de PUBLIC.
+--
+-- Es la misma familia del hallazgo de G1 y explica de raiz por que hay tantas
+-- SECURITY DEFINER alcanzables por anon: no hace falta que nadie las conceda.
+--
+-- Aqui importa porque los ids de `citas` son bigint correlativos: con anon
+-- ejecutandola, la funcion seria un enumerador de enlaces de videollamada.
+REVOKE ALL ON FUNCTION public.pw_cita_meet_link(bigint) FROM anon;

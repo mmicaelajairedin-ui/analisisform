@@ -1,0 +1,1 @@
+REVOKE UPDATE, DELETE ON public.citas FROM anon;
