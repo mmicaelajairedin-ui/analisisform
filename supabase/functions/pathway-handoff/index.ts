@@ -82,12 +82,29 @@ Deno.serve(async (req) => {
     // Obtener org_id del usuario desde la tabla usuarios
     const { data: userData, error: userError } = await supabase
       .from("usuarios")
-      .select("org_id, rol")
+      .select("org_id, rol, activo")
       .eq("email", userEmail)
       .single();
 
     if (userError || !userData) {
       return json({ error: "User not found in database" }, 404);
+    }
+
+    // S3 — Dar de baja tiene que cerrar la puerta.
+    //
+    // `eliminar-coach-red` ofrece dos modos y su cabecera promete lo mismo en
+    // los dos: "suspender -> activo=false (pierde acceso, sigue en la red)".
+    // Suspender CONSERVA el org_id (eliminar-coach-red:88), asi que hasta aqui
+    // la persona seguia obteniendo su codigo de handoff y entrando en
+    // MultiCoach con su rol y su organizacion intactos. La promesa existia y no
+    // la sostenia nadie.
+    //
+    // Se comprueba contra `false` ESTRICTO a proposito: la columna es nullable
+    // (boolean, default true) y una fila historica con `activo` nulo no es una
+    // baja. Y `activo` va en el `select` de arriba: sin pedirlo, el valor llega
+    // `undefined`, la comparacion es falsa y la guarda no haria nada.
+    if (userData.activo === false) {
+      return json({ error: "Account is not active" }, 403);
     }
 
     const orgId = userData.org_id || null;

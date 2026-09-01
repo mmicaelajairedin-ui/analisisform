@@ -3270,6 +3270,34 @@ const RULES = [
     },
   },
   {
+    name: "S3: pathway-handoff no emite codigo para una cuenta dada de baja",
+    bug:
+      "`eliminar-coach-red` promete en su cabecera que suspender = 'pierde acceso', " +
+      "y suspender CONSERVA el org_id (eliminar-coach-red:88). Pero pathway-handoff " +
+      "no miraba `usuarios.activo`: la persona dada de baja seguia obteniendo su " +
+      "codigo y entrando en MultiCoach con su rol y su organizacion. 'Lo dimos de " +
+      "baja' es exactamente lo que el cliente cree que ha hecho. Se comprueba en el " +
+      "EMISOR para no llegar a emitir.",
+    why:
+      "La comprobacion va contra `false` ESTRICTO: `usuarios.activo` es boolean " +
+      "NULLABLE con default true, asi que una fila historica con null NO es una baja " +
+      "y relajarlo a `!== true` dejaria fuera a gente activa. Y `activo` tiene que ir " +
+      "en el `select`: sin pedirlo el valor llega undefined, la comparacion es falsa y " +
+      "la guarda no hace nada — un fallo que no se ve leyendo la linea del `if`.",
+    check() {
+      const f = "supabase/functions/pathway-handoff/index.ts";
+      const s = read(f);
+      if (!s) return null;
+      if (!/\.select\(\s*["'][^"']*\bactivo\b/.test(s))
+        return f + ": el select de `usuarios` ya no pide `activo` — la guarda de S3 queda decorativa.";
+      if (!/userData\.activo\s*===\s*false/.test(s))
+        return f + ": falta la comprobacion estricta `userData.activo === false` (S3).";
+      if (!/activo\s*===\s*false[\s\S]{0,200}?\b403\b/.test(s))
+        return f + ": la baja ya no se rechaza con 403.";
+      return null;
+    },
+  },
+  {
     name: "auth: un 401 al entrar reintenta (no expulsa) si hay sesión válida",
     bug: "Al entrar recién logueada, una lectura podía salir ANTES de que el " +
          "token se adjunte (SDK del CDN booteando) → 401 → y _authExpired " +
