@@ -307,6 +307,14 @@
   </div>
 </div>
 
+<!-- C-4-bis. La Sala necesita IDENTIDAD, no permisos nuevos: el coach ya tiene
+     sesion (viene del panel) y la policy `rls_citas_coach_update` ya le deja
+     escribir SU cita. Lo que faltaba era mandar su JWT. `pw-auth.js` solo arranca
+     el SDK e instala el interceptor; NO redirige ni muestra ninguna puerta por su
+     cuenta (`showLoginGate` es una funcion que la pagina llama a proposito, y
+     aqui no se llama), asi que un CLIENTE sin sesion entra a la Sala igual que
+     antes. -->
+<script src="pw-auth.js"></script>
 <script src="pw-cabra-juego.js"></script>
 <script src="pw-turn.js?v=2"></script>
 <script src="pw-p2p.js?v=4"></script>
@@ -1136,8 +1144,16 @@ function saveSesion(res){
   // return=representation (NO minimal): con minimal, un 204 puede ser 0 filas
   // escritas (id equivocado / RLS futura) y saveSesion devolvía true → "✓ Guardado"
   // fantasma con las notas perdidas. Confirmamos que escribió ≥1 fila.
+  // Con el JWT del coach: la policy `rls_citas_coach_update` exige
+  // `coach_id = pw_coach_id()`, asi que con la anon key esto afectaba SIEMPRE 0
+  // filas y `cliente_conectado` no se marco ni una vez en las 66 citas. El
+  // `return=representation` ya estaba para no dar por bueno un 204 vacio; ahora
+  // ademas hay identidad detras, que es lo que faltaba.
+  var _h=(window.PWAUTH&&PWAUTH.headersSync)
+    ? PWAUTH.headersSync({'Content-Type':'application/json',Prefer:'return=representation'})
+    : {'Content-Type':'application/json',apikey:KEY,Authorization:'Bearer '+KEY,Prefer:'return=representation'};
   return fetch(SB+'/rest/v1/citas?id=eq.'+encodeURIComponent(CITA),{method:'PATCH',keepalive:true,
-    headers:{'Content-Type':'application/json',apikey:KEY,Authorization:'Bearer '+KEY,Prefer:'return=representation'},
+    headers:_h,
     body:JSON.stringify(body)}).then(function(r){ if(!r.ok) return false; return r.json().then(function(a){ return !!(a&&a.length); },function(){ return true; }); }).catch(function(){ return false; });
 }
 // Red de seguridad: si cierra la pestaña sin "Finalizar", igual guarda.

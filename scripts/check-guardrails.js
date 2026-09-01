@@ -1103,10 +1103,19 @@ const RULES = [
       //   · la historica: INSERT directo con reintento sin 'respuestas';
       //   · la de G2: la RPC `crear_cita`, de firma fija (o estan los argumentos
       //     o no compila), donde ese reintento ya no protege de nada.
+      //   · la de C-4: el alta despacha entre `crear_cita` y `reprogramar_cita`
+      //     segun venga o no `&reprog=`, asi que el nombre de la RPC ya no esta
+      //     pegado a la URL sino en una variable.
       const viaReintento = /_postCita\(false\)/.test(r);
-      const viaRpc = /rpc\/crear_cita/.test(r);
+      const viaRpc = /rpc\/crear_cita/.test(r) || /_rpc\s*=\s*['"]crear_cita['"]/.test(r);
       if (!viaReintento && !viaRpc)
         return "reservar.html: el guardado de la reserva perdió su red de seguridad (ni reintento ni crear_cita).";
+      // Y la reprogramacion tiene que seguir siendo UNA operacion. Si vuelve a
+      // crear la cita nueva y cancelar la vieja por separado, vuelve el duplicado.
+      if (!/_rpc\s*=\s*['"]reprogramar_cita['"]/.test(r))
+        return "reservar.html: la reprogramacion ya no usa la RPC atomica `reprogramar_cita` (vuelve el riesgo de dos citas vivas).";
+      if (/citas\?token=eq\./.test(r))
+        return "reservar.html: volvio el PATCH por token para cancelar la cita vieja. Ninguna policy de UPDATE aplica a anon: afecta 0 filas y deja dos citas vivas.";
       if (!/\bb\.(p_)?respuestas\s*=\s*answersJson/.test(r))
         return "reservar.html: las respuestas del coach ya no viajan con el alta de la cita.";
       return null;
@@ -2268,11 +2277,16 @@ const RULES = [
     check() {
       const s = read("reservar.html");
       if (!s) return null;
-      const i = s.indexOf("coach_id:_cid");
-      if (i < 0) return "reservar.html: no se encuentra el POST a citas.";
-      const blk = s.slice(i, i + 200);
-      if (!/telefono:/.test(blk) || !/cliente_tz:/.test(blk))
-        return "reservar.html: el POST a citas ya no guarda telefono/cliente_tz (los recordatorios quedan sin datos).";
+      // Se ancla en el CUERPO de `_postCita`, no en una linea concreta. Antes
+      // buscaba `coach_id:_cid`, que dejo de existir al despachar entre
+      // `crear_cita` y `reprogramar_cita` (C-4): el coach ya no viaja en el alta
+      // de una reprogramacion, sale de la cita anterior. Lo que hay que blindar
+      // es que el telefono y la zona SIGAN viajando, no como se llama la variable.
+      const i = s.indexOf("var _postCita=function(");
+      if (i < 0) return "reservar.html: no se encuentra _postCita (el alta de la reserva).";
+      const blk = s.slice(i, i + 2500);
+      if (!/p_telefono\s*:/.test(blk) || !/p_cliente_tz\s*:/.test(blk))
+        return "reservar.html: el alta de la cita ya no manda telefono/cliente_tz (los recordatorios quedan sin datos).";
       return null;
     },
   },

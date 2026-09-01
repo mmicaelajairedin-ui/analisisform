@@ -224,7 +224,7 @@ var T={
     learnH:'¿Qué vas a conocer?', learn1:'Cómo funciona Pathway', learn2:'La plataforma por dentro', learn3:'Cómo podemos trabajar mejor para tu proyecto',
     availHoy:'Disponible hoy', availManana:'Disponible mañana', availDia:'Disponible {dia}', availFlex:'Disponibilidad flexible',
     valNombre:'Escribe tu nombre.', valEmail:'Escribe un email válido.', valDiaHora:'Elige día y hora.', valFalta:'Falta responder: {q}',
-    confirmando:'Confirmando…', ocupadoJusto:'Ese horario se acaba de ocupar 😕 Elige otro, por favor.',
+    confirmando:'Confirmando…', ocupadoJusto:'Ese horario se acaba de ocupar 😕 Elige otro, por favor.', reprogFallo:'No pudimos cambiar tu cita: el enlace ya no es válido o la reserva se canceló. Tu turno anterior sigue en pie.',
     reservaEnviada:'✓ Cita confirmada', elegiste:'Elegiste <strong style=\'text-transform:capitalize\'>{fecha}</strong>.<br>{video}',
     vidMeet:'Te enviaremos el link de Google Meet por email.', vidSala:'Te enviaremos el link de la Sala de Pathway por email.', vidEnlace:'Te enviaremos el link de la videollamada por email.', vidPresencial:'Es una sesión presencial: no hay videollamada.',
     okHint:'Revisa tu bandeja de entrada (y spam) en los próximos minutos{coach}.', okHintCoach:' O contacta a {name} en <strong>{email}</strong>', okAgregar:'',
@@ -254,7 +254,7 @@ var T={
     learnH:'What you\'ll discover', learn1:'How Pathway works', learn2:'The platform from the inside', learn3:'How we can work better for your project',
     availHoy:'Available today', availManana:'Available tomorrow', availDia:'Available {dia}', availFlex:'Flexible availability',
     valNombre:'Enter your name.', valEmail:'Enter a valid email.', valDiaHora:'Pick a day and time.', valFalta:'Please answer: {q}',
-    confirmando:'Confirming…', ocupadoJusto:'That time was just taken 😕 Please pick another.',
+    confirmando:'Confirming…', ocupadoJusto:'That time was just taken 😕 Please pick another.', reprogFallo:'We could not change your appointment: the link is no longer valid or the booking was cancelled. Your previous time still stands.',
     reservaEnviada:'✓ Booking confirmed', elegiste:'You chose <strong style=\'text-transform:capitalize\'>{fecha}</strong>.<br>{video}',
     vidMeet:'We\'ll send you the Google Meet link by email.', vidSala:'We\'ll send you the Pathway Room link by email.', vidEnlace:'We\'ll send you the video call link by email.', vidPresencial:'This is an in-person session: there is no video call.',
     okHint:'Check your inbox (and spam folder) in the next few minutes{coach}.', okHintCoach:' Or reach out to {name} at <strong>{email}</strong>', okAgregar:'',
@@ -1006,8 +1006,20 @@ function confirmar(){
   // faltaran en la tabla (`lang`, `kind`, `respuestas`). La RPC tiene una firma
   // fija —o estan los tres argumentos o no compila— asi que ese reintento ya no
   // protege de nada; un fallo ahora es un fallo real y se trata como tal.
+  // ── Reprogramar es UNA operacion, no dos ────────────────────────────────────
+  //
+  // Si venimos de gestionar-cita (&reprog=<token viejo>) NO se crea una cita y
+  // luego se cancela la anterior. Se llama a `reprogramar_cita`, que hace las dos
+  // cosas dentro de la MISMA transaccion.
+  //
+  // ANTES eran dos pasos y el segundo no podia funcionar: era un PATCH anonimo
+  // sobre `citas`, y ninguna policy de UPDATE aplica a `anon`. Afectaba 0 filas,
+  // devolvia 200 y el `.catch` se lo tragaba. El cliente acababa con DOS turnos
+  // vivos: los dos bloqueando hueco y los dos mandando recordatorios, uno con el
+  // enlace viejo. No era una ventana de carrera, fallaba SIEMPRE.
+  var _reprog=qp('reprog')||'';
   var _postCita=function(){
-    var b={ p_coach_id:_cid, p_nombre:name, p_email:email, p_tipo:tlabel, p_inicio:_iso,
+    var b={ p_nombre:name, p_email:email, p_tipo:tlabel,
             p_telefono:tel, p_cliente_tz:vtz, p_origen:origen, p_lang:LANG, p_kind:_kind };
     // La modalidad y el proveedor se deciden UNA vez, aqui, y quedan en la fila.
     // Todo lo de aguas abajo —correo, recordatorio, panel, agenda-list— LEE esto
@@ -1021,7 +1033,14 @@ function confirmar(){
     // `usuarios.configuracion.zoom_url` del propio coach y solo lo acepta si es
     // una sala de verdad. Un visitante no puede colar un enlace suyo.
     if(answersJson) b.p_respuestas=answersJson;
-    return fetch(SB+'/rest/v1/rpc/crear_cita',{ method:'POST', headers:{ apikey:KEY, Authorization:'Bearer '+KEY, 'content-type':'application/json' }, body:JSON.stringify(b) })
+    // La RPC cambia; el cuerpo comun, no. `reprogramar_cita` hereda de la cita
+    // vieja todo lo que no se le mande, y `coach_id`/`org_id` NUNCA salen de un
+    // parametro: salen de esa fila. Asi un visitante no puede reasignar la cita a
+    // otro coach ni moverla de organizacion.
+    var _rpc;
+    if(_reprog){ _rpc='reprogramar_cita'; b.p_token=_reprog; b.p_nuevo_inicio=_iso; }
+    else       { _rpc='crear_cita';       b.p_coach_id=_cid; b.p_inicio=_iso; }
+    return fetch(SB+'/rest/v1/rpc/'+_rpc,{ method:'POST', headers:{ apikey:KEY, Authorization:'Bearer '+KEY, 'content-type':'application/json' }, body:JSON.stringify(b) })
       .then(function(r){
         if(!r.ok) return r.text().then(function(t){ return { ok:false, err:(t||'') }; }, function(){ return { ok:false, err:'' }; });
         return r.json().then(function(rows){
@@ -1030,7 +1049,10 @@ function confirmar(){
           // Con el token ya emitido se puede armar el link de gestion, que es lo
           // que van a leer el .ics y el correo un instante despues.
           _tk=row.token; _manage=location.origin+'/gestionar-cita.html?t='+_tk;
-          return { ok:true, id:row.id };
+          // `id_anterior` solo viene en la reprogramacion: es la cita que la RPC
+          // acaba de cancelar, y es lo que hace falta para retirar su evento de
+          // Google. Antes ese id se sacaba de un PATCH que nunca devolvia fila.
+          return { ok:true, id:row.id, idAnterior:(row.id_anterior||null) };
         }, function(){ return { ok:false, err:'' }; });
       })
       .catch(function(){ return { ok:false, err:'' }; });
@@ -1040,7 +1062,7 @@ function confirmar(){
     //    INSERT fallaba (red, body raro), igual salía "¡Reserva enviada!" sin fila
     //    en la base → no aparecía en el panel, sin recordatorios. Ahora se verifica
     //    (_postCita ya reintenta una vez) y se avisa suave si no quedó guardada.
-    var _finish=function(saved, citaId){
+    var _finish=function(saved, citaId, idAnterior){
       // CAMBIO CRÍTICO: marcar slot como tomado INMEDIATAMENTE (no esperar confirmación)
       // para prevenir que otro cliente lo reserve en la ventana de latencia
       TAKEN[start.getTime()]=true;
@@ -1064,14 +1086,23 @@ function confirmar(){
       };
       // Deja en la fila el proveedor y el enlace que se usaron DE VERDAD, para
       // que el recordatorio y el panel no tengan que volver a decidir.
+      // C-4-bis. ANTES esto era un PATCH anonimo a `citas` que NUNCA aterrizaba:
+      // ninguna policy de UPDATE aplica a `anon`, asi que afectaba 0 filas y
+      // devolvia 200. Medido: de 65 citas creadas aqui, solo 1 tenia
+      // `video_proveedor`. Ahora va por `pw_cita_fijar_video`, acotada al token
+      // que la propia RPC de alta acaba de emitir, que solo toca esas dos
+      // columnas y valida proveedor y enlace. Si devuelve false, se avisa por
+      // consola en vez de fingir que se guardo.
       var _persistir=function(prov, link){
-        if(!(saved && citaId)) return;
-        var _b={ video_proveedor:prov };
-        if(link) _b.meet_link=link;
-        fetch(SB+'/rest/v1/citas?id=eq.'+encodeURIComponent(citaId),{
-          method:'PATCH', headers:{ apikey:KEY, Authorization:'Bearer '+KEY, 'content-type':'application/json', Prefer:'return=minimal' },
-          body:JSON.stringify(_b)
-        }).catch(function(){});
+        if(!(saved && _tk)) return;
+        fetch(SB+'/rest/v1/rpc/pw_cita_fijar_video',{
+          method:'POST', headers:{ apikey:KEY, Authorization:'Bearer '+KEY, 'content-type':'application/json' },
+          body:JSON.stringify({ p_token:_tk, p_proveedor:prov, p_meet_link:link||null })
+        }).then(function(r){ return r.ok?r.json():false; })
+          .then(function(okGuardado){
+            if(okGuardado!==true) console.warn('[reservar] no se pudo fijar el video de la cita ('+prov+')');
+          })
+          .catch(function(){ console.warn('[reservar] fallo al fijar el video de la cita'); });
       };
 
       // El room de la Sala sale del id de la cita, asi que solo se puede
@@ -1104,27 +1135,24 @@ function confirmar(){
         // Sala de Pathway. Se escribe AHORA, que es cuando ya hay id de cita.
         _persistir('sala', _sala); _finalizar(_sala, 'sala');
       }
-      // 1b) Si viene de "reprogramar" (gestionar-cita manda &reprog=<token viejo>),
-      //     recién AHORA que la nueva quedó guardada cancelamos la vieja → el cliente
-      //     nunca se queda sin turno si abandonaba a mitad.
-      // return=representation + verificación + reintento: si la vieja NO se cancela,
-      // el cliente quedaba con DOS turnos activos (bloqueaba el slot + recordatorios
-      // con el link viejo). return=minimal ocultaba 0 filas escritas.
-      try{ var _rp=qp('reprog'); if(saved && _rp){
-        var _cancelOld=function(n){ return fetch(SB+'/rest/v1/citas?token=eq.'+encodeURIComponent(_rp),{ method:'PATCH', headers:{ apikey:KEY, Authorization:'Bearer '+KEY, 'content-type':'application/json', Prefer:'return=representation' }, body:JSON.stringify({ estado:'cancelada' }) }).then(function(r){ return r.ok?r.json():[]; }).then(function(a){ if((!a||!a.length)&&n>0) return _cancelOld(n-1); return a; }).catch(function(){ if(n>0) return _cancelOld(n-1); return []; }); };
-        // El evento de Google de la cita VIEJA tambien tiene que irse. Antes se
-        // quedaba vivo para siempre: la fila pasaba a 'cancelada' pero el evento
-        // seguia ocupando el hueco en el calendario del coach, y ademas con el
-        // enlace antiguo dentro. Se hace DESPUES de tener la fila —para conocer su
-        // id— y ANTES de olvidarnos de ella. `sync-cita-to-gcal` con op:'cancelar'
-        // ya hace lo correcto en los dos casos raros: sin `google_event_id` no
-        // inventa nada, y si el evento ya no existe en Google no crea sustituto.
-        _cancelOld(2).then(function(_a){
-          try{
-            var _vieja=(_a&&_a[0])||null;
-            if(_vieja&&_vieja.id) fetch(SB+'/functions/v1/sync-cita-to-gcal',{ method:'POST', headers:{ 'content-type':'application/json', apikey:KEY, Authorization:'Bearer '+KEY }, body:JSON.stringify({ cita_id:_vieja.id, op:'cancelar' }) }).catch(function(){});
-          }catch(e){}
-        }).catch(function(){});
+      // 1b) Reprogramacion: la cita vieja YA quedo cancelada por la RPC, dentro
+      //     de la misma transaccion que creo la nueva. Aqui solo queda retirar su
+      //     evento de Google, para lo que hace falta su id — que es justo lo que
+      //     `reprogramar_cita` devuelve en `id_anterior`.
+      //
+      //     ANTES esto cancelaba la vieja con un PATCH anonimo y sacaba el id de
+      //     su respuesta. Como el PATCH afectaba 0 filas, el id nunca llegaba y
+      //     `sync-cita-to-gcal` tampoco se llamaba: quedaban dos citas vivas y el
+      //     evento viejo ocupando el hueco en el calendario del coach.
+      //
+      //     `sync-cita-to-gcal` con op:'cancelar' ya hace lo correcto en los dos
+      //     casos raros: sin `google_event_id` no inventa nada, y si el evento ya
+      //     no existe en Google no crea sustituto.
+      try{ if(saved && idAnterior){
+        fetch(SB+'/functions/v1/sync-cita-to-gcal',{ method:'POST', headers:{ 'content-type':'application/json', apikey:KEY, Authorization:'Bearer '+KEY }, body:JSON.stringify({ cita_id:idAnterior, op:'cancelar' }) })
+          .then(function(r){ return r.ok?r.json():{ok:false}; })
+          .then(function(d){ if(!(d&&d.ok)) console.warn('[reservar] no se pudo retirar de Google el evento de la cita anterior'); })
+          .catch(function(){ console.warn('[reservar] fallo al avisar a Google de la cita anterior'); });
       } }catch(e){}
       // 1c) MARKETPLACE ("busco coach", mp=1): el sistema detecta el email y lo marca
       //     como cliente 'pathway' (comisión) DESDE la reserva — no solo al pagar. Crea
@@ -1141,7 +1169,16 @@ function confirmar(){
     var _p; try{ _p=_postCita(); }catch(e){ _p=null; }
     if(_p && _p.then){
       _p.then(function(res){
-        if(res && res.ok){ _finish(true, res.id); return; }
+        if(res && res.ok){ _finish(true, res.id, res.idAnterior); return; }
+        // Reprogramacion imposible: el token no vale, la cita ya se cancelo o la
+        // fecha no es futura. NO se ha creado nada y la cita vieja SIGUE EN PIE,
+        // asi que decirlo es lo correcto: mostrar "reserva enviada" con un aviso
+        // haria creer que el turno cambio cuando no lo hizo.
+        if(res && /cita_no_reprogramable|token_invalido|fecha_invalida/.test(res.err||'')){
+          $('msg').textContent=t('reprogFallo');
+          if(confirmBtn) confirmBtn.disabled=false;
+          return;
+        }
         // `crear_cita` rechaza el hueco si se ocupo entre el re-chequeo y el alta.
         // Es la MISMA carrera que cubre el re-chequeo, pero cerrada del lado del
         // servidor, que es el unico sitio donde no hay ventana: se trata igual.

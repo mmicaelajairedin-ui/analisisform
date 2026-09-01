@@ -1,0 +1,41 @@
+-- C-4 (cierre de grants) · se le retira a `anon` el UPDATE y el DELETE sobre `citas`.
+--
+-- POR QUE SE DEJARON ABIERTOS EN C-1, Y POR QUE SE PUEDEN CERRAR AHORA
+-- Al cerrar C-1 se revocaron SELECT e INSERT, pero UPDATE y DELETE se dejaron a
+-- proposito: la RLS ya los denegaba (no queda ninguna policy de UPDATE/DELETE que
+-- aplique a `anon`), y revocar el privilegio habria cambiado el modo de fallo de
+-- los PATCH que seguian vivos en el navegador —de "200 con []" a "403"— sobre una
+-- superficie que entonces era de C-4 y no estaba corregida.
+--
+-- Ya lo esta. Los TRES consumidores que dependian de esa escritura anonima han
+-- dejado de hacerlo, y este es el inventario exacto:
+--
+--   1. `reservar.html` `_cancelOld()`  — PATCH /citas?token=eq.<viejo>
+--      Cancelaba la cita anterior al reprogramar. ELIMINADO: ahora la
+--      reprogramacion entera la hace `reprogramar_cita`, que cancela e inserta
+--      en la misma transaccion.
+--
+--   2. `reservar.html` `_persistir()`  — PATCH /citas?id=eq.<id>
+--      Guardaba el `video_proveedor` y el `meet_link` resueltos. ELIMINADO: ahora
+--      va por `pw_cita_fijar_video`, acotada al token y a esas dos columnas.
+--
+--   3. `sala.html` `saveSesion()`      — PATCH /citas?id=eq.<id>
+--      Guarda notas, resultado y `cliente_conectado`. NO se elimina, porque es
+--      legitimo: lo escribe el COACH. Lo que cambia es que ahora viaja con SU
+--      JWT (`pw-auth.js` + `PWAUTH.headersSync`), asi que lo autoriza la policy
+--      `rls_citas_coach_update` en vez de depender de un permiso anonimo.
+--
+-- Quien escribe `citas` desde el panel (`panel-v2.html`) lo hace por `_sbw`, que
+-- adjunta el JWT del coach: es `authenticated`, no `anon`, y conserva todos sus
+-- privilegios. Las edge functions usan service_role y la RLS no les aplica.
+--
+-- QUE CAMBIA EN LA PRACTICA
+-- Nada que funcione hoy. Lo unico que cambia es que un PATCH anonimo pasa de
+-- devolver "200 con 0 filas" —el fallo silencioso que costo esta auditoria
+-- entera— a devolver 403. Es exactamente el comportamiento que se quiere: si
+-- alguien vuelve a intentarlo, se entera.
+--
+-- ROLLBACK
+--   GRANT UPDATE, DELETE ON public.citas TO anon;
+
+REVOKE UPDATE, DELETE ON public.citas FROM anon;
