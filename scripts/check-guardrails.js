@@ -5388,6 +5388,167 @@ const RULES = [
     },
   },
 
+  // ─────────────────────────────────────────────────────────────────────────
+  // N-4 · CENTINELA DE REAPERTURA (C-1)
+  //
+  // POR QUE NO EXISTIA Y POR QUE LA FUGA VIVIO UN ANO
+  // En julio de 2026 una auditoria cerro el `USING(true)` de `citas`. Semanas
+  // despues, dos migraciones (`0102_citas_anon_select.sql`,
+  // `0103_citas_anon_read.sql`) lo REABRIERON para arreglar unos 401 de
+  // `reservar.html`, y una tercera (`0103_citas_grant_anon.sql`) le devolvio los
+  // GRANT. Nadie se entero porque NO HABIA NINGUNA REGLA que mirase las
+  // migraciones: todas las reglas de este fichero miran el frontend. Resultado
+  // medido el 31-ago-2026: `anon` leia las 66 citas de 8 coaches, con email,
+  // telefono, notas y los 65 tokens de gestion.
+  //
+  // COMO SE BLINDA SIN AHOGARSE EN EL HISTORICO
+  // No se escanea la historia —hay 20 migraciones antiguas con `USING(true)` que
+  // ya estan superadas y marcarlas seria ruido—. Se verifica el ESTADO FINAL:
+  //   1. la migracion de cierre existe y sigue conteniendo el cierre;
+  //   2. ninguna migracion POSTERIOR a ella vuelve a abrir la puerta.
+  // Los nombres llevan timestamp, asi que ordenan lexicograficamente y "posterior"
+  // es una comparacion de cadenas. Cualquier reapertura futura llega despues y cae.
+  {
+    name: "citas: nadie puede reabrir la puerta anonima (C-1)",
+    bug:
+      "La lectura y el alta anonimas de `citas` se cerraron el 1-sep-2026 tras " +
+      "migrar sus 7 consumidores a RPC acotadas. Ya se habian cerrado una vez en " +
+      "julio y volvieron por una migracion posterior sin que nada avisara.",
+    check() {
+      const DIR = "supabase/migrations";
+      const CIERRE = "20260901121000_c1_cierre_citas_anon_y_vista.sql";
+      const SENSIBLES = [
+        "citas", "candidatos", "usuarios", "informes", "cv_publicados",
+        "organizaciones", "prospectos", "ranking_mensual", "sesiones_registro",
+        "gcal_tokens", "password_resets",
+      ];
+      // Sin comentarios: el propio fichero de cierre documenta su ROLLBACK y no
+      // debe dispararse a si mismo.
+      const limpio = (s) => s.replace(/--[^\n]*/g, " ").replace(/\s+/g, " ");
+
+      const cierre = read(`${DIR}/${CIERRE}`);
+      if (!cierre)
+        return `falta ${CIERRE}: es la migracion que cierra la fuga de citas. Sin ella no hay cierre que defender.`;
+      const c = limpio(cierre);
+      if (!/DROP POLICY IF EXISTS citas_anon_select/i.test(c) ||
+          !/DROP POLICY IF EXISTS citas_anon_insert/i.test(c))
+        return `${CIERRE} ya no elimina citas_anon_select / citas_anon_insert.`;
+      if (!/REVOKE\s+SELECT\s*,\s*INSERT\s+ON\s+public\.citas\s+FROM\s+anon/i.test(c))
+        return `${CIERRE} ya no revoca SELECT/INSERT de anon sobre citas.`;
+      if (!/REVOKE\s+SELECT\s+ON\s+public\.citas_sin_organizacion\s+FROM\s+anon/i.test(c))
+        return `${CIERRE} ya no cierra la vista citas_sin_organizacion, que rodea la RLS de citas.`;
+
+      // Dos vectores, dos criterios:
+      //  · Migraciones con el prefijo de fecha (la convencion actual): se comparan
+      //    contra la de cierre. Una reapertura futura llega despues y cae.
+      //  · Migraciones LEGACY sin fecha: ordenan mal (las letras van despues de los
+      //    digitos), asi que no vale comparar. Se listan las 7 que hoy existen y
+      //    estan superadas; cualquier fichero sin fecha que NO este en la lista es
+      //    nuevo y cae igual.
+      const CON_FECHA = /^\d{8,14}_/;
+      const LEGADO_SUPERADO = new Set([
+        "0101_citas_owner_rls.sql",
+        "0102_citas_anon_select.sql",
+        "0103_citas_grant_anon.sql",
+        "citas.sql",
+        "informes_rls.sql",
+        "ranking_mensual.sql",
+        "usuarios_gamif_grant.sql",
+      ]);
+
+      let ficheros = [];
+      try { ficheros = fs.readdirSync(DIR).filter((f) => f.endsWith(".sql")); }
+      catch (e) { return "no se pudo leer supabase/migrations."; }
+
+      for (const f of ficheros.sort()) {
+        if (CON_FECHA.test(f)) {
+          if (f <= CIERRE) continue; // superada por el cierre
+        } else if (LEGADO_SUPERADO.has(f)) {
+          continue;                  // legado conocido y superado
+        }
+        const s = limpio(read(`${DIR}/${f}`));
+        if (!s) continue;
+        for (const t of SENSIBLES) {
+          const re = new RegExp(
+            `CREATE\\s+POLICY[^;]{0,400}\\bON\\s+(?:public\\.)?${t}\\b[^;]{0,400}?\\bTO\\s+[^;]{0,80}\\banon\\b[^;]{0,400}?(?:USING|WITH\\s+CHECK)\\s*\\(\\s*true\\s*\\)`,
+            "is");
+          if (re.test(s))
+            return `${f}: reabre \`${t}\` a anon con USING(true)/WITH CHECK(true). Si de verdad hace falta, hay que justificarlo y actualizar esta regla a proposito.`;
+        }
+        if (/GRANT[^;]{0,200}\bON\b[^;]{0,120}\bpublic\.citas\b[^;]{0,200}\bTO\b[^;]{0,120}\banon\b/is.test(s))
+          return `${f}: vuelve a conceder privilegios sobre \`citas\` a anon. La reserva publica va por rpc/crear_cita y la Sala por rpc/pw_sala_coach; no hace falta.`;
+      }
+
+      // Y en el navegador: ninguna LECTURA directa de la tabla. Los PATCH que
+      // quedan (reservar.html, sala.html) son C-4 y llevan `method:`; lo que no
+      // puede volver es un GET.
+      for (const f of ["reservar.html", "sala.html", "cliente.html",
+                       "pathway-fit-cliente.html", "pathway-fin-cliente.html",
+                       "gestionar-cita.html"]) {
+        const s = read(f);
+        if (!s) continue;
+        const re = /\/rest\/v1\/citas\?/g;
+        let m;
+        while ((m = re.exec(s))) {
+          const bloque = s.slice(m.index, m.index + 260);
+          if (!/method\s*:\s*['"](?:PATCH|POST|DELETE|PUT)['"]/i.test(bloque))
+            return `${f}: volvio una LECTURA directa de la tabla citas. Debe ir por RPC (pw_franjas_ocupadas / pw_sala_coach / pw_cita_meet_link / get_proxima_cita).`;
+        }
+      }
+      return null;
+    },
+  },
+
+  // N-4 (2/2) · La clave anon se valida DECODIFICANDO el JWT, no comparando texto.
+  //
+  // POR QUE LA REGLA ANTERIOR NO LO VIO
+  // La regla "Supabase project ref correcto" compara cadenas contra una lista
+  // (`bwj`, `bnwj`...). Fallo dos veces: `nwl` no estaba en la lista, y ademas el
+  // project-ref viaja en base64 DENTRO del JWT, asi que NINGUNA comparacion de
+  // texto podia verlo. Consecuencia: `pw-ia-chat.js`, `pw-native.js` y
+  // `pw-push.js` firmaron durante meses con la clave de otro proyecto y las tres
+  // recibian 401 en silencio (chat IA y push rotos).
+  {
+    name: "toda anon key que llega al navegador es la de Pathway (JWT decodificado)",
+    bug:
+      "INC-041: tres ficheros de runtime llevaban una anon key firmada para el " +
+      "project-ref `ddxnrsnjdvtqhxunxnwl`. Comparar cadenas no lo detecta.",
+    check() {
+      const REF_BUENO = "ddxnrsnjdvtqhxunxnwj";
+      const htmls = fs.readdirSync(".").filter((f) => f.endsWith(".html"));
+
+      // Solo lo que llega al navegador: los .html y los .js que ellos cargan.
+      const objetivos = new Set(htmls);
+      for (const h of htmls) {
+        const s = read(h);
+        const re = /<script[^>]*\bsrc\s*=\s*["']([^"']+)["']/gi;
+        let m;
+        while ((m = re.exec(s))) {
+          const src = m[1];
+          if (/^https?:|^\/\//i.test(src)) continue; // CDN externo, no es nuestro
+          objetivos.add(src.replace(/^\.?\//, "").split("?")[0]);
+        }
+      }
+
+      const jwt = /eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9\.([A-Za-z0-9_-]+)\./g;
+      for (const f of [...objetivos].sort()) {
+        const s = read(f);
+        if (!s) continue;
+        let m;
+        while ((m = jwt.exec(s))) {
+          let payload;
+          try { payload = JSON.parse(Buffer.from(m[1], "base64url").toString("utf8")); }
+          catch (e) { return `${f}: hay una clave con payload ilegible. Una credencial que no se puede decodificar no deberia viajar al navegador.`; }
+          if (payload && payload.ref && payload.ref !== REF_BUENO)
+            return `${f}: lleva una clave firmada para el project-ref "${payload.ref}" y el de Pathway es "${REF_BUENO}". Supabase la rechaza con 401 y el fallo es silencioso.`;
+          if (payload && payload.role && payload.role !== "anon")
+            return `${f}: lleva una clave con rol "${payload.role}". Al navegador solo puede bajar la anon key.`;
+        }
+      }
+      return null;
+    },
+  },
+
 ];
 
 

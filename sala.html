@@ -468,21 +468,34 @@ function _applySalaBrand(m){
 }
 (function _salaBrand(){
   if(!COACHID) return;
-  var h={apikey:KEY,Authorization:'Bearer '+KEY};
-  fetch(SB+'/rest/v1/usuarios?id=eq.'+encodeURIComponent(COACHID)+'&select=org_id,configuracion,slug,nombre',{headers:h})
+  // Por RPC acotada (`pw_sala_contexto`), NO leyendo `usuarios` ni `organizaciones`.
+  //
+  // ANTES esto hacia dos lecturas con la anon key. Las dos tablas estan cerradas a
+  // `anon` desde el endurecimiento de RLS (Fase 4/5 en `usuarios`,
+  // `f2_3_cierre_organizaciones` en `organizaciones`), asi que la PRIMERA devolvia
+  // 403, el `.catch` vacio se lo tragaba y el bloque hacia `return` sin llegar a la
+  // segunda. Fallo silencioso: la Sala se quedaba sin marca Y sin SALA_SERVICIOS /
+  // SALA_SLUG / SALA_MONEDA / SALA_COACHNAME, que son los que alimentan el pop-up
+  // de venta en vivo del boton "Cobrar" de una `primera_llamada`.
+  //
+  // La RPC devuelve SOLO esos cinco datos —nunca `configuracion` entera, que lleva
+  // `verification_token`, `access_code` y `gcal`— y resuelve del lado servidor la
+  // misma regla que decidia aqui el navegador: marca de la RED si el coach
+  // pertenece a una, si no la suya propia cuando es Pro, si no ninguna.
+  var h={'Content-Type':'application/json',apikey:KEY,Authorization:'Bearer '+KEY};
+  fetch(SB+'/rest/v1/rpc/pw_sala_contexto',{method:'POST',headers:h,body:JSON.stringify({p_coach_id:COACHID})})
     .then(function(r){ return r.ok?r.json():[]; }).then(function(rows){
-      var u=rows&&rows[0]; if(!u) return; var cfg=u.configuracion||{}; var orgId=u.org_id||cfg.org_id;
+      var u=rows&&rows[0]; if(!u) return;
       // Cache para el pop-up de venta en vivo (primera_llamada).
       try{
-        SALA_SERVICIOS = (Object.prototype.toString.call(cfg.servicios)==='[object Array]') ? cfg.servicios : [];
-        SALA_SLUG = (''+(u.slug||cfg.slug||'')).trim();
-        SALA_MONEDA = (''+(cfg.moneda||'eur')).toLowerCase();
+        SALA_SERVICIOS = (Object.prototype.toString.call(u.servicios)==='[object Array]') ? u.servicios : [];
+        SALA_SLUG = (''+(u.slug||'')).trim();
+        SALA_MONEDA = (''+(u.moneda||'eur')).toLowerCase();
         SALA_COACHNAME = (''+(u.nombre||'')).trim();
       }catch(_e){}
-      if(orgId){
-        fetch(SB+'/rest/v1/organizaciones?id=eq.'+encodeURIComponent(orgId)+'&select=marca',{headers:h})
-          .then(function(r){ return r.ok?r.json():[]; }).then(function(o){ _applySalaBrand((o&&o[0]&&o[0].marca)||{}); }).catch(function(){});
-      } else if(cfg.es_pro_vitalicio===true||cfg.plan==='pro'){ _applySalaBrand({color:cfg.color_marca,logo:cfg.logo_url}); }
+      // `_applySalaBrand` ya ignora lo que no sea un color o un logo validos, asi
+      // que un `{}` (coach sin red y sin Pro) es un no-op, igual que antes.
+      _applySalaBrand(u.marca||{});
     }).catch(function(){});
 })();
 // Botón "Cobrar" (cerrar la venta en vivo): SOLO el coach y SOLO en una
@@ -1003,11 +1016,14 @@ function _salaShowServices(){
   // Si la config todavía no llegó, la traemos on-demand (fallback).
   if(!Array.isArray(SALA_SERVICIOS)){
     if(!COACHID) return;
-    fetch(SB+'/rest/v1/usuarios?id=eq.'+encodeURIComponent(COACHID)+'&select=configuracion,slug',{headers:{apikey:KEY,Authorization:'Bearer '+KEY}})
+    // Por la misma RPC acotada que `_salaBrand`: leer `usuarios` con la anon key
+    // aqui daba 403 igual que alli, solo que este `.catch` si pintaba —  la lista
+    // de servicios salia vacia y el cliente no podia pagar nada.
+    fetch(SB+'/rest/v1/rpc/pw_sala_contexto',{method:'POST',headers:{'Content-Type':'application/json',apikey:KEY,Authorization:'Bearer '+KEY},body:JSON.stringify({p_coach_id:COACHID})})
       .then(function(r){ return r.ok?r.json():[]; }).then(function(rows){
-        var u=rows&&rows[0]||{}; var cfg=u.configuracion||{};
-        SALA_SERVICIOS=(Object.prototype.toString.call(cfg.servicios)==='[object Array]')?cfg.servicios:[];
-        SALA_SLUG=(''+(u.slug||cfg.slug||'')).trim(); SALA_MONEDA=(''+(cfg.moneda||'eur')).toLowerCase();
+        var u=rows&&rows[0]||{};
+        SALA_SERVICIOS=(Object.prototype.toString.call(u.servicios)==='[object Array]')?u.servicios:[];
+        SALA_SLUG=(''+(u.slug||'')).trim(); SALA_MONEDA=(''+(u.moneda||'eur')).toLowerCase();
         _salaRenderServices();
       }).catch(function(){ _salaRenderServices(); });
     return;
