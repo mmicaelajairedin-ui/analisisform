@@ -5731,6 +5731,62 @@ const RULES = [
     },
   },
   {
+    name: "fechas: un `Date.now()` (numero) NO se usa como objeto Date",
+    bug: "El panel entero moria en el boot con `_now.getFullYear is not a function`. " +
+         "En la tarjeta de ingresos de admin, `_now` se declara como `Date.now()` " +
+         "(un NUMERO, para restar milisegundos) y mas abajo se llamo " +
+         "`new Date(_now.getFullYear(), _now.getMonth(), 1)` para el inicio del mes. " +
+         "Los numeros no tienen metodos de Date: excepcion no atrapada, y como pasa " +
+         "durante el render el coach solo ve 'Algo no cargo bien'. Fix: derivar un " +
+         "Date aparte (`new Date(_now)`) y sacarle de ahi el anio/mes.",
+    check() {
+      const files = ["panel-v2.html", "multicoach.html", "cliente.html", "empleado.html",
+                     "sala.html", "pathway-fit-cliente.html", "pathway-fin-cliente.html"];
+      // Metodos que SOLO existen en una instancia de Date — si el valor es el
+      // numero que devuelve Date.now(), la llamada tira TypeError.
+      const METODO = /\.(get(?:FullYear|Month|Date|Day|Hours|Minutes|Seconds|Time|Timezone\w*)|to(?:ISOString|LocaleDateString|LocaleTimeString|LocaleString|DateString|TimeString)|set(?:FullYear|Month|Date|Hours|Minutes|Seconds))\s*\(/;
+
+      for (const f of files) {
+        const src = read(f);
+        if (!src) continue;
+        const lines = noComments(src).split("\n");
+
+        // Nombres que en ALGUN punto del archivo se declaran como Date.now().
+        const nombres = new Set();
+        for (const l of lines) {
+          const re = /\b(?:var|let|const)\s+(\w+)\s*=\s*Date\.now\(\)/g;
+          let m; while ((m = re.exec(l))) nombres.add(m[1]);
+        }
+        if (!nombres.size) continue;
+
+        for (let i = 0; i < lines.length; i++) {
+          for (const n of nombres) {
+            const uso = new RegExp("\\b" + n + "(\\.\\w+\\s*\\()");
+            const mu = uso.exec(lines[i]);
+            if (!mu || !METODO.test("." + mu[1].replace(/^\./, ""))) continue;
+
+            // Resolver contra la asignacion mas cercana hacia arriba: el mismo
+            // nombre (`now`) se reusa en funciones distintas, y en la mayoria SI
+            // es un `new Date()`. Solo importa la que gobierna ESTE uso.
+            const col = lines[i].indexOf(n + ".");
+            let origen = null;
+            for (let j = i; j >= 0 && !origen; j--) {
+              const asig = new RegExp("\\b" + n + "\\s*=\\s*([^;,\\n]+)", "g");
+              let ma; while ((ma = asig.exec(lines[j]))) {
+                if (j < i || ma.index < col) origen = ma[1].trim();
+              }
+            }
+            if (origen && /Date\.now\(\)/.test(origen))
+              return f + ":" + (i + 1) + ": `" + n + mu[1] + ")` sobre un valor que viene de " +
+                     "`Date.now()` (un numero, no un Date) — revienta el render entero. " +
+                     "Derivar un Date: `var d = new Date(" + n + ")`.";
+          }
+        }
+      }
+      return null;
+    },
+  },
+  {
     name: "i18n: la tabla TXT es IDENTICA entre la pagina ES y su gemela -en",
     bug: "El commit 6a953e0 ('Implement i18n for registro.html and synchronize " +
          "registro-en.html') dejo registro-en.html ROTO: al 'sincronizar' piso el " +
