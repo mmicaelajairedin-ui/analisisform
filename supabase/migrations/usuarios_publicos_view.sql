@@ -32,4 +32,15 @@ SELECT
 FROM public.usuarios
 WHERE rol IN ('coach','admin') OR (rol = 'empleado' AND activo IS TRUE);
 
+-- READ-ONLY EXPLÍCITO. La vista es SECURITY DEFINER (owner con BYPASSRLS): sin
+-- esto, un anon/authenticated con los privilegios de escritura que heredan de
+-- `pg_default_acl` (R-55) podría escribir en `usuarios` saltándose su RLS,
+-- incluida `rol` → escalada a admin. Se REVOCA antes de conceder para que una
+-- recreación desde cero NUNCA vuelva a conceder escritura por los defaults.
+-- La barrera activa en producción es `usuarios_publicos_view_readonly.sql`;
+-- esto es su equivalente para un reset. (P0 usuarios_publicos writable-view.)
+REVOKE INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER, MAINTAIN
+  ON public.usuarios_publicos
+  FROM anon, authenticated;
+
 GRANT SELECT ON public.usuarios_publicos TO anon, authenticated;
