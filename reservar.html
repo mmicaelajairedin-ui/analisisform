@@ -323,8 +323,23 @@ var TAKEN={}; // { instanteMs: true } de las citas ya tomadas del coach (anti do
 // le mostramos esos MISMOS instantes convertidos a SU hora local (p.ej. si es de
 // Argentina, ve la hora argentina). Todo se guarda en UTC (toISOString), así que
 // coach y cliente siempre ven el mismo momento real, cada uno en su reloj.
-var DEFAULT_TZ='Europe/Madrid'; // fallback para coaches que aún no guardaron su tz
-function _coachTz(){ return (DISP&&DISP.tz)||DEFAULT_TZ; }
+var DEFAULT_TZ='Europe/Madrid'; // ultimo recurso: ni tz guardada ni pais elegido
+// SEPTIEMBRE 2026 — el fallback a Madrid era para TODOS. Ningun coach tiene `tz`
+// guardada (es un campo avanzado que nadie toco), asi que a una coach de Costa
+// Rica se le ofrecian sus horas por defecto 09:00-18:00 *de Madrid*, o sea
+// 01:00-10:00 suyas: reservas de madrugada. El pais SI lo eligen todos al armar
+// el perfil, asi que derivamos la zona de ahi antes de caer a Madrid.
+var TZ_POR_PAIS={ES:'Europe/Madrid',AR:'America/Argentina/Buenos_Aires',MX:'America/Mexico_City',CO:'America/Bogota',CL:'America/Santiago',UY:'America/Montevideo',PE:'America/Lima',VE:'America/Caracas',EC:'America/Guayaquil',CR:'America/Costa_Rica',US:'America/New_York'};
+var PAIS='';
+function _coachTz(){
+  if(DISP&&DISP.tz) return DISP.tz;
+  var byPais=TZ_POR_PAIS[String(PAIS||'').toUpperCase()];
+  if(byPais) return byPais;
+  // Sin pais util ("OTRO" o vacio): antes de asumir Madrid, usamos la zona del
+  // navegador del coach si la reserva se abre desde su propio panel; si no, el
+  // defecto historico. Nunca inventamos horas de un huso ajeno sin avisar.
+  return DEFAULT_TZ;
+}
 function _viewerTz(){ try{ return Intl.DateTimeFormat().resolvedOptions().timeZone||''; }catch(e){ return ''; } }
 // Zona en la que el visitante VE los horarios. Arranca detectada del dispositivo,
 // PERO el visitante puede cambiarla (el selector de abajo) — clave porque muchos
@@ -569,6 +584,7 @@ function applyCoachRow(u, t){
   COACH=u.nombre||'Pathway'; FIRST=(''+COACH).split(' ')[0]; EMAIL=(u.email||'').trim();
   var cfg=u.configuracion||{};
   PHOTO=memPhoto(u); SLUG=cfg.slug||''; PRO=(cfg.plan==='pro'); CID=u.id||CID;
+  PAIS=(cfg.pais||'')+'';   // alimenta _coachTz(): la zona sale del pais si no hay tz
   WA=((cfg.whatsapp||cfg.telefono||'')+'').replace(/[^0-9]/g,'');
   DISP=normDisp(cfg.disponibilidad);
   var types=(Object.prototype.toString.call(cfg.event_types)==='[object Array]'&&cfg.event_types.length)?cfg.event_types

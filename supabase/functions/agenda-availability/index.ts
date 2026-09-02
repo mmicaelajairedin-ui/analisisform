@@ -20,7 +20,7 @@ import {
   huecosLibres,
   normalizarConfig,
 } from '../_shared/agenda/disponibilidad.ts';
-import { DURACION_POR_DEFECTO_MIN, ZONA_POR_DEFECTO, type Ocupado } from '../_shared/agenda/tipos.ts';
+import { DURACION_POR_DEFECTO_MIN, zonaDeCoach, type Ocupado } from '../_shared/agenda/tipos.ts';
 
 const SB_URL = Deno.env.get('SUPABASE_URL') || '';
 const SERVICE = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') || '';
@@ -65,8 +65,20 @@ Deno.serve(async (req: Request) => {
   const us = (await ru.json().catch(() => [])) as { configuracion?: unknown }[];
   if (!us.length) return fallo('NotFoundError', 'Coach no encontrado.', 404);
 
-  const config = normalizarConfig(us[0].configuracion);
-  const zona = config.tz || ZONA_POR_DEFECTO;
+  // OJO AL NIVEL: el panel guarda la agenda en `configuracion.disponibilidad`
+  // (panel-v2.html, `disponibilidad:{days,from,to,tz,min_notice_h,buffer_min,
+  // bloqueados,horarios}`), NO en la raiz de `configuracion`. Se estaba pasando
+  // la raiz, donde no existe ninguna de esas claves, asi que normalizarConfig
+  // devolvia SIEMPRE el defecto: se ignoraban los horarios reales del coach y
+  // sus dias bloqueados (se podia reservar un dia que habia cerrado). `zoom_url`
+  // si vive en la raiz, asi que se toma de ahi.
+  const cfgRaw = (us[0].configuracion ?? {}) as Record<string, unknown>;
+  const dispRaw = (cfgRaw.disponibilidad && typeof cfgRaw.disponibilidad === 'object')
+    ? cfgRaw.disponibilidad
+    : cfgRaw;
+  const config = normalizarConfig(dispRaw);
+  if (!config.zoom_url && typeof cfgRaw.zoom_url === 'string') config.zoom_url = cfgRaw.zoom_url;
+  const zona = zonaDeCoach(config.tz, cfgRaw.pais);
 
   // ── Ocupación ───────────────────────────────────────────────────────────
   const desdeIso = d0.toISOString();

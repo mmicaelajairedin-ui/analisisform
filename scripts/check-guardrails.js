@@ -5442,6 +5442,33 @@ const RULES = [
     },
   },
   {
+    name: "agenda: el servidor lee la disponibilidad REAL y la zona del pais",
+    bug: "agenda-availability pasaba `configuracion` ENTERA a normalizarConfig, " +
+         "pero el panel guarda la agenda en `configuracion.disponibilidad`. En la " +
+         "raiz no existe ninguna de esas claves, asi que normalizarConfig devolvia " +
+         "SIEMPRE el defecto: se ignoraban los horarios reales del coach y sus dias " +
+         "bloqueados (se podia reservar un dia cerrado). Ademas la zona caia a " +
+         "Europe/Madrid para todos: a una coach de Costa Rica se le ofrecian sus " +
+         "09:00-18:00 de Madrid = 01:00-10:00 suyas. La zona sale ahora del pais.",
+    check() {
+      const fs = require("fs"), path = require("path");
+      const idx = path.join(__dirname, "..", "supabase/functions/agenda-availability/index.ts");
+      const tip = path.join(__dirname, "..", "supabase/functions/_shared/agenda/tipos.ts");
+      if (!fs.existsSync(idx) || !fs.existsSync(tip)) return null;
+      const a = fs.readFileSync(idx, "utf8");
+      const t = fs.readFileSync(tip, "utf8");
+      if (/normalizarConfig\(\s*us\[0\]\.configuracion\s*\)/.test(a))
+        return "agenda-availability: volvio a pasar `configuracion` entera a normalizarConfig — se ignoran los horarios y los dias bloqueados del coach.";
+      if (!/cfgRaw\.disponibilidad/.test(a))
+        return "agenda-availability: dejo de leer `configuracion.disponibilidad` — la agenda del coach no llega al calculo.";
+      if (!/zonaDeCoach\(/.test(a))
+        return "agenda-availability: la zona horaria dejo de derivarse del pais — todos vuelven a Europe/Madrid.";
+      if (!/ZONA_POR_PAIS/.test(t) || !/export function zonaDeCoach/.test(t))
+        return "tipos.ts: desaparecio el mapa pais->zona horaria.";
+      return null;
+    },
+  },
+  {
     name: "slug del coach: una sola fuente y a prueba de URL pegada",
     bug: "El slug del perfil publico salia de 4 sitios distintos con el mismo " +
          "regex a mano. Solo borraba lo que no fuera [a-z0-9-], asi que un coach " +
