@@ -215,7 +215,7 @@ var T={
     stepHorario:'Elige horario', stepHorarioSub:'Fecha y hora', stepDatos:'Tus datos', stepDatosSub:'Información', stepConf:'Confirmación', stepConfSub:'Reserva',
     titleDemo:'Conocé Pathway en una demo personalizada de {n} minutos', titleReserva:'Reserva tu {label}', sesion:'sesión', demo:'demo',
     tzHorarios:'Horarios en tu hora:', tzCambia:'cámbiala si no es la tuya', tzDetectada:' · detectada',
-    disponibilidad:'Disponibilidad', sinHorarios:'No hay horarios que te queden bien en tu zona por ahora. Escríbele a {name} y coordinan uno directamente.', escribirWA:'Escribir por WhatsApp',
+    disponibilidad:'Disponibilidad', sinHorarios:'No hay horarios que te queden bien en tu zona por ahora. Escríbele a {name} y coordinan uno directamente.', escribirWA:'Escribir por WhatsApp', escribirPerfil:'Escribir a {name}',
     elegirDia:'Elige el día', elegirHorario:'Elige el horario', tusDatos:'Cuéntanos tus datos',
     phName:'Nombre y apellido', phEmail:'Tu email', phTel:'WhatsApp (opcional, para el recordatorio)',
     reservarMi:'Reservar mi {tipo} →', segura:'🔒 Tu información está segura y no será compartida.',
@@ -245,7 +245,7 @@ var T={
     stepHorario:'Pick a time', stepHorarioSub:'Date & time', stepDatos:'Your details', stepDatosSub:'Info', stepConf:'Confirmation', stepConfSub:'Booking',
     titleDemo:'Discover Pathway in a personalized {n}-minute demo', titleReserva:'Book your {label}', sesion:'session', demo:'demo',
     tzHorarios:'Times in your timezone:', tzCambia:'change it if it\'s not yours', tzDetectada:' · detected',
-    disponibilidad:'Availability', sinHorarios:'There are no times that work in your timezone right now. Message {name} and you\'ll arrange one directly.', escribirWA:'Message on WhatsApp',
+    disponibilidad:'Availability', sinHorarios:'There are no times that work in your timezone right now. Message {name} and you\'ll arrange one directly.', escribirWA:'Message on WhatsApp', escribirPerfil:'Message {name}',
     elegirDia:'Pick a day', elegirHorario:'Pick a time', tusDatos:'Tell us about you',
     phName:'Full name', phEmail:'Your email', phTel:'WhatsApp (optional, for the reminder)',
     reservarMi:'Book my {tipo} →', segura:'🔒 Your information is safe and won\'t be shared.',
@@ -323,8 +323,23 @@ var TAKEN={}; // { instanteMs: true } de las citas ya tomadas del coach (anti do
 // le mostramos esos MISMOS instantes convertidos a SU hora local (p.ej. si es de
 // Argentina, ve la hora argentina). Todo se guarda en UTC (toISOString), así que
 // coach y cliente siempre ven el mismo momento real, cada uno en su reloj.
-var DEFAULT_TZ='Europe/Madrid'; // fallback para coaches que aún no guardaron su tz
-function _coachTz(){ return (DISP&&DISP.tz)||DEFAULT_TZ; }
+var DEFAULT_TZ='Europe/Madrid'; // ultimo recurso: ni tz guardada ni pais elegido
+// SEPTIEMBRE 2026 — el fallback a Madrid era para TODOS. Ningun coach tiene `tz`
+// guardada (es un campo avanzado que nadie toco), asi que a una coach de Costa
+// Rica se le ofrecian sus horas por defecto 09:00-18:00 *de Madrid*, o sea
+// 01:00-10:00 suyas: reservas de madrugada. El pais SI lo eligen todos al armar
+// el perfil, asi que derivamos la zona de ahi antes de caer a Madrid.
+var TZ_POR_PAIS={ES:'Europe/Madrid',AR:'America/Argentina/Buenos_Aires',MX:'America/Mexico_City',CO:'America/Bogota',CL:'America/Santiago',UY:'America/Montevideo',PE:'America/Lima',VE:'America/Caracas',EC:'America/Guayaquil',CR:'America/Costa_Rica',US:'America/New_York'};
+var PAIS='';
+function _coachTz(){
+  if(DISP&&DISP.tz) return DISP.tz;
+  var byPais=TZ_POR_PAIS[String(PAIS||'').toUpperCase()];
+  if(byPais) return byPais;
+  // Sin pais util ("OTRO" o vacio): antes de asumir Madrid, usamos la zona del
+  // navegador del coach si la reserva se abre desde su propio panel; si no, el
+  // defecto historico. Nunca inventamos horas de un huso ajeno sin avisar.
+  return DEFAULT_TZ;
+}
 function _viewerTz(){ try{ return Intl.DateTimeFormat().resolvedOptions().timeZone||''; }catch(e){ return ''; } }
 // Zona en la que el visitante VE los horarios. Arranca detectada del dispositivo,
 // PERO el visitante puede cambiarla (el selector de abajo) — clave porque muchos
@@ -569,6 +584,7 @@ function applyCoachRow(u, t){
   COACH=u.nombre||'Pathway'; FIRST=(''+COACH).split(' ')[0]; EMAIL=(u.email||'').trim();
   var cfg=u.configuracion||{};
   PHOTO=memPhoto(u); SLUG=cfg.slug||''; PRO=(cfg.plan==='pro'); CID=u.id||CID;
+  PAIS=(cfg.pais||'')+'';   // alimenta _coachTz(): la zona sale del pais si no hay tz
   WA=((cfg.whatsapp||cfg.telefono||'')+'').replace(/[^0-9]/g,'');
   DISP=normDisp(cfg.disponibilidad);
   var types=(Object.prototype.toString.call(cfg.event_types)==='[object Array]'&&cfg.event_types.length)?cfg.event_types
@@ -731,8 +747,17 @@ function renderPicker(){
   if(!showAll && all.length>VIS) slotsHtml+="<button class='more' data-more='1'>"+tf('verMas',{n:(all.length-VIS)})+"</button>";
   else if(showAll && all.length>VIS) slotsHtml+="<button class='more' data-more='0'>"+t('verMenos')+"</button>";
   var can=(sel.ms!=null);
-  var waNum=WA||'34623816019';
-  var waHref='https://wa.me/'+waNum+'?text='+encodeURIComponent((LANG==='en'?('Hi '+FIRST+', I have a question before booking a session.'):('Hola '+FIRST+', tengo una duda antes de reservar una sesión.')));
+  // OJO: si el coach NO cargo su WhatsApp, este boton mandaba al numero de
+  // PATHWAY con un mensaje dirigido AL COACH ("Hola Daniel, tengo una duda...").
+  // El lead escribia a Micaela creyendo escribirle a su coach. Ahora, sin
+  // WhatsApp propio, el contacto va por el canal interno del perfil del coach
+  // (/coach/<slug>#contacto -> email al coach), que si funciona para todos.
+  var waHref = WA
+    ? ('https://wa.me/'+WA+'?text='+encodeURIComponent(LANG==='en'?('Hi '+FIRST+', I have a question before booking a session.'):('Hola '+FIRST+', tengo una duda antes de reservar una sesión.')))
+    : (SLUG ? ('/coach/'+encodeURIComponent(SLUG)+'#contacto') : '');
+  var waLabel = WA ? t('escribirWA') : tf('escribirPerfil',{name:esc(FIRST)});
+  var waBg = WA ? '#25D366' : '#2D6A4F';
+  var waTarget = WA ? " target='_blank' rel='noopener'" : "";
   var emptyDays=!days.length;
   var isDemo=!!(FORCE_TYPE||(TEAM&&TEAM_MEMBERS.length>1));
 
@@ -805,7 +830,7 @@ function renderPicker(){
     "<span style='color:#5A6A60'>"+t('tzCambia')+"</span>"+
   "</div>";
   var pick = emptyDays
-    ? "<div class='lbl'>"+t('disponibilidad')+"</div>"+tzBanner+"<div style='font-size:13px;color:var(--soft);padding:2px 0 10px'>"+tf('sinHorarios',{name:esc(FIRST)})+"</div><a href='"+waHref+"' target='_blank' rel='noopener' style='display:inline-block;background:#25D366;color:#fff;text-decoration:none;padding:10px 16px;border-radius:10px;font-weight:700;font-size:13px'>"+t('escribirWA')+"</a>"
+    ? "<div class='lbl'>"+t('disponibilidad')+"</div>"+tzBanner+"<div style='font-size:13px;color:var(--soft);padding:2px 0 10px'>"+tf('sinHorarios',{name:esc(FIRST)})+"</div>"+(waHref?("<a href='"+waHref+"'"+waTarget+" style='display:inline-block;background:"+waBg+";color:#fff;text-decoration:none;padding:10px 16px;border-radius:10px;font-weight:700;font-size:13px'>"+waLabel+"</a>"):"")
     : tzBanner+"<div class='lbl'>"+t('elegirDia')+"</div><div class='days' id='days'>"+daysHtml+"</div>"+
       "<div class='lbl'>"+t('elegirHorario')+"</div><div class='slots' id='slots'>"+slotsHtml+"</div>"+
       "<div class='lbl'>"+t('tusDatos')+"</div>"+

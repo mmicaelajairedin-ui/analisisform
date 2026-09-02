@@ -5464,6 +5464,127 @@ const RULES = [
       return null;
     },
   },
+  {
+    name: "resenas: las 3 vias del portal publican en `reviews` (no se pierden)",
+    bug: "El portal tiene 3 formas de dejar resena y solo 2 llegaban al perfil " +
+         "publico del coach: _saveResena (la tarjeta 'Resena' con coach/plataforma) " +
+         "guardaba SOLO en candidatos.resena y nunca llamaba a _pushReviewPublic, " +
+         "asi que esa resena no salia nunca en /coach/<slug>. Ademas " +
+         "_pushReviewPublic hacia 'if(!slug) return' en SILENCIO: si el coach no " +
+         "tenia slug la resena se perdia sin dejar rastro (caso real: 5 estrellas " +
+         "de un cliente a su coach, invisible). Fix: _saveResena publica tambien, y " +
+         "sin slug queda registrado en client_errors para poder recuperarla.",
+    check() {
+      const c = read("cliente.html");
+      if (!c) return null;
+      const i = c.indexOf("function _saveResena(");
+      if (i < 0) return "cliente.html: desaparecio _saveResena.";
+      const fn = c.slice(i, i + 3000);
+      if (!/_pushReviewPublic\(/.test(fn))
+        return "cliente.html: _saveResena dejo de publicar en `reviews` — la resena no saldria en el perfil del coach.";
+      const j = c.indexOf("function _pushReviewPublic(");
+      if (j < 0) return "cliente.html: desaparecio _pushReviewPublic — se corta el puente resena -> perfil publico.";
+      const pf = c.slice(j, j + 1400);
+      if (/if\s*\(\s*!slug\s*\|\|\s*!rating\s*\)\s*return\s*;/.test(pf))
+        return "cliente.html: _pushReviewPublic volvio a descartar en silencio la resena cuando el coach no tiene slug.";
+      if (!/review_sin_slug/.test(pf))
+        return "cliente.html: sin slug la resena ya no se registra en client_errors — vuelve a perderse sin rastro.";
+      return null;
+    },
+  },
+  {
+    name: "agenda: el servidor lee la disponibilidad REAL y la zona del pais",
+    bug: "agenda-availability pasaba `configuracion` ENTERA a normalizarConfig, " +
+         "pero el panel guarda la agenda en `configuracion.disponibilidad`. En la " +
+         "raiz no existe ninguna de esas claves, asi que normalizarConfig devolvia " +
+         "SIEMPRE el defecto: se ignoraban los horarios reales del coach y sus dias " +
+         "bloqueados (se podia reservar un dia cerrado). Ademas la zona caia a " +
+         "Europe/Madrid para todos: a una coach de Costa Rica se le ofrecian sus " +
+         "09:00-18:00 de Madrid = 01:00-10:00 suyas. La zona sale ahora del pais.",
+    check() {
+      const fs = require("fs"), path = require("path");
+      const idx = path.join(__dirname, "..", "supabase/functions/agenda-availability/index.ts");
+      const tip = path.join(__dirname, "..", "supabase/functions/_shared/agenda/tipos.ts");
+      if (!fs.existsSync(idx) || !fs.existsSync(tip)) return null;
+      const a = fs.readFileSync(idx, "utf8");
+      const t = fs.readFileSync(tip, "utf8");
+      if (/normalizarConfig\(\s*us\[0\]\.configuracion\s*\)/.test(a))
+        return "agenda-availability: volvio a pasar `configuracion` entera a normalizarConfig — se ignoran los horarios y los dias bloqueados del coach.";
+      if (!/cfgRaw\.disponibilidad/.test(a))
+        return "agenda-availability: dejo de leer `configuracion.disponibilidad` — la agenda del coach no llega al calculo.";
+      if (!/zonaDeCoach\(/.test(a))
+        return "agenda-availability: la zona horaria dejo de derivarse del pais — todos vuelven a Europe/Madrid.";
+      if (!/ZONA_POR_PAIS/.test(t) || !/export function zonaDeCoach/.test(t))
+        return "tipos.ts: desaparecio el mapa pais->zona horaria.";
+      return null;
+    },
+  },
+  {
+    name: "slug del coach: una sola fuente y a prueba de URL pegada",
+    bug: "El slug del perfil publico salia de 4 sitios distintos con el mismo " +
+         "regex a mano. Solo borraba lo que no fuera [a-z0-9-], asi que un coach " +
+         "que pego la URL ENTERA en el campo Nombre quedo con la URL publica " +
+         "/coach/pathwaycareercoachcomcoachpasionfitness504; y los acentos se " +
+         "COMIAN la letra ('Anibal' -> 'anbal'). Fix: helper unico _slugify que " +
+         "se queda con el ultimo tramo si le pegan una URL y normaliza acentos.",
+    check() {
+      const p = read("panel-v2.html");
+      if (!p) return null;
+      if (!/function _slugify\(/.test(p))
+        return "panel-v2.html: desaparecio _slugify — el slug vuelve a derivarse a mano en cada sitio.";
+      if (/toLowerCase\(\)\.replace\(\/\\s\+\/g,"-"\)\.replace\(\/\[\^a-z0-9-\]\/g,""\)/.test(p))
+        return "panel-v2.html: volvio el regex de slug a mano — se salta _slugify (URL pegada y acentos comidos).";
+      const i = p.indexOf("function _slugify(");
+      const fn = p.slice(i, i + 1200);
+      if (!/normalize\("NFD"\)/.test(fn))
+        return "panel-v2.html: _slugify dejo de normalizar acentos — 'Anibal' volveria a quedar como 'anbal'.";
+      if (!/:\/\//.test(fn))
+        return "panel-v2.html: _slugify dejo de detectar URLs pegadas — vuelve el slug basura.";
+      return null;
+    },
+  },
+  {
+    name: "reserva: sin WhatsApp propio, el lead NO va al telefono de Pathway",
+    bug: "En reservar.html, si el coach no tenia horarios cargados salia un boton " +
+         "'Escribir por WhatsApp'. El numero era `WA || '34623816019'` (el de " +
+         "Pathway) y el texto iba dirigido AL COACH: 'Hola Daniel, tengo una duda'. " +
+         "Ningun coach del directorio tenia WhatsApp cargado, asi que TODOS esos " +
+         "leads le llegaban a Micaela creyendo escribirle a su coach. Fix: sin " +
+         "WhatsApp propio el boton lleva a /coach/<slug>#contacto (email al coach).",
+    check() {
+      const r = read("reservar.html");
+      const c = read("coach.html");
+      if (!r || !c) return null;
+      if (/WA\s*\|\|\s*['"]\d{6,}/.test(r))
+        return "reservar.html: volvio el fallback al telefono de Pathway cuando el coach no tiene WhatsApp.";
+      if (!/#contacto/.test(r))
+        return "reservar.html: se perdio la salida a /coach/<slug>#contacto — el lead sin horarios queda sin via de contacto.";
+      if (!/#contacto/.test(c))
+        return "coach.html: dejo de abrir el formulario con #contacto — el link de reservar.html cae en una pagina sin accion.";
+      return null;
+    },
+  },
+  {
+    name: "directorio: el mapa de paises cubre TODOS los del panel del coach",
+    bug: "El selector de pais del panel ofrece 12 paises pero PAIS_MAP del " +
+         "directorio solo mapeaba 7. Un coach de Costa Rica, Venezuela, Ecuador o " +
+         "EEUU salia como 'Internacional' y NINGUN filtro de pais lo encontraba " +
+         "(caso real: la unica coach de Costa Rica del directorio).",
+    check() {
+      const panel = read("panel-v2.html");
+      const dir = read("coaches.html");
+      if (!panel || !dir) return null;
+      const m = panel.match(/var paisOpts = \[([\s\S]{0,900}?)\];/);
+      if (!m) return "panel-v2.html: desaparecio paisOpts — no se puede validar el mapa de paises del directorio.";
+      const isos = (m[1].match(/\["([A-Z]{2,4})"/g) || []).map((x) => x.slice(2, -1));
+      const mapM = dir.match(/var PAIS_MAP = \{([^}]*)\}/);
+      if (!mapM) return "coaches.html: desaparecio PAIS_MAP.";
+      const faltan = isos.filter((iso) => iso !== "OTRO" && !new RegExp("\\b" + iso + "\\s*:").test(mapM[1]));
+      if (faltan.length)
+        return "coaches.html: PAIS_MAP no cubre " + faltan.join(", ") + " — esos coaches caen en 'Internacional' y ningun filtro los encuentra.";
+      return null;
+    },
+  },
 
 ];
 

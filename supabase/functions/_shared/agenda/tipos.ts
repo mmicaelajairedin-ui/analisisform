@@ -153,6 +153,35 @@ export const CONFIG_POR_DEFECTO: ConfigCoach = {
 
 export const ZONA_POR_DEFECTO = 'Europe/Madrid';
 
+/** Zona horaria derivada del pais que el coach elige en su perfil.
+ *
+ *  SEPTIEMBRE 2026 — `tz` es un campo avanzado (vive en
+ *  `configuracion.disponibilidad.tz`) y NINGUN coach lo habia tocado, asi que
+ *  todos caian en Europe/Madrid: a una coach de Costa Rica se le ofrecian sus
+ *  09:00-18:00 *de Madrid*, o sea 01:00-10:00 suyas. El pais si lo elige todo
+ *  el mundo al armar el perfil, asi que sale de ahi antes de asumir Madrid.
+ *  Las claves son las mismas que ofrece el selector del panel (paisOpts). */
+export const ZONA_POR_PAIS: Record<string, string> = {
+  ES: 'Europe/Madrid',
+  AR: 'America/Argentina/Buenos_Aires',
+  MX: 'America/Mexico_City',
+  CO: 'America/Bogota',
+  CL: 'America/Santiago',
+  UY: 'America/Montevideo',
+  PE: 'America/Lima',
+  VE: 'America/Caracas',
+  EC: 'America/Guayaquil',
+  CR: 'America/Costa_Rica',
+  US: 'America/New_York',
+};
+
+/** Zona del coach: la que guardo > la de su pais > el defecto historico. */
+export function zonaDeCoach(tz: unknown, pais: unknown): string {
+  if (typeof tz === 'string' && tz.trim()) return tz.trim();
+  const iso = String(pais ?? '').trim().toUpperCase();
+  return ZONA_POR_PAIS[iso] || ZONA_POR_DEFECTO;
+}
+
 /** Duración de una cita cuando la fila no trae `fin`. Coincide con el defecto
  *  del alta de Pathway. */
 export const DURACION_POR_DEFECTO_MIN = 60;
