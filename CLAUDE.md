@@ -472,6 +472,22 @@ El cache se guarda en goSec() ANTES de actualizar SEC. render() solo lee el cach
 
 ## Agente semanal de analytics (mayo 2026)
 
+> ⚠️ **SEPTIEMBRE 2026 — ESTE AGENTE NO EXISTE HOY. Lo de abajo describe como
+> ESTUVO hecho, no lo que hay.** Verificado el 2026-09-02 contra produccion:
+> - `supabase/functions/analytics-weekly/` **no esta en el repo** y **no esta
+>   entre las 38 edge functions desplegadas**.
+> - `.github/workflows/weekly-analytics.yml` **no existe** (los unicos cron
+>   vivos son backup, coach-lifecycle, coach-notifications, daily-testing-agent,
+>   error-guard, keepalive y recordatorios).
+> - La vista "Web Analytics" del panel tampoco: `panel-v2.html` no referencia
+>   `analytics_reports`.
+> - La tabla `analytics_reports` SI existe y conserva los datos, pero su ultima
+>   fila es del **28 de junio de 2026**.
+>
+> Consecuencia: desde finales de junio no hay medicion automatica del embudo.
+> Antes de "arreglar" nada de esta seccion, reconstruir la funcion y el
+> workflow desde cero usando lo de abajo como especificacion.
+
 Reporte automatizado los lunes 8:00 UTC con metricas de Cloudflare + analisis IA + email.
 
 **Componentes:**
@@ -607,6 +623,74 @@ Cuando a un coach se le vence la prueba (cada uno tiene SU `fecha_fin_prueba`:
      (`_paywallCheck`) tambien lleva ahora al Stripe del plan correcto.
    - Deploy: `supabase functions deploy coach-lifecycle --no-verify-jwt`.
 
+## Directorio de coaches, reseñas y agenda (septiembre 2026)
+
+Sprint que unifico la entrada de candidatos y arreglo lo que colgaba de ella.
+
+### "Busco coach" es la unica entrada del candidato
+Los menus y footers decian "Busco trabajo" / "Soy candidato" y llevaban a
+`soy-candidato.html`, que es la pagina de REGISTRO, no un listado. Ahora TODOS
+dicen **"Busco coach"** y van a `/coaches.html` (EN: "Find a coach" ->
+`/coaches-en.html`). El chatbot de la landing tambien. `soy-candidato.html`
+sigue siendo el alta (conserva su SEO y los CTA del blog siguen llevando ahi).
+**Al sumar un enlace nuevo para candidatos, usar "Busco coach" -> /coaches.html.**
+
+### Reseñas: 3 vias de escritura, 1 tabla
+El portal del cliente tiene TRES formas de dejar reseña y las tres tienen que
+terminar en la tabla `reviews`, que es la que leen `testimonios.js` (landing y
+perfil publico) y `obtener-perfil-coach`:
+1. `_saveReview` (card del dashboard) · 2. `_submitReviewNudge` (popup automatico,
+sale en la 1ª entrada y cada 2) · 3. `_saveResena` (tarjeta "Reseña", coach +
+plataforma).
+La 3 guardaba SOLO en `candidatos.resena` y no publicaba nunca. Y
+`_pushReviewPublic` descartaba en SILENCIO si el coach no tenia slug. Las dos
+cosas estan arregladas y blindadas por guardrail. **Sin slug, la reseña se
+registra en `client_errors` (kind=`review_sin_slug`) para poder recuperarla.**
+Las reseñas se vinculan por `coach_slug` (texto), asi que **cambiar el slug de
+un coach obliga a arrastrar sus filas en `reviews`.**
+
+### Slug del coach: `_slugify` es la unica fuente
+Se derivaba del nombre en 4 sitios con el mismo regex copiado, que solo borraba
+lo que no fuera `[a-z0-9-]`. Resultado real: un coach pego la URL entera en el
+campo Nombre y su perfil quedo en `/coach/pathwaycareercoachcomcoachpasionfitness504`,
+y los acentos se comian la letra ("Anibal" -> "anbal"). Ahora hay un solo
+`_slugify` en `panel-v2.html`. **Nunca volver a derivar el slug a mano.**
+
+### Agenda: el horario vive ANIDADO y la zona sale del pais
+`panel-v2.html` guarda la agenda en **`configuracion.disponibilidad`**
+(`{days,from,to,tz,min_notice_h,buffer_min,bloqueados,horarios}`), NO en la raiz
+de `configuracion`. `agenda-availability` pasaba la raiz a `normalizarConfig`,
+que no encontraba ninguna clave y devolvia SIEMPRE el defecto: se ignoraban los
+horarios reales y los dias bloqueados del coach.
+Ademas `tz` es un campo avanzado que ningun coach habia tocado, asi que todos
+caian en `Europe/Madrid` (a la coach de Costa Rica se le ofrecian sus 09:00-18:00
+*de Madrid* = 01:00-10:00 suyas). Ahora la zona sale del **pais** del perfil
+(`ZONA_POR_PAIS`/`zonaDeCoach` en `_shared/agenda/tipos.ts`) y **se escribe en
+`config.tz`**, porque `huecosLibres` la lee de ahi.
+⚠️ **Al tocar `PAIS_MAP` de `coaches.html` o `paisOpts` de `panel-v2.html`,
+actualizar tambien `ZONA_POR_PAIS`.** Los tres tienen que cubrir los mismos
+paises; hay guardrail para los dos primeros.
+
+### Contacto: sin WhatsApp propio NO se cae al telefono de Pathway
+`reservar.html` mostraba "Escribir por WhatsApp" con `WA || '34623816019'` (el de
+Pathway) y un texto dirigido AL COACH. Ningun coach tiene WhatsApp cargado, asi
+que esos leads le llegaban a Micaela creyendo escribirle a su coach. Ahora sin
+WhatsApp propio va a `/coach/<slug>#contacto` (formulario interno).
+
+### Landing: solo se anuncia lo que existe
+Se quito **Mercado Pago** (se anunciaba en el hero y en integraciones; **no hay
+ninguna implementacion**, los cobros son Stripe Connect). El copy dejo de decir
+que se cobra "via Calendly" (Calendly no cobra) y la agenda propia va antes que
+Calendly. Las fotos del mockup son locales (`/assets/avatars/`), no de
+randomuser.me. **Al tocar el FAQ, actualizar TAMBIEN el bloque `FAQPage` de
+ld+json: las 9 preguntas visibles tienen que estar en el schema.**
+
+### Pendiente de este sprint
+- `multicoach.html` sigue con 10 imagenes de `randomuser.me`. Es **modulo
+  CONGELADO** — no se toca sin autorizacion del Product Owner.
+- La reseña de 5 estrellas de un cliente a Gustavo Garcia no se puede mostrar
+  hasta que el active su perfil publico (no depende de nosotros).
+
 ## PENDIENTE — Proximas mejoras
 - ✅ ~~Cerrar gap de seguridad RLS en Supabase~~ — **HECHO** (Fase 4: Supabase Auth + RLS estricto; ver seccion "SECURITY MODEL · Capa 3").
 - Paginas por pais: /coaching-carrera-espana.html, /coaching-carrera-argentina.html
@@ -618,7 +702,7 @@ Cuando a un coach se le vence la prueba (cada uno tiene SU `fecha_fin_prueba`:
 
 ### Ya hechos (sacados de pendientes — junio 2026)
 - ✅ Testimonios en landing (seccion `#testimonios`, cargada via `testimonios.js`)
-- ✅ Video demo del producto en landing (`.demo-section` con iframe + boton play)
+- ✅ Demo del producto en landing — **desde sept 2026 es una demo interactiva de Arcade en modal** (`.pw-demo-*`, `#pw-demo-slot`, `pwDemoOpen()`). El video de YouTube y su CSS (`.demo-section`/`.demo-frame`/`.demo-play*`) se retiraron: eran codigo muerto.
 - ✅ Blog: `blog.html` como hub + posts SEO (cv-con-ia-2026, primeros-10-clientes-coaching, 7-preguntas-entrevista, checklist-linkedin, rechazo-entrevista-final, etc.)
 - ✅ Notificaciones push (migration `push_subscriptions.sql`, edge functions `send-push` + `notif-new-client`, `pw-push.js`)
 
