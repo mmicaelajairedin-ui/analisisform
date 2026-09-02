@@ -3851,7 +3851,20 @@ function _reviewAuthorName(){
 function _pushReviewPublic(rating, texto){
   try{
     var slug=(window.COACH_SLUG||'');
-    if(!slug || !rating) return;              // sin slug del coach no se puede vincular
+    if(!rating) return;
+    if(!slug){
+      // El coach todavia no tiene slug (perfil publico sin crear): la resena NO
+      // se puede vincular a su perfil. Antes se descartaba en SILENCIO y se
+      // perdia. Ahora queda registrada para poder recuperarla despues.
+      try{
+        fetch(SB+'/rest/v1/client_errors',{
+          method:'POST',
+          headers:H({'Content-Type':'application/json','Prefer':'return=minimal'}),
+          body:JSON.stringify({kind:'review_sin_slug',email:(C&&C.email)||'anon',page:'cliente.html',detail:JSON.stringify({coach_id:(C&&C.coach_id)||null,rating:rating,texto:(texto||'').slice(0,300)})})
+        }).catch(function(){});
+      }catch(_){}
+      return;
+    }
     fetch(SB+'/rest/v1/reviews',{
       method:'POST',
       headers:H({'Content-Type':'application/json','Prefer':'return=minimal'}),
@@ -4539,6 +4552,11 @@ function _saveResena(tipo){
       // dejado al menos una antes, solo confirma save sin celebración.
       var hadAnyBefore=!!(existing.coach&&existing.coach.stars)||!!(existing.plataforma&&existing.plataforma.stars);
       C.resena=JSON.stringify(newPayload);
+      // Puente resena → perfil publico del coach. Antes esta tarjeta guardaba
+      // SOLO en candidatos.resena, asi que la resena no salia nunca en
+      // /coach/<slug> (las otras dos vias si lo hacian). Solo la del COACH y
+      // solo si el cliente la marco publica; la de plataforma va a la landing.
+      if(tipo==='coach' && isPublic) _pushReviewPublic(stars, txt);
       if(!hadAnyBefore){
         if(typeof _fireReviewConfetti==='function')_fireReviewConfetti();
         st.innerHTML=(_lang==='en'?'✓ Thanks! '+PWI.svg('party',{sm:true})+' +1 logro':'✓ ¡Gracias! '+PWI.svg('party',{sm:true})+' +1 logro');

@@ -5413,6 +5413,55 @@ const RULES = [
       return null;
     },
   },
+  {
+    name: "resenas: las 3 vias del portal publican en `reviews` (no se pierden)",
+    bug: "El portal tiene 3 formas de dejar resena y solo 2 llegaban al perfil " +
+         "publico del coach: _saveResena (la tarjeta 'Resena' con coach/plataforma) " +
+         "guardaba SOLO en candidatos.resena y nunca llamaba a _pushReviewPublic, " +
+         "asi que esa resena no salia nunca en /coach/<slug>. Ademas " +
+         "_pushReviewPublic hacia 'if(!slug) return' en SILENCIO: si el coach no " +
+         "tenia slug la resena se perdia sin dejar rastro (caso real: 5 estrellas " +
+         "de un cliente a su coach, invisible). Fix: _saveResena publica tambien, y " +
+         "sin slug queda registrado en client_errors para poder recuperarla.",
+    check() {
+      const c = read("cliente.html");
+      if (!c) return null;
+      const i = c.indexOf("function _saveResena(");
+      if (i < 0) return "cliente.html: desaparecio _saveResena.";
+      const fn = c.slice(i, i + 3000);
+      if (!/_pushReviewPublic\(/.test(fn))
+        return "cliente.html: _saveResena dejo de publicar en `reviews` — la resena no saldria en el perfil del coach.";
+      const j = c.indexOf("function _pushReviewPublic(");
+      if (j < 0) return "cliente.html: desaparecio _pushReviewPublic — se corta el puente resena -> perfil publico.";
+      const pf = c.slice(j, j + 1400);
+      if (/if\s*\(\s*!slug\s*\|\|\s*!rating\s*\)\s*return\s*;/.test(pf))
+        return "cliente.html: _pushReviewPublic volvio a descartar en silencio la resena cuando el coach no tiene slug.";
+      if (!/review_sin_slug/.test(pf))
+        return "cliente.html: sin slug la resena ya no se registra en client_errors — vuelve a perderse sin rastro.";
+      return null;
+    },
+  },
+  {
+    name: "directorio: el mapa de paises cubre TODOS los del panel del coach",
+    bug: "El selector de pais del panel ofrece 12 paises pero PAIS_MAP del " +
+         "directorio solo mapeaba 7. Un coach de Costa Rica, Venezuela, Ecuador o " +
+         "EEUU salia como 'Internacional' y NINGUN filtro de pais lo encontraba " +
+         "(caso real: la unica coach de Costa Rica del directorio).",
+    check() {
+      const panel = read("panel-v2.html");
+      const dir = read("coaches.html");
+      if (!panel || !dir) return null;
+      const m = panel.match(/var paisOpts = \[([\s\S]{0,900}?)\];/);
+      if (!m) return "panel-v2.html: desaparecio paisOpts — no se puede validar el mapa de paises del directorio.";
+      const isos = (m[1].match(/\["([A-Z]{2,4})"/g) || []).map((x) => x.slice(2, -1));
+      const mapM = dir.match(/var PAIS_MAP = \{([^}]*)\}/);
+      if (!mapM) return "coaches.html: desaparecio PAIS_MAP.";
+      const faltan = isos.filter((iso) => iso !== "OTRO" && !new RegExp("\\b" + iso + "\\s*:").test(mapM[1]));
+      if (faltan.length)
+        return "coaches.html: PAIS_MAP no cubre " + faltan.join(", ") + " — esos coaches caen en 'Internacional' y ningun filtro los encuentra.";
+      return null;
+    },
+  },
 
 ];
 

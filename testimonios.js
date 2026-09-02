@@ -69,13 +69,18 @@
             window.__pwRatingSchema=true;
             var rv=(rated.reduce(function(a,r){return a+r.n;},0)/rated.length).toFixed(1);
             var agg={"@type":"AggregateRating","ratingValue":rv,"reviewCount":String(rated.length),"bestRating":"5","worstRating":"1"};
-            var revs=rated.slice(0,6).map(function(r){ return {"@type":"Review","author":{"@type":"Person","name":(r.nombre||'Cliente Pathway')},"reviewRating":{"@type":"Rating","ratingValue":String(r.n),"bestRating":"5","worstRating":"1"},"reviewBody":String(r.texto||'').slice(0,320)}; });
+            // Solo las que TIENEN texto: un Review con reviewBody vacio lo marca
+            // Google como elemento invalido en Rich Results. El aggregateRating
+            // si usa todas (promedio honesto sobre el total).
+            var revs=rated.filter(function(r){ return String(r.texto||'').trim().length>=10; })
+              .slice(0,6)
+              .map(function(r){ return {"@type":"Review","author":{"@type":"Person","name":(r.nombre||'Cliente Pathway')},"reviewRating":{"@type":"Rating","ratingValue":String(r.n),"bestRating":"5","worstRating":"1"},"reviewBody":String(r.texto||'').trim().slice(0,320)}; });
             var el=document.getElementById('ld-software'); var merged=false;
             if(el){
               try{
                 var obj=JSON.parse(el.textContent||el.text||'{}');
                 if(obj && (obj['@type']==='SoftwareApplication')){
-                  obj.aggregateRating=agg; obj.review=revs;
+                  obj.aggregateRating=agg; if(revs.length) obj.review=revs; else delete obj.review;
                   el.textContent=JSON.stringify(obj); merged=true;
                 }
               }catch(_){}

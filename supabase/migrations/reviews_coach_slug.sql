@@ -17,10 +17,15 @@ CREATE INDEX IF NOT EXISTS idx_reviews_coach_slug ON reviews (coach_slug);
 -- Las reseñas existentes quedan con coach_slug = NULL => siguen siendo las
 -- reseñas de Pathway que aparecen en la landing. No hay que tocarlas.
 
--- 2a) Corregir el slug de las reseñas de Micaela a su slug REAL (sin guion):
---     'micaelajairedin' (perfil: /coach.html?slug=micaelajairedin).
-UPDATE reviews SET coach_slug = 'micaelajairedin'
-WHERE coach_slug IN ('micaela-jairedin', '__TU_SLUG__');
+-- 2a) Corregir el slug de las reseñas de Micaela a su slug REAL, el que tiene
+--     su fila en `usuarios`: 'micaela-jairedin' (perfil: /coach/micaela-jairedin).
+--
+--     ⚠️ SEPTIEMBRE 2026 — ESTE BLOQUE ESTABA AL REVÉS. Ponía 'micaelajairedin'
+--     (sin guion), que no coincide con NINGÚN usuario, así que las 2 reseñas de
+--     Upwork dejaron de salir en su perfil y en el ★ del directorio. Corregido
+--     aquí y en la base. NO volver a invertirlo: el slug con guion es el bueno.
+UPDATE reviews SET coach_slug = 'micaela-jairedin'
+WHERE coach_slug IN ('micaelajairedin', '__TU_SLUG__');
 
 -- 2b) Si TODAVÍA no insertaste las 2 reseñas, corré este INSERT
 --     (si ya las tenés, NO lo corras de nuevo para no duplicarlas):
