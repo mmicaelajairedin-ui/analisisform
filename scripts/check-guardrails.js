@@ -566,6 +566,57 @@ const RULES = [
     },
   },
   {
+    name: "handoff: la sesion se emite con generateLink + verify, NUNCA con createSession",
+    bug: "INC-030 · `supabase.auth.admin.createSession()` NO EXISTE en ninguna version de " +
+         "@supabase/auth-js —comprobado de gotrue-js@1.22.21 a auth-js@2.112.3—. Lanza un " +
+         "TypeError que el catch convierte en 500, asi que multicoach-exchange-handoff nunca " +
+         "emitio una sesion: entre el 17 y el 20 de agosto de 2026 hubo 21 intentos reales de " +
+         "entrar y ninguno pudo. Se arreglo a mano como v18 el 21 de agosto, pero el arreglo " +
+         "no llego a este repositorio, asi que el 25 de agosto el CI republico la version " +
+         "canonica y REINTRODUJO la regresion (INC-075): la v25 volvio a devolver 500. Ya ha " +
+         "roto este circuito DOS veces, y no lo ve ninguna revision de codigo ni el typecheck " +
+         "—un metodo inexistente solo aparece al ejecutarlo (R-38)—. De ahi esta regla.",
+    check() {
+      const ruta = "supabase/functions/multicoach-exchange-handoff/index.ts";
+      const bruto = read(ruta);
+      if (!bruto) return null; // si la funcion no esta, no es asunto de esta regla
+
+      // Se mira el CODIGO, no la prosa: el propio fichero explica en sus
+      // comentarios por que createSession no existe, y una comprobacion que
+      // buscara la cadena a secas se pondria roja por HABLAR del defecto en vez
+      // de por tenerlo. Presencia no es comportamiento.
+      const codigo = bruto
+        .replace(/\/\*[\s\S]*?\*\//g, " ")
+        .split("\n")
+        .map((l) => l.replace(/^\s*\/\/.*$/, ""))
+        .join("\n");
+
+      if (/auth\s*\.\s*admin\s*\.\s*createSession\s*\(/.test(codigo))
+        return ruta + ": volvio auth.admin.createSession, que NO EXISTE. El canje devolvera 500 a todo el mundo (INC-030, INC-075).";
+
+      if (!/auth\s*\.\s*admin\s*\.\s*generateLink\s*\(/.test(codigo))
+        return ruta + ": ya no genera el token con generateLink, que es lo unico que si emite sesion.";
+
+      if (!/\/auth\/v1\/verify/.test(codigo))
+        return ruta + ": ya no canjea el token contra /auth/v1/verify, asi que no llega a haber sesion.";
+
+      // El canje TIENE que ir con la anon key. Con la service_role el endpoint
+      // responde, pero no devuelve la sesion de nadie: seria un fallo mudo.
+      if (!/SUPABASE_ANON_KEY/.test(codigo))
+        return ruta + ": el canje ya no usa la anon key. Con service_role no se obtiene sesion de usuario.";
+
+      // Y que los DOS tokens se EXIJAN, no que la palabra aparezca: el objeto
+      // de respuesta menciona esas claves de todos modos, asi que buscar la
+      // cadena daria verde con la guarda quitada.
+      if (!/!\s*[\w.?]*\?\.\s*access_token/.test(codigo))
+        return ruta + ": ya no se comprueba que el canje devolviera access_token.";
+      if (!/!\s*[\w.?]*\?\.\s*refresh_token/.test(codigo))
+        return ruta + ": ya no se EXIGE refresh_token, asi que la sesion moriria en una hora sin poder renovarse.";
+
+      return null;
+    },
+  },
+  {
     name: "agenda: los eventos de Google cargan aunque el Resumen no tenga #cp-agenda-body",
     bug: "Al simplificar el calendario se dejó de renderizar #cp-agenda-body, pero " +
          "_agendaLoad/_agLoadIcal/_agLoadGoogleDirect arrancaban con 'if(!body) return' " +
