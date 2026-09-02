@@ -5442,6 +5442,27 @@ const RULES = [
     },
   },
   {
+    name: "reserva: sin WhatsApp propio, el lead NO va al telefono de Pathway",
+    bug: "En reservar.html, si el coach no tenia horarios cargados salia un boton " +
+         "'Escribir por WhatsApp'. El numero era `WA || '34623816019'` (el de " +
+         "Pathway) y el texto iba dirigido AL COACH: 'Hola Daniel, tengo una duda'. " +
+         "Ningun coach del directorio tenia WhatsApp cargado, asi que TODOS esos " +
+         "leads le llegaban a Micaela creyendo escribirle a su coach. Fix: sin " +
+         "WhatsApp propio el boton lleva a /coach/<slug>#contacto (email al coach).",
+    check() {
+      const r = read("reservar.html");
+      const c = read("coach.html");
+      if (!r || !c) return null;
+      if (/WA\s*\|\|\s*['"]\d{6,}/.test(r))
+        return "reservar.html: volvio el fallback al telefono de Pathway cuando el coach no tiene WhatsApp.";
+      if (!/#contacto/.test(r))
+        return "reservar.html: se perdio la salida a /coach/<slug>#contacto — el lead sin horarios queda sin via de contacto.";
+      if (!/#contacto/.test(c))
+        return "coach.html: dejo de abrir el formulario con #contacto — el link de reservar.html cae en una pagina sin accion.";
+      return null;
+    },
+  },
+  {
     name: "directorio: el mapa de paises cubre TODOS los del panel del coach",
     bug: "El selector de pais del panel ofrece 12 paises pero PAIS_MAP del " +
          "directorio solo mapeaba 7. Un coach de Costa Rica, Venezuela, Ecuador o " +
