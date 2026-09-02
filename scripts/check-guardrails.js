@@ -5585,6 +5585,39 @@ const RULES = [
       return null;
     },
   },
+  {
+    name: "admin: el MRR cuenta SOLO a los coaches que pagan de verdad",
+    bug: "La tarjeta 'Ingresos de la plataforma' mostraba EUR 294 (2 Pro + 2 Basic) " +
+         "cuando solo UN coach habia pagado. Dos errores sumados: (1) contaba a " +
+         "todo el que tuviera estado_sub='activa', y eso incluye a los Pro " +
+         "vitalicios (demo.coach, bot-coach) y a los coaches DENTRO de una red " +
+         "— `agregar-coach-red` los crea con estado_sub:'activa' por diseno, pero " +
+         "paga el dueno de la red, no ellos; (2) usaba precios inventados 89/58 " +
+         "en EUR cuando los planes reales son USD $59 (Pro) y $29 (Basic). Fix: " +
+         "helper _coachMRR() como unica fuente + PLAN_MRR_USD con el precio real.",
+    check() {
+      const p = read("panel-v2.html");
+      if (!p) return null;
+      if (/mrr\s*:\s*_proPaid\s*\*\s*\d+/.test(p))
+        return "panel-v2.html: el MRR volvio a multiplicar por un precio hardcodeado en vez de usar _coachMRR().";
+      const m = p.match(/function _coachMRR\(u\)\{[\s\S]{0,700}?\n\}/);
+      if (!m) return "panel-v2.html: desaparecio _coachMRR() — el MRR vuelve a contar vitalicios y coaches de red como ingreso.";
+      const body = m[0];
+      for (const [re, msg] of [
+        [/es_pro_vitalicio/, "no excluye a los Pro vitalicios (regalados) del MRR"],
+        [/es_coach_red/, "no excluye a los coaches dentro de una red (paga el dueno, no ellos)"],
+        [/plan\s*===?\s*["']red["']/, "no excluye el plan 'red' del MRR"],
+        [/rol\s*===?\s*["']owner["']/, "no excluye las cuentas internas (owner/admin) del MRR"],
+      ]) if (!re.test(body)) return "panel-v2.html: _coachMRR() " + msg + ".";
+      const pm = p.match(/var PLAN_MRR_USD\s*=\s*\{[^;]*\};/);
+      if (!pm) return "panel-v2.html: desaparecio PLAN_MRR_USD — el precio del plan vuelve a estar suelto.";
+      if (!/pro\s*:\s*\{\s*mensual\s*:\s*59\b/.test(pm[0]) || !/basic\s*:\s*\{\s*mensual\s*:\s*29\b/.test(pm[0]))
+        return "panel-v2.html: PLAN_MRR_USD dejo de coincidir con el precio real de PLAN_PRICE (Pro $59 / Basic $29 al mes).";
+      if (!/function _paidCoachEmails\(\)\{[\s\S]{0,400}?_coachMRR\(u\)/.test(p))
+        return "panel-v2.html: _paidCoachEmails() dejo de usar _coachMRR() — las comisiones de empleados vuelven a contar asientos de red como venta.";
+      return null;
+    },
+  },
 
 ];
 
