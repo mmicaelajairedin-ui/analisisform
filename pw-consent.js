@@ -59,14 +59,59 @@
     try { document.documentElement.style.overflow = _prevOverflow; } catch (e) {}
   }
 
+  // ── Idioma del aviso ─────────────────────────────────────────────
+  // Este banner sale en TODAS las páginas, incluidas las inglesas, y estaba
+  // clavado en español: un visitante inglés se topaba con "Tu privacidad ·
+  // Usamos cookies propias y de terceros…" antes que con nada más.
+  // Se decide igual que en el resto del sitio: el idioma que ya declaró la
+  // página (las -en.html ponen <html lang="en">), luego la preferencia
+  // guardada por pw-lang.js, y por último el navegador.
+  function lang() {
+    try {
+      var d = (document.documentElement.getAttribute('lang') || '').toLowerCase();
+      if (d.indexOf('en') === 0) return 'en';
+      if (d.indexOf('es') === 0) return 'es';
+    } catch (e) {}
+    try {
+      var st = localStorage.getItem('pw_lang');
+      if (st === 'en' || st === 'es') return st;
+    } catch (e) {}
+    try {
+      return (navigator.language || navigator.userLanguage || 'es')
+        .toLowerCase().indexOf('en') === 0 ? 'en' : 'es';
+    } catch (e) { return 'es'; }
+  }
+
+  var TXT = {
+    es: {
+      aria: 'Aviso de cookies',
+      title: 'Tu privacidad',
+      body: 'Usamos cookies propias y de terceros (Meta, LinkedIn) para medir nuestras ' +
+            'campañas y mejorar la web. Podés aceptarlas o rechazarlas — vos elegís. ',
+      more: 'Más info',
+      yes: 'Aceptar cookies',
+      no: 'Rechazar'
+    },
+    en: {
+      aria: 'Cookie notice',
+      title: 'Your privacy',
+      body: 'We use our own and third-party cookies (Meta, LinkedIn) to measure our ' +
+            'campaigns and improve the site. You can accept or decline — it is your choice. ',
+      more: 'More info',
+      yes: 'Accept cookies',
+      no: 'Decline'
+    }
+  };
+
   function buildBar() {
     if (document.getElementById('pw-consent-bar')) return;
+    var t = TXT[lang()] || TXT.es;
     // Overlay centrado con fondo oscuro (modal) → más visible = más aceptaciones.
     var ov = document.createElement('div');
     ov.id = 'pw-consent-bar';
     ov.setAttribute('role', 'dialog');
     ov.setAttribute('aria-modal', 'true');
-    ov.setAttribute('aria-label', 'Aviso de cookies');
+    ov.setAttribute('aria-label', t.aria);
     ov.style.cssText = 'position:fixed;inset:0;z-index:2147483000;background:rgba(20,30,25,.55);' +
       'display:flex;align-items:center;justify-content:center;padding:20px;' +
       'font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;color:#1a1a1a;' +
@@ -76,19 +121,18 @@
         'box-shadow:0 24px 60px rgba(0,0,0,.28);padding:28px 26px 22px;text-align:center;' +
         'transform:translateY(8px);transition:transform .22s ease">' +
         '<div style="font-size:40px;line-height:1;margin-bottom:10px">🍪</div>' +
-        '<h3 style="margin:0 0 8px;font-size:19px;font-weight:700;color:#1B2E26">Tu privacidad</h3>' +
+        '<h3 style="margin:0 0 8px;font-size:19px;font-weight:700;color:#1B2E26">' + t.title + '</h3>' +
         '<p style="margin:0 0 20px;font-size:14px;line-height:1.55;color:#4A5A50">' +
-          'Usamos cookies propias y de terceros (Meta, LinkedIn) para medir nuestras ' +
-          'campañas y mejorar la web. Podés aceptarlas o rechazarlas — vos elegís. ' +
-          '<a href="/privacidad.html" style="color:#2D6A4F;font-weight:600;text-decoration:underline">Más info</a>.' +
+          t.body +
+          '<a href="/privacidad.html" style="color:#2D6A4F;font-weight:600;text-decoration:underline">' + t.more + '</a>.' +
         '</p>' +
         '<div style="display:flex;gap:10px;flex-direction:column">' +
           '<button type="button" id="pw-consent-yes" style="width:100%;padding:13px;border-radius:12px;' +
             'border:0;background:#2D6A4F;color:#fff;font-weight:700;font-size:15px;cursor:pointer;' +
-            'font-family:inherit">Aceptar cookies</button>' +
+            'font-family:inherit">' + t.yes + '</button>' +
           '<button type="button" id="pw-consent-no" style="width:100%;padding:11px;border-radius:12px;' +
             'border:0;background:transparent;color:#7A8A80;font-weight:600;font-size:13px;cursor:pointer;' +
-            'font-family:inherit">Rechazar</button>' +
+            'font-family:inherit">' + t.no + '</button>' +
         '</div>' +
       '</div>';
     var host = document.body || document.documentElement;
