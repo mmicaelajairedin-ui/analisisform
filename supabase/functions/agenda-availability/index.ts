@@ -78,7 +78,12 @@ Deno.serve(async (req: Request) => {
     : cfgRaw;
   const config = normalizarConfig(dispRaw);
   if (!config.zoom_url && typeof cfgRaw.zoom_url === 'string') config.zoom_url = cfgRaw.zoom_url;
+  // La zona resuelta se ESCRIBE en config: `huecosLibres` lee `config.tz` por
+  // dentro y, si se dejara vacia, calcularia los huecos en Europe/Madrid aunque
+  // la respuesta dijera otra zona (los horarios saldrian corridos y encima
+  // mintiendo sobre en que huso estan).
   const zona = zonaDeCoach(config.tz, cfgRaw.pais);
+  config.tz = zona;
 
   // ── Ocupación ───────────────────────────────────────────────────────────
   const desdeIso = d0.toISOString();
