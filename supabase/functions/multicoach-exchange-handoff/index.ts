@@ -162,8 +162,10 @@ Deno.serve(async (req) => {
     // lanza un TypeError en tiempo de ejecución, y no lo ve ninguna revisión de
     // código, ni el typecheck, ni comparar lo desplegado con el repositorio
     // (R-38). Ya rompió este circuito dos veces — INC-030 y su regresión
-    // INC-075— así que hay un guardián que se pone rojo si vuelve:
-    // `app/src/integration/adapters/sesionDelHandoff.test.ts`.
+    // INC-075— así que hay un guardián que se pone rojo si vuelve: la regla
+    // «handoff: la sesion se emite con generateLink + verify, NUNCA con
+    // createSession» de `scripts/check-guardrails.js`, que ESTE repositorio
+    // ejecuta en su job de Checks y en el hook que bloquea el commit.
     //
     // El mecanismo que sí existe: generar un token de un solo uso con
     // service_role y canjearlo con la anon key. La sesión resultante es una
