@@ -1,0 +1,12 @@
+-- A-1 (correccion) — Quitar EXECUTE a `anon` sobre org_marca_propia().
+--
+-- `REVOKE ALL ... FROM PUBLIC` no bastaba: Supabase concede privilegios por
+-- defecto a anon/authenticated/service_role como entradas ACL propias, no a
+-- traves de PUBLIC, asi que el REVOKE anterior no las tocaba.
+--
+-- No habia fuga: la funcion ya devolvia 0 filas para anon porque no hay
+-- identidad que resolver (pw_coach_id() NULL y pw_email() vacio). Esto es
+-- defensa en profundidad y alinear el objeto con lo especificado en A-1.
+--
+-- org_publica(slug) NO se toca: ahi el acceso de anon es intencionado.
+REVOKE ALL ON FUNCTION public.org_marca_propia() FROM anon;
