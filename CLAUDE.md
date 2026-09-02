@@ -686,10 +686,15 @@ randomuser.me. **Al tocar el FAQ, actualizar TAMBIEN el bloque `FAQPage` de
 ld+json: las 9 preguntas visibles tienen que estar en el schema.**
 
 ### Pendiente de este sprint
-- `multicoach.html` sigue con 10 imagenes de `randomuser.me`. Es **modulo
-  CONGELADO** — no se toca sin autorizacion del Product Owner.
-- La reseña de 5 estrellas de un cliente a Gustavo Garcia no se puede mostrar
-  hasta que el active su perfil publico (no depende de nosotros).
+- `multicoach.html` (el PANEL privado del dueño de una red, no una landing)
+  sigue con 10 imagenes de `randomuser.me`. Son datos de MAQUETA — coaches
+  ficticios que solo se ven en modo demo; en modo real (`mcLoadReal`) se
+  esconden. No las ve nadie de fuera. Es **modulo CONGELADO**: no se toca sin
+  autorizacion del Product Owner. Baja prioridad.
+- La reseña de 5 estrellas de un cliente a Gustavo Garcia no sale, y es lo
+  ESPERADO: no pago, asi que su perfil publico esta apagado. La reseña queda
+  guardada en `candidatos.review_rating` y saldria sola si algun dia paga. NO
+  es una tarea pendiente.
 
 ## PENDIENTE — Proximas mejoras
 - ✅ ~~Cerrar gap de seguridad RLS en Supabase~~ — **HECHO** (Fase 4: Supabase Auth + RLS estricto; ver seccion "SECURITY MODEL · Capa 3").
