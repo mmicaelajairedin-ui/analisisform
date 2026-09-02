@@ -5682,6 +5682,54 @@ const RULES = [
     },
   },
 
+  {
+    name: "usuarios_publicos: la vista publica es SOLO LECTURA para anon/authenticated",
+    bug: "La vista `usuarios_publicos` no es security_invoker, asi que toca `usuarios` " +
+         "con la identidad de su dueno (postgres), que tiene BYPASSRLS y no esta sujeto " +
+         "a FORCE RLS. Como `pg_default_acl` concede los ocho privilegios a " +
+         "anon/authenticated en toda relacion nueva de public, la vista nacio ESCRIBIBLE: " +
+         "`rol` se podia cambiar con la anon key sin pasar por ninguna politica de " +
+         "`usuarios` (escalada a owner/admin). Se cerro revocando INSERT/UPDATE/DELETE/" +
+         "TRUNCATE/REFERENCES/TRIGGER sobre la vista, y corrigiendo el default ACL para " +
+         "que no vuelva a pasar con relaciones nuevas. SELECT se conserva: los 5 " +
+         "consumidores (soy-candidato[-en].html, coaches[-en].html, reservar.html) son GET.",
+    check() {
+      const DIR = "supabase/migrations";
+      const MIG = "20260902104446_p0_usuarios_publicos_solo_lectura.sql";
+      // Las reglas miran SQL, no prosa: los comentarios llevan ejemplos de grant.
+      const sinComentarios = (s) => String(s || "")
+        .replace(/\/\*[\s\S]*?\*\//g, " ")
+        .replace(/--[^\n]*/g, " ");
+
+      let files;
+      try { files = fs.readdirSync(DIR).filter((f) => f.endsWith(".sql")); } catch (e) { return null; }
+
+      // 1) La migracion que cierra el agujero sigue ahi y sigue revocando.
+      const rem = sinComentarios(read(DIR + "/" + MIG));
+      if (!rem.trim())
+        return DIR + "/" + MIG + ": desaparecio la migracion que deja usuarios_publicos en solo lectura.";
+      for (const rol of ["anon", "authenticated"]) {
+        const reVista = new RegExp("revoke[^;]*\\bupdate\\b[^;]*usuarios_publicos[^;]*from\\s+" + rol, "i");
+        if (!reVista.test(rem))
+          return MIG + ": ya no revoca UPDATE sobre usuarios_publicos a " + rol + ".";
+        const reAcl = new RegExp("alter\\s+default\\s+privileges[^;]*revoke[^;]*\\bupdate\\b[^;]*on\\s+tables\\s+from\\s+" + rol, "i");
+        if (!reAcl.test(rem))
+          return MIG + ": ya no corrige el default ACL de public para " + rol + " (E1) — las relaciones nuevas volverian a nacer escribibles.";
+      }
+
+      // 2) Nadie puede reconceder escritura sobre la vista, ni recrearla sin revocar.
+      const reGrant = /grant[^;]*\b(?:insert|update|delete|truncate)\b[^;]*\busuarios_publicos\b[^;]*\bto\b[^;]*\b(?:anon|authenticated)\b/i;
+      const reDrop = /drop\s+view[^;]*\busuarios_publicos\b/i;
+      for (const f of files) {
+        const sql = sinComentarios(read(DIR + "/" + f));
+        if (reGrant.test(sql))
+          return DIR + "/" + f + ": concede escritura sobre usuarios_publicos a anon/authenticated. Esa vista es SOLO LECTURA (se escribe a `usuarios` saltandose la RLS).";
+        if (reDrop.test(sql) && !/revoke[^;]*usuarios_publicos/i.test(sql))
+          return DIR + "/" + f + ": hace DROP VIEW de usuarios_publicos sin volver a revocar la escritura — al recrearla re-hereda los privilegios de pg_default_acl.";
+      }
+      return null;
+    },
+  },
 ];
 
 

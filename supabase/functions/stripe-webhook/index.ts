@@ -195,6 +195,46 @@ async function getDefaultCoachId(): Promise<string | undefined> {
 // el URL `?paid=1&email=X` podría acceder al form sin pagar. La validación
 // ocurre en cv-express.html: si el email no tiene paid_at en cv_express,
 // se redirige a la página de pago.
+// Aviso a la admin de que ENTRÓ una venta del Pack Express.
+// Hasta ahora el webhook solo avisaba de los pagos ROTOS (el de "Pago de coach
+// sin cuenta que coincida"), así que se sabía cuando algo fallaba y nunca
+// cuando se vendía. Y el Pack tiene 48 h de acceso: si el comprador escribe
+// con una duda, conviene ya saber que existe.
+//
+// Best-effort a propósito: si el email falla NO se toca el resultado del pago.
+// Cobrar y dar acceso es lo importante; avisar es un extra.
+async function avisarVentaExpress(
+  email: string,
+  amount: number,
+  sessionId: string,
+  esSuplemento: boolean,
+) {
+  // Mismo patrón que sendUnmatchedPaymentAlert, que ya funciona en producción:
+  // send-email va desplegada con --no-verify-jwt, así que no lleva cabeceras
+  // de auth. Copiar lo que ya funciona en vez de inventar una variante.
+  const SB_URL = Deno.env.get("SUPABASE_URL") || "";
+  const que = esSuplemento ? "Suplemento (otro CV)" : "Pack Express";
+  try {
+    await fetch(`${SB_URL}/functions/v1/send-email`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        to: "hi@pathwaycareercoach.com",
+        to_name: "Micaela",
+        subject: `💸 Venta: ${que} · €${amount} · ${email}`,
+        reply_to: email,
+        html:
+          `<p style="font-size:16px;"><strong>${que}</strong> — €${amount}</p>` +
+          `<p>Comprador: <a href="mailto:${email}">${email}</a></p>` +
+          `<p style="color:#666;font-size:13px;">Tiene <strong>48 h</strong> desde ahora para entrar, editar y descargar sus documentos.</p>` +
+          `<p style="color:#999;font-size:12px;">Sesión de Stripe: ${sessionId}</p>`,
+      }),
+    });
+  } catch (e) {
+    console.error("[pack_express] no se pudo avisar de la venta", e);
+  }
+}
+
 async function handlePackExpressPayment(session: StripeSession) {
   const email = (session.customer_details?.email || session.customer_email || "")
     .toLowerCase();
@@ -227,6 +267,7 @@ async function handlePackExpressPayment(session: StripeSession) {
         body: JSON.stringify(body),
       },
     );
+    await avisarVentaExpress(email, amount, session.id, amount === 10);
     return { result: "pack_express_updated", email, amount };
   } else {
     await fetch(`${SB_URL}/rest/v1/cv_express`, {
@@ -234,6 +275,7 @@ async function handlePackExpressPayment(session: StripeSession) {
       headers: { ...headers, Prefer: "return=minimal" },
       body: JSON.stringify(body),
     });
+    await avisarVentaExpress(email, amount, session.id, amount === 10);
     return { result: "pack_express_created", email, amount };
   }
 }

@@ -9267,6 +9267,15 @@ function viewAdmin(){
       "<span style='font-size:"+(big?"14px":"13px")+";color:"+(opts.muted?"var(--pw-text-soft)":"var(--pw-carbon)")+";font-weight:"+(big?"600":"400")+"'>"+label+"</span>"+
       "<span style='font-family:var(--pw-serif);font-size:"+(big?"24px":"15px")+";font-weight:"+(big?"600":"500")+";color:"+valC+";letter-spacing:-.4px'>"+val+"</span></div>";
   }
+  // El rótulo de la tarjeta de ingresos decía "Mayo 2026" clavado en el HTML.
+  // En septiembre seguía diciendo mayo, y encima los números que enseñaba no
+  // eran de mayo sino acumulados: mentía sobre lo que estabas mirando.
+  function _mesActual(){
+    try{
+      var t=new Date().toLocaleDateString('es-ES',{month:'long',year:'numeric'});
+      return t.charAt(0).toUpperCase()+t.slice(1);
+    }catch(e){ return ''; }
+  }
   function pill(txt, kind){
     var st = kind==="ok" ? "background:var(--pw-success-bg);color:var(--pw-bosque)"
       : kind==="warn" ? "background:rgba(233,196,106,.22);color:#8E7A35"
@@ -9701,9 +9710,11 @@ function viewAdmin(){
   // Los planes de coach se cobran en USD ($59/$29); CV Express en EUR (€40).
   // No se suman entre sí: "Total real" muestra las dos monedas por separado.
   function usd(n){ return "$"+(Math.round((Number(n)||0)*100)/100).toLocaleString("es-ES"); }
+  // El "Total del mes" NO puede sumar las dos: son monedas distintas. Si el mes
+  // trae ingreso de las dos, se muestran por separado en vez de inventar un
+  // numero que no es ni dolares ni euros. (El rotulo del mes lo pone _mesActual,
+  // que ya vino de main.)
   function totalReal(mrr,cvx){ return cvx>0 ? usd(mrr)+" + "+eur(cvx) : usd(mrr); }
-  // Mes en curso — antes decía "Mayo 2026" fijo aunque los datos fueran de hoy.
-  var mesActual=(function(){ try{ var t=new Date().toLocaleDateString("es-ES",{month:"long",year:"numeric"}).replace(" de "," "); return t.charAt(0).toUpperCase()+t.slice(1); }catch(e){ return ""; } })();
   var A=null;
   if(REAL && RCOACHES){
     var _now=Date.now(), _D=86400000, _pro=0,_basic=0,_prueba=0,_act7=0,_inact14=0,_nuevas7=0,_venc3=0,_sinUso=0,_proPaid=0,_basicPaid=0,_mrr=0;
@@ -9732,9 +9743,18 @@ function viewAdmin(){
     var _cx=_R.cvx||[];
     var _cxP=_cx.filter(function(x){return x.paid_at;}).length;
     var _cxR=_cx.reduce(function(s,x){return s+((x.paid_at&&x.pago_monto)?(Number(x.pago_monto)||0):0);},0);
+    // CV Express del MES EN CURSO. Hacía falta porque la tarjeta de ingresos
+    // sumaba el MRR (que es por mes) con el acumulado histórico de CV Express:
+    // el "Total real" no era ni el mes ni el total, no significaba nada.
+    var _mIni=new Date(_now.getFullYear(), _now.getMonth(), 1).getTime();
+    var _cxRMes=_cx.reduce(function(s,x){
+      if(!x.paid_at||!x.pago_monto) return s;
+      var t=new Date(x.paid_at).getTime();
+      return (!isNaN(t) && t>=_mIni) ? s+(Number(x.pago_monto)||0) : s;
+    },0);
     A={ total:RCOACHES.length, pro:_pro, basic:_basic, prueba:_prueba, act7:_act7, inact14:_inact14,
         nuevas7:_nuevas7, venc3:_venc3, sinUso:_sinUso, mrr:_mrr, proPaid:_proPaid, basicPaid:_basicPaid,
-        candsTot:(_R.cands||[]).length, cands30:_c30, cvx:_cx.length, cvxPaid:_cxP, cvxRev:_cxR,
+        candsTot:(_R.cands||[]).length, cands30:_c30, cvx:_cx.length, cvxPaid:_cxP, cvxRev:_cxR, cvxRevMes:_cxRMes,
         leadsTot:_lds.length, leadsTrial:_lt, leadsPago:_lp };
   }
 
@@ -10410,12 +10430,13 @@ function viewAdmin(){
       _revCard;
   } else if(state.adminTab==="pagos"){
     body = "<div class='cp-card'><div class='cp-card-hd'><h3 class='cp-card-title'>Ingresos de la plataforma<span class='dot'>.</span></h3>"+
-        "<span class='cp-eyebrow'>"+(A?esc(mesActual):"Mayo 2026")+"</span></div>"+
+        "<span class='cp-eyebrow'>"+_mesActual()+"</span></div>"+
         "<div class='cp-card-pad' style='padding-top:8px;padding-bottom:8px'>"+
-          row("Suscripciones de coaches (pagas)", A?usd(A.mrr):"€1.091",{muted:true})+
+          row("Suscripciones de coaches (pagas)", (A?usd(A.mrr):"€1.091")+"<span style='font-size:12px;color:var(--pw-text-soft);font-weight:400'> /mes</span>",{muted:true})+
           row("Comisión Pathway", A?"—":"€3.720",{muted:true})+
-          row("CV Express", A?eur(A.cvxRev):"€1.073",{muted:true})+
-          row("Total real", A?totalReal(A.mrr||0,A.cvxRev||0):"€5.884",{big:true,strongC:"var(--pw-bosque)",top:true})+
+          row("CV Express (este mes)", A?eur(A.cvxRevMes):"€1.073",{muted:true})+
+          row("Total del mes", A?totalReal(A.mrr||0,A.cvxRevMes||0):"€5.884",{big:true,strongC:"var(--pw-bosque)",top:true})+
+          row("CV Express (acumulado)", A?eur(A.cvxRev):"€1.073",{muted:true,top:true})+
         "</div>"+
         "<p class='cp-reassurance' style='margin:0 22px 20px;border-radius:12px'>"+(A?"Solo coaches que <strong>pagaron</strong> ("+A.proPaid+" Pro · "+A.basicPaid+" Basic, USD $59 y $29 al mes). No cuentan los de prueba, los Pro vitalicios ni los coaches dentro de una red (paga el dueño). Comisión/payouts en Stripe.":"Los <strong>€14.880</strong> de payouts (80% de lo referido) no son ingreso — se transfieren tras las 24 h.")+"</p></div>"+
       "<div class='cp-card'><div class='cp-card-hd'><h3 class='cp-card-title'>Payouts a coaches — pendientes<span class='dot'>.</span></h3>"+
@@ -10448,12 +10469,13 @@ function viewAdmin(){
         fc("<span style='color:var(--pw-bosque)'>"+(A?(A.leadsPago||"—"):9)+"</span>","Ventas (leads pagados)")+
       "</div></div>"+
       "<div class='cp-card'><div class='cp-card-hd'><h3 class='cp-card-title'>Ingresos de la plataforma<span class='dot'>.</span></h3>"+
-        "<span class='cp-eyebrow'>"+(A?esc(mesActual):"Mayo 2026")+"</span></div>"+
+        "<span class='cp-eyebrow'>"+_mesActual()+"</span></div>"+
         "<div class='cp-card-pad' style='padding-top:8px;padding-bottom:8px'>"+
-          row("Suscripciones de coaches (pagas)", A?usd(A.mrr):"€1.091",{muted:true})+
+          row("Suscripciones de coaches (pagas)", (A?usd(A.mrr):"€1.091")+"<span style='font-size:12px;color:var(--pw-text-soft);font-weight:400'> /mes</span>",{muted:true})+
           row("Comisión Pathway", A?"—":"€3.720",{muted:true})+
-          row("CV Express", A?eur(A.cvxRev):"€1.073",{muted:true})+
-          row("Total real", A?totalReal(A.mrr||0,A.cvxRev||0):"€5.884",{big:true,strongC:"var(--pw-bosque)",top:true})+
+          row("CV Express (este mes)", A?eur(A.cvxRevMes):"€1.073",{muted:true})+
+          row("Total del mes", A?totalReal(A.mrr||0,A.cvxRevMes||0):"€5.884",{big:true,strongC:"var(--pw-bosque)",top:true})+
+          row("CV Express (acumulado)", A?eur(A.cvxRev):"€1.073",{muted:true,top:true})+
         "</div></div>";
   }
   var realNote = REAL
