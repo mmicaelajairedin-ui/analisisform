@@ -8958,13 +8958,33 @@ function _buildEmpLeadStats(rows){
   });
   return m;
 }
-// Emails de coaches que ya pagaron (estado_sub=activa). Un lead cuenta como
-// "convirtió" (y genera comisión) solo si su coach está en este set.
+// ¿Este coach PAGA de verdad? estado_sub='activa' NO alcanza: también lo tienen
+// los que nunca pusieron un euro. Devuelve el importe MENSUAL en USD (0 = no paga).
+// Quedan fuera:
+//   • es_pro_vitalicio → Pro de por vida regalado (demo.coach, bot-coach…).
+//   • es_coach_red / plan='red' → asiento dentro de una red. `agregar-coach-red`
+//     los crea con estado_sub:'activa' por diseño; paga el dueño de la red, no ellos.
+//   • rol admin/owner → cuentas internas.
+// Precio real de la plataforma (PLAN_PRICE): Pro USD $59/mes · Basic USD $29/mes.
+// Anual se prorratea a mes ($531/12 y $261/12) para que el MRR no se dispare.
+var PLAN_MRR_USD={ pro:{mensual:59, anual:531/12}, basic:{mensual:29, anual:261/12} };
+function _coachMRR(u){
+  var cg=(u&&u.configuracion)||{};
+  if((""+(cg.estado_sub||"")).toLowerCase()!=="activa") return 0;
+  if(u&&(u.rol==="admin"||u.rol==="owner")) return 0;
+  if(cg.es_pro_vitalicio===true) return 0;
+  if(cg.es_coach_red===true || cg.plan==="red") return 0;
+  var pl=(cg.plan==="pro")?"pro":"basic";
+  var bl=(cg.billing==="anual")?"anual":"mensual";
+  return PLAN_MRR_USD[pl][bl];
+}
+// Emails de coaches que ya pagaron DE VERDAD. Un lead cuenta como "convirtió"
+// (y genera comisión) solo si su coach está en este set — antes bastaba con
+// estado_sub='activa' y colaboradores de red contaban como venta.
 function _paidCoachEmails(){
   var set={};
   (RCOACHES||[]).forEach(function(u){
-    var cg=(u&&u.configuracion)||{};
-    if((""+(cg.estado_sub||"")).toLowerCase()==="activa"){ var e=(""+(u.email||"")).toLowerCase().trim(); if(e) set[e]=1; }
+    if(_coachMRR(u)>0){ var e=(""+(u.email||"")).toLowerCase().trim(); if(e) set[e]=1; }
   });
   return set;
 }
@@ -9687,9 +9707,17 @@ function viewAdmin(){
   }).join("");
   function fc(stat,lbl){ return "<div style='flex:1;min-width:120px'><div style='font-family:var(--pw-serif);font-size:24px;font-weight:600;color:var(--pw-carbon)'>"+stat+"</div><div style='font-size:12px;color:var(--pw-text-soft)'>"+lbl+"</div></div>"; }
   function eur(n){ return "€"+(Number(n)||0).toLocaleString("es-ES"); }
+  // Los planes de coach se cobran en USD ($59/$29); CV Express en EUR (€40).
+  // No se suman entre sí: "Total real" muestra las dos monedas por separado.
+  function usd(n){ return "$"+(Math.round((Number(n)||0)*100)/100).toLocaleString("es-ES"); }
+  // El "Total del mes" NO puede sumar las dos: son monedas distintas. Si el mes
+  // trae ingreso de las dos, se muestran por separado en vez de inventar un
+  // numero que no es ni dolares ni euros. (El rotulo del mes lo pone _mesActual,
+  // que ya vino de main.)
+  function totalReal(mrr,cvx){ return cvx>0 ? usd(mrr)+" + "+eur(cvx) : usd(mrr); }
   var A=null;
   if(REAL && RCOACHES){
-    var _now=Date.now(), _D=86400000, _pro=0,_basic=0,_prueba=0,_act7=0,_inact14=0,_nuevas7=0,_venc3=0,_sinUso=0,_proPaid=0,_basicPaid=0;
+    var _now=Date.now(), _D=86400000, _pro=0,_basic=0,_prueba=0,_act7=0,_inact14=0,_nuevas7=0,_venc3=0,_sinUso=0,_proPaid=0,_basicPaid=0,_mrr=0;
     RCOACHES.forEach(function(u){
       var cgf=u.configuracion||{};
       var vit=cgf.es_pro_vitalicio===true||u.rol==="admin";
@@ -9697,9 +9725,10 @@ function viewAdmin(){
       if(pl==="pro")_pro++; else _basic++;
       var es=(cgf.estado_sub||"").toString();
       if(es==="prueba")_prueba++;
-      // MRR real: SOLO coaches que pagaron (estado activa). Los de prueba no
-      // cuentan — todavía no pagaron, así que no son ingreso.
-      if(es==="activa" && u.rol!=="admin"){ if(pl==="pro")_proPaid++; else _basicPaid++; }
+      // MRR real: SOLO los que PAGAN (_coachMRR). No alcanza estado_sub='activa':
+      // los vitalicios y los asientos de red también lo tienen y no son ingreso.
+      var _m=_coachMRR(u);
+      if(_m>0){ _mrr+=_m; if(pl==="pro")_proPaid++; else _basicPaid++; }
       var la=cgf.last_login||u.last_login;
       if(la){ var dd=(_now-new Date(la))/_D; if(dd<=7)_act7++; if(dd>14)_inact14++; } else { _inact14++; }
       if(u.created_at && (_now-new Date(u.created_at))/_D<=7) _nuevas7++;
@@ -9725,7 +9754,7 @@ function viewAdmin(){
       return (!isNaN(t) && t>=_mIni) ? s+(Number(x.pago_monto)||0) : s;
     },0);
     A={ total:RCOACHES.length, pro:_pro, basic:_basic, prueba:_prueba, act7:_act7, inact14:_inact14,
-        nuevas7:_nuevas7, venc3:_venc3, sinUso:_sinUso, mrr:_proPaid*89+_basicPaid*58, proPaid:_proPaid, basicPaid:_basicPaid,
+        nuevas7:_nuevas7, venc3:_venc3, sinUso:_sinUso, mrr:_mrr, proPaid:_proPaid, basicPaid:_basicPaid,
         candsTot:(_R.cands||[]).length, cands30:_c30, cvx:_cx.length, cvxPaid:_cxP, cvxRev:_cxR, cvxRevMes:_cxRMes,
         leadsTot:_lds.length, leadsTrial:_lt, leadsPago:_lp };
   }
@@ -10404,13 +10433,13 @@ function viewAdmin(){
     body = "<div class='cp-card'><div class='cp-card-hd'><h3 class='cp-card-title'>Ingresos de la plataforma<span class='dot'>.</span></h3>"+
         "<span class='cp-eyebrow'>"+_mesActual()+"</span></div>"+
         "<div class='cp-card-pad' style='padding-top:8px;padding-bottom:8px'>"+
-          row("Suscripciones de coaches (pagas)", (A?eur(A.mrr):"€1.091")+"<span style='font-size:12px;color:var(--pw-text-soft);font-weight:400'> /mes</span>",{muted:true})+
+          row("Suscripciones de coaches (pagas)", (A?usd(A.mrr):"€1.091")+"<span style='font-size:12px;color:var(--pw-text-soft);font-weight:400'> /mes</span>",{muted:true})+
           row("Comisión Pathway", A?"—":"€3.720",{muted:true})+
           row("CV Express (este mes)", A?eur(A.cvxRevMes):"€1.073",{muted:true})+
-          row("Total del mes", A?eur((A.mrr||0)+(A.cvxRevMes||0)):"€5.884",{big:true,strongC:"var(--pw-bosque)",top:true})+
+          row("Total del mes", A?totalReal(A.mrr||0,A.cvxRevMes||0):"€5.884",{big:true,strongC:"var(--pw-bosque)",top:true})+
           row("CV Express (acumulado)", A?eur(A.cvxRev):"€1.073",{muted:true,top:true})+
         "</div>"+
-        "<p class='cp-reassurance' style='margin:0 22px 20px;border-radius:12px'>"+(A?"Solo coaches que <strong>pagaron</strong> ("+A.proPaid+" Pro · "+A.basicPaid+" Basic). Los de prueba no cuentan. Comisión/payouts en Stripe.":"Los <strong>€14.880</strong> de payouts (80% de lo referido) no son ingreso — se transfieren tras las 24 h.")+"</p></div>"+
+        "<p class='cp-reassurance' style='margin:0 22px 20px;border-radius:12px'>"+(A?"Solo coaches que <strong>pagaron</strong> ("+A.proPaid+" Pro · "+A.basicPaid+" Basic, USD $59 y $29 al mes). No cuentan los de prueba, los Pro vitalicios ni los coaches dentro de una red (paga el dueño). Comisión/payouts en Stripe.":"Los <strong>€14.880</strong> de payouts (80% de lo referido) no son ingreso — se transfieren tras las 24 h.")+"</p></div>"+
       "<div class='cp-card'><div class='cp-card-hd'><h3 class='cp-card-title'>Payouts a coaches — pendientes<span class='dot'>.</span></h3>"+
         "<span class='cp-eyebrow' style='color:var(--pw-sendero)'>● vía Stripe</span></div>"+
         (REAL
@@ -10430,7 +10459,7 @@ function viewAdmin(){
       "</div>";
   } else {
     body = "<div style='display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:14px'>"+
-        kpi("MRR (pagas)", A?eur(A.mrr):"€1.091", A?((A.proPaid+A.basicPaid)+" pagando · "+A.prueba+" en prueba"):"14 coaches · 9 Pro + 5 Basic")+
+        kpi("MRR (pagas)", A?usd(A.mrr):"€1.091", A?((A.proPaid+A.basicPaid)+" pagando · "+A.prueba+" en prueba"):"14 coaches · 9 Pro + 5 Basic")+
         kpi("CV Express", A?(""+(A.cvx||0)):"€1.073", A?((A.cvxPaid||0)+" pagas · "+eur(A.cvxRev)):"37 pagas + 11 de prueba")+
         kpi("Candidatos (30 d)", A?(""+A.cands30):"86", A?(A.candsTot+" en total"):"de formularios + directorio")+
       "</div>"+
@@ -10443,10 +10472,10 @@ function viewAdmin(){
       "<div class='cp-card'><div class='cp-card-hd'><h3 class='cp-card-title'>Ingresos de la plataforma<span class='dot'>.</span></h3>"+
         "<span class='cp-eyebrow'>"+_mesActual()+"</span></div>"+
         "<div class='cp-card-pad' style='padding-top:8px;padding-bottom:8px'>"+
-          row("Suscripciones de coaches (pagas)", (A?eur(A.mrr):"€1.091")+"<span style='font-size:12px;color:var(--pw-text-soft);font-weight:400'> /mes</span>",{muted:true})+
+          row("Suscripciones de coaches (pagas)", (A?usd(A.mrr):"€1.091")+"<span style='font-size:12px;color:var(--pw-text-soft);font-weight:400'> /mes</span>",{muted:true})+
           row("Comisión Pathway", A?"—":"€3.720",{muted:true})+
           row("CV Express (este mes)", A?eur(A.cvxRevMes):"€1.073",{muted:true})+
-          row("Total del mes", A?eur((A.mrr||0)+(A.cvxRevMes||0)):"€5.884",{big:true,strongC:"var(--pw-bosque)",top:true})+
+          row("Total del mes", A?totalReal(A.mrr||0,A.cvxRevMes||0):"€5.884",{big:true,strongC:"var(--pw-bosque)",top:true})+
           row("CV Express (acumulado)", A?eur(A.cvxRev):"€1.073",{muted:true,top:true})+
         "</div></div>";
   }

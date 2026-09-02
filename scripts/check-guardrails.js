@@ -2333,16 +2333,42 @@ const RULES = [
          "de que reservar.html genere un token por cita y lo guarde, y de que exista " +
          "gestionar-cita.html que busca la cita por ese token y la cancela.",
     check() {
+      // El alta ya NO es un POST directo a `citas` desde el navegador: pasa por
+      // la RPC `crear_cita` (SECURITY DEFINER), que emite el token del lado
+      // servidor. La regla vieja buscaba `token:` pegado a `coach_id:_cid` en el
+      // POST — esa forma desaparecio con la RPC y la regla fallaba sin que
+      // hubiera bug. Lo que hay que blindar es la CADENA del token, no su forma:
+      // la RPC lo emite -> reservar.html lo lee -> arma el link de gestionar.
       const r = read("reservar.html");
       if (r) {
-        const i = r.indexOf("coach_id:_cid");
-        const blk = i >= 0 ? r.slice(i, i + 200) : "";
-        if (!/token:/.test(blk)) return "reservar.html: el POST a citas ya no guarda el token (sin token no hay link de cancelar/reprogramar).";
+        if (!/rpc\/crear_cita/.test(r))
+          return "reservar.html: ya no crea la cita por la RPC crear_cita (¿volvio el POST directo, que no emite token?).";
+        if (!/row\.token/.test(r) || !/gestionar-cita\.html\?t='\s*\+/.test(r))
+          return "reservar.html: no lee el token que devuelve crear_cita para armar el link de cancelar/reprogramar.";
+        const fn = read("supabase/migrations/citas_rpc_crear_cita.sql");
+        if (!fn) return "falta supabase/migrations/citas_rpc_crear_cita.sql (la RPC que emite el token no esta versionada).";
+        if (!/v_token\s*:=\s*encode\(/.test(fn) || !/RETURN QUERY SELECT v_id, v_token/.test(fn))
+          return "crear_cita: la RPC ya no emite/devuelve el token (sin token no hay link de cancelar/reprogramar).";
+        if (!/SECURITY DEFINER/.test(fn))
+          return "crear_cita: perdio SECURITY DEFINER (el visitante anon no podria insertar sin abrir la tabla citas).";
       }
       const g = read("gestionar-cita.html");
       if (!g) return "falta gestionar-cita.html (cancelar/reprogramar por el cliente).";
-      if (!/token=eq\./.test(g)) return "gestionar-cita.html ya no busca la cita por token.";
-      if (!/estado:\s*'cancelada'/.test(g)) return "gestionar-cita.html ya no cancela la cita.";
+      // Mismo cambio que en el alta: la lectura/cancelacion por token dejo de ir
+      // por REST (`citas?token=eq.`) y va por RPC SECURITY DEFINER. No es un
+      // capricho: por REST habia que dejar `citas` abierta a anon y cualquiera
+      // listaba las citas de TODOS los coaches. La regla vieja pedia la forma
+      // REST y fallaba justamente por haber cerrado esa fuga.
+      if (!/rpc\/get_cita_by_token/.test(g)) return "gestionar-cita.html ya no busca la cita por token (rpc/get_cita_by_token).";
+      if (!/rpc\/cancelar_cita_by_token/.test(g)) return "gestionar-cita.html ya no cancela la cita (rpc/cancelar_cita_by_token).";
+      const rpc = read("supabase/migrations/citas_rpc_gestionar_por_token.sql");
+      if (!rpc) return "falta supabase/migrations/citas_rpc_gestionar_por_token.sql (las RPC del link del cliente no estan versionadas).";
+      if (!/WHERE c\.token = p_token/.test(rpc)) return "get_cita_by_token: ya no busca la cita por token.";
+      if (!/SET estado = 'cancelada'/.test(rpc)) return "cancelar_cita_by_token: ya no cancela la cita.";
+      if ((rpc.match(/SECURITY DEFINER/g) || []).length < 2)
+        return "las RPC del link del cliente perdieron SECURITY DEFINER (habria que reabrir `citas` a anon y se filtran las citas de todos los coaches).";
+      if (!/length\(p_token\) < 16/.test(rpc))
+        return "las RPC del link del cliente ya no exigen un token largo (se podrian sondear citas ajenas).";
       return null;
     },
   },
@@ -2598,8 +2624,13 @@ const RULES = [
       if (!p) return null;
       if (!/act==="coach-access"/.test(p)) return null; // otra regla cubre la ausencia del handler
       const start = p.indexOf('act==="coach-access"');
-      const endMarker = p.indexOf('act==="empleado-crear"', start);
-      const seg = endMarker > start ? p.slice(start, endMarker) : p.slice(start, start + 6000);
+      // La ventana termina en el SIGUIENTE handler, no en `empleado-crear`:
+      // entre medio se fueron sumando otros (mc-add-collab, etc.) y el corte
+      // viejo abarcaba ~19.000 caracteres de codigo ajeno. Asi la regla saltaba
+      // por un `rol:"coach"` que era el DEFECTO DE UN FORMULARIO de la red
+      // (state.mcAddCollabForm), no un alta directa de usuario: falso positivo.
+      const next = p.slice(start + 20).search(/\n\s*if\s*\(\s*act\s*===/);
+      const seg = next >= 0 ? p.slice(start, start + 20 + next) : p.slice(start, start + 6000);
       // El handler debe llamar a la edge function crear-coach...
       if (!/functions\/v1\/crear-coach/.test(seg))
         return "panel-v2.html: coach-access ya no llama a la edge function crear-coach (¿volvió al POST directo que RLS bloquea?).";
@@ -2987,10 +3018,25 @@ const RULES = [
       // Fallback a modo real vacío con aviso (no maqueta, no blanco).
       if (!/catch\(function\(\)\{[\s\S]{0,200}_apply\(null,\[\],\[\],null,\[\]\)/.test(mc))
         return "multicoach.html: mcLoadReal no queda en modo real vacío ante error (vuelve a caer a demo o blanco).";
-      // El login debe rutear al owner a su panel de red.
+      // El login debe rutear al owner a su panel de red. OJO: MultiCoach se
+      // mudo a su propio dominio (pathwayplatforms.com) con handoff seguro
+      // (commit b8c3781: pathway-handoff emite un codigo de un solo uso, sin
+      // tokens en la URL). La regla vieja exigia `multicoach.html` y fallaba por
+      // una mudanza deliberada. Vale cualquiera de las dos salidas, pero UNA
+      // tiene que haber: el owner no puede quedar en el panel de coach.
       const lg = read("login.html");
-      if (lg && !/rol===['"]owner['"][\s\S]{0,120}multicoach\.html/.test(lg))
-        return "login.html: el owner ya no se rutea a multicoach.html.";
+      if (lg) {
+        const viejo = /rol\s*===\s*['"]owner['"][\s\S]{0,200}multicoach\.html/.test(lg);
+        const nuevo = /rol\s*===\s*['"]owner['"][\s\S]{0,900}pathwayplatforms\.com/.test(lg);
+        if (!viejo && !nuevo)
+          return "login.html: el owner ya no se rutea a su panel de red (ni multicoach.html ni el handoff a pathwayplatforms.com).";
+        if (nuevo) {
+          if (!/functions\/v1\/pathway-handoff/.test(lg))
+            return "login.html: el owner va a pathwayplatforms.com SIN pasar por pathway-handoff (la sesion no viaja: caeria en un login vacio).";
+          const hf = read("supabase/functions/pathway-handoff/index.ts");
+          if (!hf) return "falta supabase/functions/pathway-handoff/index.ts (sin ella el owner no puede entrar a su red).";
+        }
+      }
       return null;
     },
   },
@@ -3753,7 +3799,17 @@ const RULES = [
     check() {
       const t = read("supabase/functions/recordatorios-citas/index.ts");
       if (t) {
-        if (/Google Meet/.test(t)) return "recordatorios-citas: el recordatorio vuelve a decir 'Google Meet' (el video es la Sala de Pathway).";
+        // El bug era AFIRMAR 'Google Meet' en TODA cita. Prohibir la cadena a
+        // secas ya no sirve: hoy "Google Meet" es una etiqueta legitima del mapa
+        // ETIQUETA, y solo se usa si la reserva guardo video_proveedor='meet'.
+        // Lo que se blinda es la causa raiz: el recordatorio LEE la decision de
+        // la fila en vez de tener su propia cascada (dos cascadas sobre los
+        // mismos datos era como el cliente veia un proveedor en el correo de
+        // confirmacion y otro en el recordatorio).
+        if (!/video_proveedor/.test(t))
+          return "recordatorios-citas: ya no lee video_proveedor de la fila — vuelve a decidir el proveedor por su cuenta y puede contradecir al correo de confirmación.";
+        if (/(Online|Te esperamos).{0,40}Google Meet/i.test(t) || /videoLabel\s*=\s*["'`]Google Meet/.test(t))
+          return "recordatorios-citas: el recordatorio vuelve a AFIRMAR 'Google Meet' sin mirar el proveedor real de la cita.";
         if (!/sala\.html\?room=/.test(t) || !/Entrar a la videollamada/.test(t)) return "recordatorios-citas: el recordatorio ya no lleva el link/botón de la Sala.";
       }
       return null;
@@ -4460,7 +4516,14 @@ const RULES = [
       const rem = read("supabase/functions/recordatorios-citas/index.ts");
       if (rem) {
         if (!/esPresencial/.test(rem)) return "recordatorios-citas: el recordatorio ya no distingue presencial.";
-        if (!/const botonModo = esPresencial\s*\?\s*``/.test(rem)) return "recordatorios-citas: el recordatorio presencial ya no oculta el botón de videollamada.";
+        // La condicion se endurecio a `esPresencial || !videoLink` (tampoco se
+        // pinta el boton si no hay enlace). La regla vieja exigia la forma exacta
+        // `esPresencial ? \`\`` y fallaba por una mejora. Se pide el invariante:
+        // el boton arranca en esPresencial y ese caso da cadena vacia.
+        if (!/const botonModo = esPresencial(\s*\|\|[^?]*)?\s*\?\s*``/.test(rem))
+          return "recordatorios-citas: el recordatorio presencial ya no oculta el botón de videollamada.";
+        if (!/📍 <strong>\$\{EN \? "In person" : "Presencial"\}/.test(rem))
+          return "recordatorios-citas: el recordatorio presencial ya no muestra el lugar (📍 Presencial).";
       }
       return null;
     },
@@ -5585,6 +5648,39 @@ const RULES = [
       return null;
     },
   },
+  {
+    name: "admin: el MRR cuenta SOLO a los coaches que pagan de verdad",
+    bug: "La tarjeta 'Ingresos de la plataforma' mostraba EUR 294 (2 Pro + 2 Basic) " +
+         "cuando solo UN coach habia pagado. Dos errores sumados: (1) contaba a " +
+         "todo el que tuviera estado_sub='activa', y eso incluye a los Pro " +
+         "vitalicios (demo.coach, bot-coach) y a los coaches DENTRO de una red " +
+         "— `agregar-coach-red` los crea con estado_sub:'activa' por diseno, pero " +
+         "paga el dueno de la red, no ellos; (2) usaba precios inventados 89/58 " +
+         "en EUR cuando los planes reales son USD $59 (Pro) y $29 (Basic). Fix: " +
+         "helper _coachMRR() como unica fuente + PLAN_MRR_USD con el precio real.",
+    check() {
+      const p = read("panel-v2.html");
+      if (!p) return null;
+      if (/mrr\s*:\s*_proPaid\s*\*\s*\d+/.test(p))
+        return "panel-v2.html: el MRR volvio a multiplicar por un precio hardcodeado en vez de usar _coachMRR().";
+      const m = p.match(/function _coachMRR\(u\)\{[\s\S]{0,700}?\n\}/);
+      if (!m) return "panel-v2.html: desaparecio _coachMRR() — el MRR vuelve a contar vitalicios y coaches de red como ingreso.";
+      const body = m[0];
+      for (const [re, msg] of [
+        [/es_pro_vitalicio/, "no excluye a los Pro vitalicios (regalados) del MRR"],
+        [/es_coach_red/, "no excluye a los coaches dentro de una red (paga el dueno, no ellos)"],
+        [/plan\s*===?\s*["']red["']/, "no excluye el plan 'red' del MRR"],
+        [/rol\s*===?\s*["']owner["']/, "no excluye las cuentas internas (owner/admin) del MRR"],
+      ]) if (!re.test(body)) return "panel-v2.html: _coachMRR() " + msg + ".";
+      const pm = p.match(/var PLAN_MRR_USD\s*=\s*\{[^;]*\};/);
+      if (!pm) return "panel-v2.html: desaparecio PLAN_MRR_USD — el precio del plan vuelve a estar suelto.";
+      if (!/pro\s*:\s*\{\s*mensual\s*:\s*59\b/.test(pm[0]) || !/basic\s*:\s*\{\s*mensual\s*:\s*29\b/.test(pm[0]))
+        return "panel-v2.html: PLAN_MRR_USD dejo de coincidir con el precio real de PLAN_PRICE (Pro $59 / Basic $29 al mes).";
+      if (!/function _paidCoachEmails\(\)\{[\s\S]{0,400}?_coachMRR\(u\)/.test(p))
+        return "panel-v2.html: _paidCoachEmails() dejo de usar _coachMRR() — las comisiones de empleados vuelven a contar asientos de red como venta.";
+      return null;
+    },
+  },
 
   {
     name: "usuarios_publicos: la vista publica es SOLO LECTURA para anon/authenticated",
@@ -5686,6 +5782,50 @@ const RULES = [
                      "Derivar un Date: `var d = new Date(" + n + ")`.";
           }
         }
+      }
+      return null;
+    },
+  },
+  {
+    name: "i18n: la tabla TXT es IDENTICA entre la pagina ES y su gemela -en",
+    bug: "El commit 6a953e0 ('Implement i18n for registro.html and synchronize " +
+         "registro-en.html') dejo registro-en.html ROTO: al 'sincronizar' piso el " +
+         "bloque 'es' de TXT con texto en INGLES, y uno de esos textos traia un " +
+         "apostrofo sin escapar dentro de un string de comilla simple: " +
+         "'The Supabase SDK hasn't loaded yet.' -> SyntaxError. Un error de " +
+         "sintaxis tumba el <script> ENTERO, o sea que la pagina de registro en " +
+         "ingles se quedaba sin Google Sign-in ni alta. Estuvo asi en main. " +
+         "(El mensaje de ese commit decia 'Verify both files pass syntax' — no " +
+         "era cierto.) Las dos paginas llevan las DOS traducciones porque comparten " +
+         "el selector de idioma, asi que su TXT tiene que ser identico: si difieren, " +
+         "o alguien tradujo el idioma equivocado o rompio uno de los dos.",
+    check() {
+      const pares = [["registro.html", "registro-en.html"], ["login.html", "login-en.html"]];
+      // `var TXT = {` en registro.html y `var TXT={` en login.html: se localiza
+      // por regex y se cierra contando llaves (el objeto lleva un nivel de
+      // anidado, 'es'/'en', asi que buscar el primer "};" no sirve).
+      const bloque = (txt) => {
+        const m = /var\s+TXT\s*=\s*\{/.exec(txt);
+        if (!m) return null;
+        let d = 0;
+        for (let k = m.index + m[0].length - 1; k < txt.length; k++) {
+          if (txt[k] === "{") d++;
+          else if (txt[k] === "}" && --d === 0) return txt.slice(m.index, k + 1);
+        }
+        return null;
+      };
+      for (const [es, en] of pares) {
+        const a = read(es), b = read(en);
+        if (!a || !b) continue;
+        const ba = bloque(a), bb = bloque(b);
+        if (!ba && !bb) continue;                 // ese par no usa tabla TXT
+        if (!ba || !bb) return (ba ? en : es) + ": perdio la tabla TXT que SI tiene su gemela (se quedaria sin traducciones).";
+        if (ba !== bb)
+          return en + ": su tabla TXT ya no coincide con la de " + es + " — al 'sincronizar' se piso una traduccion (asi entro el apostrofo que rompio la pagina).";
+        // El apostrofo suelto es lo que rompio el <script>. check-syntax lo
+        // atrapa, pero aqui se nombra la causa para que el arreglo sea obvio.
+        if (/'[^'\n]*\b(hasn|isn|doesn|don|won|can|couldn|it|you|we|they|that|let)'[a-z]/.test(bb))
+          return en + ": hay un apostrofo ingles SIN ESCAPAR dentro de un string de comilla simple en TXT (rompe el <script> entero).";
       }
       return null;
     },
