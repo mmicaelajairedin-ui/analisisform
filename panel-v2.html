@@ -11770,7 +11770,7 @@ document.addEventListener("click", function(ev){
     // Guardar nombre + marca + foto
     var nom=_val("cfp-nombre").trim(), prac=_val("cfp-practica").trim();
     if(!nom){ toast("Escribe tu nombre."); return; }
-    var sl=(nom).toLowerCase().replace(/\s+/g,"-").replace(/[^a-z0-9-]/g,"").substring(0,60);
+    var sl=_slugify(nom);
     if(!sl){ sl="coach-"+(RME&&RME.id||"").substring(0,8); }
     COACH.slug=sl;
     var _cfgP={nombre_practica:prac, slug:sl};
@@ -11791,7 +11791,7 @@ document.addEventListener("click", function(ev){
   if(act==="cfp-save-datos"){
     var nom=_val("cfp-nombre").trim(), prac=_val("cfp-practica").trim(), tit=_val("cfp-titulo").trim();
     if(!nom){ toast("Escribe tu nombre."); return; }
-    var sl=(nom).toLowerCase().replace(/\s+/g,"-").replace(/[^a-z0-9-]/g,"").substring(0,60);
+    var sl=_slugify(nom);
     if(!sl){ sl="coach-"+(RME&&RME.id||"").substring(0,8); }
     COACH.slug=sl;
     var _cfgP={nombre_practica:prac, slug:sl, titulo_profesional:tit};
@@ -11852,7 +11852,7 @@ document.addEventListener("click", function(ev){
   if(act==="cfg-save-profile"){
     var nom=_val("cfp-nombre").trim(), titP=_val("cfp-titulo").trim(), bioP=_val("cfp-bio").trim();
     // Auto-generar slug basado en nombre (nombre-apellido, sin edición manual)
-    var sl=(nom).toLowerCase().replace(/\s+/g,"-").replace(/[^a-z0-9-]/g,"").substring(0,60);
+    var sl=_slugify(nom);
     if(!sl){ sl="coach-"+(RME&&RME.id||"").substring(0,8); }
     var pubA = !!state.pubActive;
     if(pubA && !sl){ alert("Para activar tu perfil público necesitas completar tu nombre."); var si=document.getElementById("cfp-nombre"); if(si)si.focus(); return; }
@@ -16250,12 +16250,41 @@ function _coachConsentGate(){
     _selfPatchUsuarios({configuracion:merged}).then(done).catch(done);
   });
 }
+// Slug del perfil publico a partir del nombre. UNICA fuente de verdad: todos
+// los guardados del perfil pasan por aca.
+//
+// SEPTIEMBRE 2026 — arregla dos cosas que se veian en produccion:
+//  a) Un coach pego la URL ENTERA de su perfil en el campo Nombre. El viejo
+//     regex solo borraba lo que no fuera [a-z0-9-], asi que
+//     "pathwaycareercoach.com/coach/pasionfitness504" quedo como
+//     "pathwaycareercoachcomcoachpasionfitness504" y esa fue su URL publica.
+//     Ahora, si el texto trae "/" o "://", nos quedamos con el ULTIMO tramo.
+//  b) Los acentos se COMIAN la letra ("Anibal" -> "anbal", "Diaz" -> "daz")
+//     porque el regex borraba el caracter acentuado en vez de convertirlo.
+//     Ahora se normaliza (NFD) y se le quitan los diacriticos.
+function _slugify(txt){
+  var t=(""+(txt||"")).trim();
+  if(!t) return "";
+  // Pego una URL -> quedarse con el ultimo tramo con contenido.
+  if(t.indexOf("://")>=0 || t.indexOf("/")>=0){
+    var parts=t.replace(/^[a-z]+:\/\//i,"").split("/").filter(function(x){ return x.trim(); });
+    if(parts.length>1) t=parts[parts.length-1];
+  }
+  t=t.split("?")[0].split("#")[0];
+  try{ t=t.normalize("NFD").replace(/[\u0300-\u036f]/g,""); }catch(e){}
+  return t.toLowerCase()
+    .replace(/[\s._/]+/g,"-")
+    .replace(/[^a-z0-9-]/g,"")
+    .replace(/-{2,}/g,"-")
+    .replace(/^-+|-+$/g,"")
+    .substring(0,60)
+    .replace(/-+$/g,"");
+}
 function _updateProfileSlug(){
   var nomInput=document.getElementById("cfp-nombre");
   var slugInput=document.getElementById("cfp-slug");
   if(!nomInput || !slugInput) return;
-  var nom=(nomInput.value||"").toLowerCase().replace(/\s+/g,"-").replace(/[^a-z0-9-]/g,"").substring(0,60).replace(/^-+|-+$/g,"");
-  slugInput.value=nom || "coach";
+  slugInput.value=_slugify(nomInput.value) || "coach";
 }
 function loadReal(){
   var ME; try{ ME=JSON.parse(localStorage.getItem("mj_user")||"null"); }catch(e){ ME=null; }

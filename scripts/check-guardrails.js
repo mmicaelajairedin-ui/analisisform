@@ -5442,6 +5442,30 @@ const RULES = [
     },
   },
   {
+    name: "slug del coach: una sola fuente y a prueba de URL pegada",
+    bug: "El slug del perfil publico salia de 4 sitios distintos con el mismo " +
+         "regex a mano. Solo borraba lo que no fuera [a-z0-9-], asi que un coach " +
+         "que pego la URL ENTERA en el campo Nombre quedo con la URL publica " +
+         "/coach/pathwaycareercoachcomcoachpasionfitness504; y los acentos se " +
+         "COMIAN la letra ('Anibal' -> 'anbal'). Fix: helper unico _slugify que " +
+         "se queda con el ultimo tramo si le pegan una URL y normaliza acentos.",
+    check() {
+      const p = read("panel-v2.html");
+      if (!p) return null;
+      if (!/function _slugify\(/.test(p))
+        return "panel-v2.html: desaparecio _slugify — el slug vuelve a derivarse a mano en cada sitio.";
+      if (/toLowerCase\(\)\.replace\(\/\\s\+\/g,"-"\)\.replace\(\/\[\^a-z0-9-\]\/g,""\)/.test(p))
+        return "panel-v2.html: volvio el regex de slug a mano — se salta _slugify (URL pegada y acentos comidos).";
+      const i = p.indexOf("function _slugify(");
+      const fn = p.slice(i, i + 1200);
+      if (!/normalize\("NFD"\)/.test(fn))
+        return "panel-v2.html: _slugify dejo de normalizar acentos — 'Anibal' volveria a quedar como 'anbal'.";
+      if (!/:\/\//.test(fn))
+        return "panel-v2.html: _slugify dejo de detectar URLs pegadas — vuelve el slug basura.";
+      return null;
+    },
+  },
+  {
     name: "reserva: sin WhatsApp propio, el lead NO va al telefono de Pathway",
     bug: "En reservar.html, si el coach no tenia horarios cargados salia un boton " +
          "'Escribir por WhatsApp'. El numero era `WA || '34623816019'` (el de " +
