@@ -231,7 +231,9 @@ Devolverás JSON ESTRICTO con 3 campos:
 REGLAS CRÍTICAS:
 
 IDIOMA:
-- Detectá el idioma predominante del cv_texto + objetivo y generá TODO el contenido (cv_optimizado, carta, textos de linkedin_analisis) en ESE idioma. No mezcles idiomas.
+- Si el mensaje del usuario trae una línea "IDIOMA DE SALIDA: <idioma>", ESA instrucción MANDA y no se discute: generá TODO el contenido (cv_optimizado, carta, textos de linkedin_analisis) en ese idioma, aunque el cv_texto, el objetivo o el linkedin_texto estén en otro. Es el idioma que el candidato eligió a mano para sus documentos.
+- Solo si NO viene esa línea, detectá el idioma predominante del cv_texto + objetivo y generá TODO el contenido en ESE idioma.
+- En cualquiera de los dos casos: no mezcles idiomas. Nombres propios, empresas, títulos de estudios oficiales y nombres de herramientas se dejan como están.
 - Si el linkedin_texto está en OTRO idioma que el CV (ej: CV en español, LinkedIn en inglés), igual analizalo correctamente y agregá en areas_mejora una nota concreta: que unifique el idioma del LinkedIn con el del CV/objetivo o que tenga una versión por idioma según a qué mercado apunta. No bajes la calidad del análisis por el desajuste de idioma.
 
 CV OPTIMIZADO (estructura JSON):
@@ -298,6 +300,48 @@ RESPONDÉ SOLO CON JSON VÁLIDO:
 }`;
 
 // ── HELPERS ──────────────────────────────────────────────
+
+const SYSTEM_TRADUCIR_EXPRESS =
+  `Sos un traductor profesional especializado en documentos de carrera (CV, cartas de presentación y perfiles de LinkedIn).
+
+Recibís un JSON con documentos ya redactados y los devolvés TRADUCIDOS al idioma pedido.
+
+REGLAS CRÍTICAS:
+
+1. ESTRUCTURA INTACTA. Devolvés EXACTAMENTE las mismas claves, en la misma forma
+   (objetos donde había objetos, arrays con la misma cantidad de elementos,
+   strings donde había strings). No agregues, no quites, no reordenes claves.
+   Las CLAVES del JSON no se traducen nunca — solo los VALORES de texto.
+
+2. NO TRADUCIR:
+   - Nombres de personas y de empresas.
+   - Nombres de herramientas y tecnologías (HubSpot, Salesforce, Python, AWS...).
+   - Siglas de negocio establecidas (KPI, ROI, CAC, B2B, SaaS, EBITDA, MRR...).
+   - URLs, emails, teléfonos.
+   - Títulos oficiales de estudios: se dejan en su idioma original y, si ayuda,
+     se agrega la equivalencia entre paréntesis. Un "Grado en Marketing" no se
+     convierte en un "Bachelor's" inventado.
+   - Fechas y números: se mantienen tal cual (solo se traduce la palabra suelta,
+     ej. "2020 — Actual" → "2020 — Present").
+
+3. NO INVENTAR. No agregues logros, cifras, responsabilidades ni adjetivos que no
+   estén en el original. No "mejores" el contenido: es una traducción, no una
+   reescritura. Si algo está corto en el original, queda corto.
+
+4. REGISTRO PROFESIONAL NATIVO. No traduzcas literal. Un bullet de CV en inglés
+   arranca con verbo de acción en pasado simple ("Led", "Built", "Reduced"), sin
+   sujeto y sin punto final si el original no lo tenía. En español, la primera
+   persona del pretérito ("Lideré", "Construí", "Reduje"). El resultado tiene que
+   leerse como escrito por un nativo, no traducido.
+
+5. FORMATO LIMPIO. Sin espacios dobles, sin espacios antes de comas o puntos, sin
+   saltos de línea de más, sin comillas tipográficas mezcladas. Respetá los saltos
+   de párrafo del original (en la carta, los "\n\n" entre párrafos se mantienen).
+
+6. Las ciudades y países se traducen si tienen nombre propio en el idioma destino
+   ("Madrid, España" → "Madrid, Spain").
+
+Devolvés SOLO el JSON traducido, sin texto alrededor y sin bloques de código.`;
 
 async function callClaude(
   systemPrompt: string,
@@ -589,6 +633,78 @@ Deno.serve(async (req: Request) => {
 
       return new Response(
         JSON.stringify(result),
+        { headers: { ...CORS_HEADERS, "Content-Type": "application/json" } },
+      );
+    }
+
+    // ── TRADUCIR EXPRESS — el mismo pack, en el otro idioma ──
+    // El comprador del Pack Express pide su CV / carta / LinkedIn en el otro
+    // idioma para tener las dos versiones. Traducimos lo YA generado en vez de
+    // re-generar: sale más barato, es más rápido y — sobre todo — las dos
+    // versiones dicen lo mismo (si re-generáramos, la IA elegiría otros logros
+    // y el cliente terminaría con dos CVs distintos).
+    // Se manda solo lo que haga falta: los 3 campos son opcionales.
+    if (accion === "traducir_express") {
+      const b = body as unknown as {
+        idioma?: string;
+        cv_optimizado?: unknown;
+        carta?: string;
+        linkedin_analisis?: unknown;
+      };
+      const toEN = String(b.idioma || "").toLowerCase().startsWith("en");
+      const destino = toEN ? "INGLÉS" : "ESPAÑOL";
+
+      const payload: Record<string, unknown> = {};
+      if (b.cv_optimizado) payload.cv_optimizado = b.cv_optimizado;
+      if (typeof b.carta === "string" && b.carta.trim()) payload.carta = b.carta;
+      if (b.linkedin_analisis) payload.linkedin_analisis = b.linkedin_analisis;
+
+      if (!Object.keys(payload).length) {
+        return new Response(
+          JSON.stringify({
+            error: "Nada que traducir: mandá al menos cv_optimizado, carta o linkedin_analisis",
+          }),
+          { status: 400, headers: { ...CORS_HEADERS, "Content-Type": "application/json" } },
+        );
+      }
+
+      const prompt = `IDIOMA DESTINO: ${destino}\n\n` +
+        `Traducí los valores de este JSON a ${destino.toLowerCase()}, respetando las reglas.\n\n` +
+        JSON.stringify(payload);
+
+      // 16K igual que la generación: el pack completo traducido ocupa lo mismo
+      // que el original, y truncarlo devolvería JSON roto.
+      const response = await callClaude(SYSTEM_TRADUCIR_EXPRESS, prompt, apiKey, 16000);
+      const parsed = extractJson(response);
+
+      console.log("[traducir_express] destino:", destino, "· claves pedidas:", Object.keys(payload));
+      console.log("[traducir_express] response length:", response.length);
+
+      if (!parsed) {
+        return new Response(
+          JSON.stringify({
+            error: "Output de Claude inválido o truncado",
+            response_length: response.length,
+            raw_start: response.slice(0, 800),
+            raw_end: response.slice(-400),
+          }),
+          { status: 502, headers: { ...CORS_HEADERS, "Content-Type": "application/json" } },
+        );
+      }
+
+      // Devolvemos SOLO lo que se pidió y de verdad volvió. Si un campo se
+      // perdió, el frontend se queda con el original en ese idioma en vez de
+      // pisarlo con null.
+      const out: Record<string, unknown> = { ok: true, idioma: toEN ? "en" : "es" };
+      const faltan: string[] = [];
+      for (const k of Object.keys(payload)) {
+        if (parsed[k] === undefined || parsed[k] === null) faltan.push(k);
+        else out[k] = parsed[k];
+      }
+      if (faltan.length) out.warning = "No se pudo traducir: " + faltan.join(", ");
+
+      return new Response(
+        JSON.stringify(out),
         { headers: { ...CORS_HEADERS, "Content-Type": "application/json" } },
       );
     }
