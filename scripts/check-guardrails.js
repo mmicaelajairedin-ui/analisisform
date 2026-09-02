@@ -5730,6 +5730,50 @@ const RULES = [
       return null;
     },
   },
+  {
+    name: "i18n: la tabla TXT es IDENTICA entre la pagina ES y su gemela -en",
+    bug: "El commit 6a953e0 ('Implement i18n for registro.html and synchronize " +
+         "registro-en.html') dejo registro-en.html ROTO: al 'sincronizar' piso el " +
+         "bloque 'es' de TXT con texto en INGLES, y uno de esos textos traia un " +
+         "apostrofo sin escapar dentro de un string de comilla simple: " +
+         "'The Supabase SDK hasn't loaded yet.' -> SyntaxError. Un error de " +
+         "sintaxis tumba el <script> ENTERO, o sea que la pagina de registro en " +
+         "ingles se quedaba sin Google Sign-in ni alta. Estuvo asi en main. " +
+         "(El mensaje de ese commit decia 'Verify both files pass syntax' — no " +
+         "era cierto.) Las dos paginas llevan las DOS traducciones porque comparten " +
+         "el selector de idioma, asi que su TXT tiene que ser identico: si difieren, " +
+         "o alguien tradujo el idioma equivocado o rompio uno de los dos.",
+    check() {
+      const pares = [["registro.html", "registro-en.html"], ["login.html", "login-en.html"]];
+      // `var TXT = {` en registro.html y `var TXT={` en login.html: se localiza
+      // por regex y se cierra contando llaves (el objeto lleva un nivel de
+      // anidado, 'es'/'en', asi que buscar el primer "};" no sirve).
+      const bloque = (txt) => {
+        const m = /var\s+TXT\s*=\s*\{/.exec(txt);
+        if (!m) return null;
+        let d = 0;
+        for (let k = m.index + m[0].length - 1; k < txt.length; k++) {
+          if (txt[k] === "{") d++;
+          else if (txt[k] === "}" && --d === 0) return txt.slice(m.index, k + 1);
+        }
+        return null;
+      };
+      for (const [es, en] of pares) {
+        const a = read(es), b = read(en);
+        if (!a || !b) continue;
+        const ba = bloque(a), bb = bloque(b);
+        if (!ba && !bb) continue;                 // ese par no usa tabla TXT
+        if (!ba || !bb) return (ba ? en : es) + ": perdio la tabla TXT que SI tiene su gemela (se quedaria sin traducciones).";
+        if (ba !== bb)
+          return en + ": su tabla TXT ya no coincide con la de " + es + " — al 'sincronizar' se piso una traduccion (asi entro el apostrofo que rompio la pagina).";
+        // El apostrofo suelto es lo que rompio el <script>. check-syntax lo
+        // atrapa, pero aqui se nombra la causa para que el arreglo sea obvio.
+        if (/'[^'\n]*\b(hasn|isn|doesn|don|won|can|couldn|it|you|we|they|that|let)'[a-z]/.test(bb))
+          return en + ": hay un apostrofo ingles SIN ESCAPAR dentro de un string de comilla simple en TXT (rompe el <script> entero).";
+      }
+      return null;
+    },
+  },
 ];
 
 
