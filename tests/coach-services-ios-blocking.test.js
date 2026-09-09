@@ -5,6 +5,27 @@
  * 1. login.html → coaches.html (CTA "Find in directory")
  * 2. coaches.html → coach.html (perfiles de coaches)
  * 3. coach.html → Stripe Checkout (botones "Comprar")
+ *
+ * ─────────────────────────────────────────────────────────────────────────────
+ * OJO: ESTE ARCHIVO NO SE EJECUTA HOY. No es un descuido nuevo: nunca ha podido.
+ *
+ * Esta escrito en estilo Jest y necesita tres cosas que el repositorio no tiene:
+ *   · `describe` / `test` globales (aqui no se importan de ningun sitio),
+ *   · `document` y `window`, o sea un DOM en el proceso de Node,
+ *   · `jest.fn()` y el matcher `.toHaveBeenCalled()`.
+ * En package.json no hay jest, ni jsdom, ni vitest. Es ademas el unico *.test.js
+ * del directorio: los 10 tests que si corren son *.spec.js (Playwright).
+ *
+ * Y hasta septiembre de 2026 hacia dano: el patron por defecto de Playwright
+ * tambien recoge *.test.js, asi que el runner petaba al recolectarlo con
+ * "describe is not defined" y la suite ENTERA se quedaba en 0 tests. Se acoto
+ * `testMatch` en playwright.config.js a *.spec.js. El archivo quedo intacto.
+ *
+ * PARA REVIVIRLO (tarea aparte, de iOS, no de MultiCoach): anadir Jest + jsdom
+ * (o vitest con entorno jsdom) a package.json y un script que ejecute *.test.js.
+ * Mientras tanto, lo que aqui se describe NO esta cubierto por ninguna prueba
+ * automatica — conviene no darlo por verificado.
+ * ─────────────────────────────────────────────────────────────────────────────
  */
 
 describe('Coach Services Purchase Blocking (iOS)', () => {

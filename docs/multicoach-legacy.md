@@ -129,6 +129,9 @@ una red se sigue haciendo desde el panel admin, que es lo que hay hoy.
 
 ## 5. Pendiente técnico único: almacenamiento de los adjuntos
 
+> **Adjuntos: preview únicamente; storage persistente pendiente de decisión.**
+
+
 Las fotos, planes, documentos y recursos de la ficha del cliente se ven al
 soltarlos pero **viven solo en memoria**: se pierden al recargar. En el cierre se
 quitó el «✓» que afirmaba lo contrario y ahora, en una red real, la zona de
