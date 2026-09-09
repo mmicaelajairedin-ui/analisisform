@@ -123,7 +123,7 @@ no volver a leer con la anon key ni a hacer el INSERT, y el guardado del gym
 seguir mirando `r.ok`. Probada con 5 tests negativos.
 
 ### Pendiente
-`pathway-fin-cliente.html` y `cliente.html` se benefician del arreglo de
+`pathway-life-cliente.html` y `cliente.html` se benefician del arreglo de
 `pw-auth.js`, pero conservan sus propios `.catch()` mudos en los guardados.
 
 ---
@@ -696,7 +696,7 @@ La guarda de `/cliente.html` era una lista **negra**: solo `coach` y `admin` se 
 panel. Un `owner`, `colaborador` o `empleado` que llegaba por marcador, back del navegador o
 link compartido se quedaba dentro de la superficie del cliente (y veía "Perfil no encontrado
 para: …" en vez de irse a su lugar). Los portales hermanos
-(`pathway-fit-cliente.html`, `pathway-fin-cliente.html`) ya usaban lista blanca.
+(`pathway-fit-cliente.html`, `pathway-life-cliente.html`) ya usaban lista blanca.
 
 ### Fix
 Lista blanca `PW_CLIENT_ROLES = ['cliente','candidato']` + mapa `PW_ROLE_HOME` que manda a
