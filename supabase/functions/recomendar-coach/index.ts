@@ -43,7 +43,7 @@ function subVigente(cfg: Record<string, unknown>): boolean {
 function nichoDe(cfg: Record<string, unknown>, esp: string[]): string {
   const ct = String(cfg.coach_type || (esp && esp[0]) || "").toLowerCase();
   if (ct.indexOf("fitness") >= 0) return "fitness";
-  if (ct.indexOf("financ") >= 0) return "financiero";
+  if (ct.indexOf("life") >= 0) return "life";
   return "carrera";
 }
 

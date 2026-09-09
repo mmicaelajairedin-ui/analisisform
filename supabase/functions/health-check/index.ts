@@ -136,7 +136,7 @@ Deno.serve(async (req: Request) => {
     issues.push({
       sev: "media",
       t: "Clientes sin nicho",
-      d: "Sin nicho pueden entrar al portal equivocado. Conviene asignarles carrera / fitness / finanzas.",
+      d: "Sin nicho pueden entrar al portal equivocado. Conviene asignarles carrera / fitness / life.",
       items: noNicho.map((c) => `${c.nombre || "—"} · ${c.email || ""}`),
     });
   }

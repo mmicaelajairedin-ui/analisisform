@@ -175,7 +175,7 @@ const RULES = [
          "volvían a salir sin marcar. Abrir el panel debe marcar TODO como visto, con " +
          "fallback local por si el PATCH no llega.",
     check() {
-      const files = ["cliente.html", "pathway-fit-cliente.html", "pathway-fin-cliente.html"];
+      const files = ["cliente.html", "pathway-fit-cliente.html", "pathway-life-cliente.html"];
       for (const f of files) {
         const s = read(f);
         if (!s) continue;
@@ -299,7 +299,7 @@ const RULES = [
       const p = read("panel-v2.html");
       if (p && (!/call-cli-start/.test(p) || !/_callMissedCheck/.test(p)))
         return "panel-v2.html: el coach ya no inicia la videollamada desde el chat (botón/handler/watchdog).";
-      for (const f of ["pathway-fit-cliente.html", "cliente.html", "pathway-fin-cliente.html"]) {
+      for (const f of ["pathway-fit-cliente.html", "cliente.html", "pathway-life-cliente.html"]) {
         const s = read(f);
         if (s && (!/pw-call\.js/.test(s) || !/PWCall\.ingest/.test(s) || !/_pwCallSetup/.test(s)))
           return f + ": el portal ya no escucha la videollamada entrante (falta módulo/ingest/config).";
@@ -501,7 +501,7 @@ const RULES = [
          "y no se ve'. Ahora se rellenan los campos vacíos de la ficha elegida con los de " +
          "cualquier duplicado. Debe estar en fitness y finanzas (mismo patrón CRAW=rows[0]).",
     check() {
-      for (const f of ["pathway-fit-cliente.html", "pathway-fin-cliente.html"]) {
+      for (const f of ["pathway-fit-cliente.html", "pathway-life-cliente.html"]) {
         const s = read(f);
         if (!s) continue;
         // Debe existir el fill de campos vacíos desde los duplicados (rows[_r]).
@@ -689,7 +689,7 @@ const RULES = [
       const dz = read("pw-dropzone.js");
       if (!dz) return "falta pw-dropzone.js (helper de drag&drop universal).";
       if (!/input\[type="file"\]/.test(dz)) return "pw-dropzone.js ya no registra los input[type=file].";
-      for (const f of ["panel-v2.html", "cliente.html", "pathway-fit-cliente.html", "pathway-fin-cliente.html", "cv.html", "empleado.html", "multicoach.html"]) {
+      for (const f of ["panel-v2.html", "cliente.html", "pathway-fit-cliente.html", "pathway-life-cliente.html", "cv.html", "empleado.html", "multicoach.html"]) {
         if (!/pw-dropzone\.js/.test(read(f))) return f + " ya no incluye pw-dropzone.js.";
       }
       const p = read("panel-v2.html");
@@ -751,7 +751,7 @@ const RULES = [
          "de chat mostraba un número rojo. Ahora muestra la FOTO del coach (con " +
          "respiración), sin número rojo que la tape, en los 3 portales.",
     check() {
-      for (const f of ["cliente.html", "pathway-fit-cliente.html", "pathway-fin-cliente.html"]) {
+      for (const f of ["cliente.html", "pathway-fit-cliente.html", "pathway-life-cliente.html"]) {
         const s = read(f);
         if (!s) continue;
         if (!/function _syncCoachChatPhoto\(/.test(s))
@@ -775,7 +775,7 @@ const RULES = [
         if (!/_fast\?6000/.test(pv))
           return "panel-v2.html: se perdió el refresco rápido (6s) del chat abierto.";
       }
-      for (const f of ["cliente.html", "pathway-fit-cliente.html", "pathway-fin-cliente.html"]) {
+      for (const f of ["cliente.html", "pathway-fit-cliente.html", "pathway-life-cliente.html"]) {
         const s = read(f);
         if (s && /(loadMsgs|_pollMsgs)[^;]{0,60}[,]\s*30000\)/.test(s))
           return f + ": el chat del cliente volvió a 30s de latencia.";
@@ -949,7 +949,7 @@ const RULES = [
          "color pero los fondos claros quedaban verdosos ('no cambia por completo'). " +
          "Ahora derivan toda la familia via _pwBrandVars().",
     check() {
-      for (const f of ["pathway-fit-cliente.html", "pathway-fin-cliente.html"]) {
+      for (const f of ["pathway-fit-cliente.html", "pathway-life-cliente.html"]) {
         const s = read(f);
         if (!s) continue;
         if (!/_pwBrandVars\s*\(/.test(s))
@@ -974,7 +974,7 @@ const RULES = [
       const p = read("panel-v2.html");
       if (p && !/snap\.brand\s*=/.test(p))
         return "panel-v2.html: _demoSnapshot ya no guarda snap.brand (el color del coach no llega al demo).";
-      for (const f of ["pathway-fit-cliente.html", "pathway-fin-cliente.html"]) {
+      for (const f of ["pathway-fit-cliente.html", "pathway-life-cliente.html"]) {
         const s = read(f);
         if (!s) continue;
         if (!/_ov\.brand[\s\S]{0,40}_pwBrandVars/.test(s))
@@ -991,7 +991,7 @@ const RULES = [
          "derecha con los documentos que sube el coach (.ses-layout + .ses-doc-item). " +
          "Si un nicho pierde la columna o el diseño se desincroniza, deja de ser igual.",
     check() {
-      for (const f of ["cliente.html", "pathway-fit-cliente.html", "pathway-fin-cliente.html"]) {
+      for (const f of ["cliente.html", "pathway-fit-cliente.html", "pathway-life-cliente.html"]) {
         const s = read(f);
         if (!s) continue;
         if (!/ses-layout/.test(s))
@@ -1005,7 +1005,7 @@ const RULES = [
       if (!/\.ses-layout\s*\{/.test(read("pathway-portal.css")))
         return "pathway-portal.css perdió el layout .ses-layout de la sección Sesiones.";
       // fit/fin: el cliente marca sus tareas con toggleSesTarea.
-      for (const f of ["pathway-fit-cliente.html", "pathway-fin-cliente.html"]) {
+      for (const f of ["pathway-fit-cliente.html", "pathway-life-cliente.html"]) {
         if (read(f) && !/toggleSesTarea/.test(read(f)))
           return f + ": el cliente ya no puede marcar sus tareas (toggleSesTarea).";
       }
@@ -1057,8 +1057,8 @@ const RULES = [
          "pagina, esa pagina vuelve a operar a ciegas.",
     check() {
       var must = ["panel-v2.html", "cliente.html", "pathway-fit-cliente.html",
-        "pathway-fin-cliente.html", "login.html", "formulario.html",
-        "pathway-fit-form.html", "pathway-fin-form.html", "cv.html", "auth-callback.html"];
+        "pathway-life-cliente.html", "login.html", "formulario.html",
+        "pathway-fit-form.html", "pathway-life-form.html", "cv.html", "auth-callback.html"];
       var missing = must.filter(function (f) { return !/pw-observe\.js/.test(read(f)); });
       return missing.length ? "les falta pw-observe.js: " + missing.join(", ") : null;
     },
@@ -1191,7 +1191,7 @@ const RULES = [
         { f: "panel-v2.html", fn: "_sbw" },
         { f: "cliente.html", fn: "pt" },
         { f: "pathway-fit-cliente.html", fn: "sbPatch" },
-        { f: "pathway-fin-cliente.html", fn: "sbPatch" },
+        { f: "pathway-life-cliente.html", fn: "sbPatch" },
       ];
       for (var k = 0; k < specs.length; k++) {
         var sp = specs[k], s = read(sp.f);
@@ -1323,7 +1323,7 @@ const RULES = [
     bug: "Por minimización RGPD, el panel del coach difumina datos sensibles para no " +
          "exponerlos al compartir pantalla. El enmascarado está SIEMPRE activo (sin " +
          "toggle): se revela al pasar el mouse o tocar el dato. Si se quita el helper " +
-         "sens(), la clase pw-private, o los campos sensibles del Perfil (ingresos/salud) " +
+         "sens(), la clase pw-private, o los campos sensibles del Perfil (contacto/salud) " +
          "dejan de marcarse con {sens:true} → pw-sens, los datos vuelven a quedar a la vista.",
     check() {
       const s = read("panel-v2.html");
@@ -1331,10 +1331,11 @@ const RULES = [
       if (!/function sens\s*\(/.test(s)) return "panel-v2.html: falta el helper sens() del Modo privado.";
       if (!/pw-private/.test(s)) return "panel-v2.html: falta el enmascarado (clase pw-private).";
       if (!/classList\.add\('pw-private'\)/.test(s)) return "panel-v2.html: el enmascarado (pw-private) ya no se aplica siempre.";
-      // Perfil por categorías: los campos financieros/de salud van marcados {sens:true}
+      // Perfil por categorías: los campos de contacto/salud van marcados {sens:true}
       // (→ clase pw-sens → blur en Modo privado). Si pierden la marca, quedan a la vista.
-      if (!/cf-ingresos"[\s\S]{0,90}sens:true/.test(s) || !/cf-lesiones"[\s\S]{0,130}sens:true/.test(s))
-        return "panel-v2.html: los datos financieros/de salud (ingresos/lesiones) ya no van marcados como sensibles (sens:true → pw-sens).";
+      // (El nicho financiero se reconvirtió a Life en sep-2026: ya no hay cf-ingresos.)
+      if (!/cf-whatsapp"[\s\S]{0,130}sens:true/.test(s) || !/cf-lesiones"[\s\S]{0,130}sens:true/.test(s))
+        return "panel-v2.html: los datos de contacto/salud (whatsapp/lesiones) ya no van marcados como sensibles (sens:true → pw-sens).";
       return null;
     },
   },
@@ -1347,7 +1348,7 @@ const RULES = [
       const c = read("cliente.html");
       if (c && (!/needsConsent/.test(c) || !/showConsentGate/.test(c) || !/consent_at/.test(c)))
         return "cliente.html: falta el gate de consentimiento (needsConsent/showConsentGate/consent_at).";
-      for (const f of ["pathway-fit-cliente.html", "pathway-fin-cliente.html"]) {
+      for (const f of ["pathway-fit-cliente.html", "pathway-life-cliente.html"]) {
         const s = read(f);
         if (s && (!/pwMaybeConsent/.test(s) || !/consent_at/.test(s)))
           return f + ": falta el gate de consentimiento (pwMaybeConsent/consent_at).";
@@ -1362,7 +1363,7 @@ const RULES = [
          "→ consentGiven=true), y en intake anónimo el form guarda consent_at para que " +
          "el portal no lo vuelva a pedir. Esta regla evita que vuelva el doble pedido.",
     check() {
-      for (const f of ["pathway-fit-form.html", "pathway-fin-form.html", "formulario.html"]) {
+      for (const f of ["pathway-fit-form.html", "pathway-life-form.html", "formulario.html"]) {
         const s = read(f);
         if (!s) continue;
         // En modo portal NO se vuelve a pedir consentimiento (se salta el paso).
@@ -1383,7 +1384,7 @@ const RULES = [
          "regla evita que vuelva a colarse al inicio.",
     check() {
       // fit/fin: el consentimiento NO es la primera pantalla y va antes del análisis.
-      for (const f of ["pathway-fit-form.html", "pathway-fin-form.html"]) {
+      for (const f of ["pathway-fit-form.html", "pathway-life-form.html"]) {
         const s = read(f); if (!s) continue;
         const onMatch = s.match(/<div class="step on"[^>]*id="([^"]+)"/);
         if (onMatch && onMatch[1] === "stepConsent")
@@ -1413,7 +1414,7 @@ const RULES = [
          "para que el cliente cree su contraseña. Esta regla evita que vuelva.",
     check() {
       const offenders = [];
-      for (const f of ["formulario.html", "pathway-fit-form.html", "pathway-fin-form.html"]) {
+      for (const f of ["formulario.html", "pathway-fit-form.html", "pathway-life-form.html"]) {
         const s = read(f);
         if (s && /_autoPass/.test(s)) offenders.push(f);
       }
@@ -1442,7 +1443,7 @@ const RULES = [
          "ignore-duplicates NO guardaba el intake (se perdía). Debe hacer PATCH por " +
          "email con el JWT del cliente (pw-auth.js) para que la policy RLS lo permita.",
     check() {
-      for (const f of ["formulario.html", "pathway-fit-form.html", "pathway-fin-form.html"]) {
+      for (const f of ["formulario.html", "pathway-fit-form.html", "pathway-life-form.html"]) {
         const s = read(f);
         if (!s) continue;
         if (!/PORTAL_MODE/.test(s)) return f + ": perdió el modo portal (PORTAL_MODE).";
@@ -1491,7 +1492,7 @@ const RULES = [
       if (!eng) return "falta pathway-juego.js (motor unificado de medalla/festejo).";
       if (!/min:\s*200[\s\S]*?min:\s*400[\s\S]*?min:\s*600/.test(eng))
         return "pathway-juego.js: los umbrales de medalla dejaron de ser 200/400/600 (fuente única de verdad).";
-      for (const f of ["cliente.html", "pathway-fit-cliente.html", "pathway-fin-cliente.html"]) {
+      for (const f of ["cliente.html", "pathway-fit-cliente.html", "pathway-life-cliente.html"]) {
         const s = read(f);
         if (!s) continue;
         if (!/pathway-juego\.js/.test(s))
@@ -1533,7 +1534,7 @@ const RULES = [
          "SIN el ?email → el portal quedaba sin email y mostraba el demo de María; el " +
          "cliente creía que su carga se perdió. El retorno debe llevar el email.",
     check() {
-      for (const f of ["pathway-fit-form.html", "pathway-fin-form.html"]) {
+      for (const f of ["pathway-fit-form.html", "pathway-life-form.html"]) {
         const s = read(f);
         if (!s) continue;
         if (!/PORTAL_RETURN\s*\+\s*['"]\?email=/.test(s) && !/location\.href\s*=\s*_ru/.test(s))
@@ -1548,21 +1549,21 @@ const RULES = [
          "hardcodeada, el portal caía al demo de María para un cliente real sin ficha, y " +
          "el form no autoguardaba. Se replicó el arreglo; esta regla evita la regresión.",
     check() {
-      const form = read("pathway-fin-form.html");
+      const form = read("pathway-life-form.html");
       if (form) {
         const markup = form.replace(/<script[\s\S]*?<\/script>/gi, "");
-        if (/Luc[ií]a/.test(markup)) return "pathway-fin-form.html: volvió 'Lucía' en el contenido (debe adaptarse al coach real).";
+        if (/Luc[ií]a/.test(markup)) return "pathway-life-form.html: volvió 'Lucía' en el contenido (debe adaptarse al coach real).";
         const fjs = inlineJs(form);
         if (!isDefined("_applyCoachBrand", fjs) || !isDefined("saveDraft", fjs))
-          return "pathway-fin-form.html: perdió la adaptación al coach o el autoguardado.";
+          return "pathway-life-form.html: perdió la adaptación al coach o el autoguardado.";
       }
-      const port = read("pathway-fin-cliente.html");
+      const port = read("pathway-life-cliente.html");
       if (port) {
         const pjs = inlineJs(port);
         if (!isDefined("_clienteSinFicha", pjs) || !isDefined("renderPrepCard", pjs))
-          return "pathway-fin-cliente.html: perdió _clienteSinFicha()/renderPrepCard() (limpieza del demo del cliente real).";
+          return "pathway-life-cliente.html: perdió _clienteSinFicha()/renderPrepCard() (limpieza del demo del cliente real).";
         if (!/rol===?['"]cliente['"][\s\S]{0,120}EMAIL=/.test(pjs))
-          return "pathway-fin-cliente.html: perdió el forzado del email propio (mj_user) → podría caer al demo de María.";
+          return "pathway-life-cliente.html: perdió el forzado del email propio (mj_user) → podría caer al demo de María.";
       }
       return null;
     },
@@ -1612,7 +1613,7 @@ const RULES = [
     check() {
       if (!read("supabase/functions/guardar-intake/index.ts"))
         return "falta la edge function guardar-intake (guarda el intake sin chocar con RLS).";
-      for (const f of ["pathway-fit-form.html", "pathway-fin-form.html"]) {
+      for (const f of ["pathway-fit-form.html", "pathway-life-form.html"]) {
         const s = read(f);
         if (!s) continue;
         if (!/functions\/v1\/guardar-intake/.test(s))
@@ -1932,7 +1933,7 @@ const RULES = [
          "simple, que NO seteaba PW_GAME_ONCLOSE → la medalla no se refrescaba al " +
          "cerrar el juego. Debe quedar UNA sola def, la que registra el callback.",
     check() {
-      for (const f of ["pathway-fit-cliente.html", "pathway-fin-cliente.html"]) {
+      for (const f of ["pathway-fit-cliente.html", "pathway-life-cliente.html"]) {
         const s = read(f); if (!s) continue;
         const n = (s.match(/function abrirJuego\s*\(/g) || []).length;
         if (n > 1) return f + ": abrirJuego está definida " + n + " veces (debe ser 1).";
@@ -1964,29 +1965,30 @@ const RULES = [
          "su snapshot en memoria → pisaba lo que el coach acababa de escribir. " +
          "Debe re-leer la columna fresca antes de guardar (_sbColSave) y fusionar.",
     check() {
-      const s = read("pathway-fin-cliente.html");
+      const s = read("pathway-life-cliente.html");
       if (!s) return null;
       if (!/function _sbColSave\(/.test(s))
-        return "pathway-fin-cliente.html: falta _sbColSave (guardado merge-safe).";
+        return "pathway-life-cliente.html: falta _sbColSave (guardado merge-safe).";
       // _objSave y _patSave NO deben hacer un sbPatch directo de su columna.
       if (/function _objSave\([^)]*\)\{[^}]*sbPatch\('candidatos'[^}]*fin_objetivos/.test(s.replace(/\s+/g, " ")))
-        return "pathway-fin-cliente.html: _objSave volvió a hacer sbPatch directo (pisa al coach).";
+        return "pathway-life-cliente.html: _objSave volvió a hacer sbPatch directo (pisa al coach).";
       return null;
     },
   },
   {
-    name: "panel: coach fusiona hilos de comentarios al guardar fin_objetivos",
-    bug: "El coach guardaba fin_objetivos desde su snapshot → pisaba los " +
-         "comentarios (hilo) que el cliente escribió. _finArrSave debe re-leer y " +
-         "fusionar los hilos (_hiloMerge) para fin_objetivos.",
+    name: "panel: coach fusiona hilos de comentarios al guardar proc_objetivos",
+    bug: "El coach guardaba los objetivos desde su snapshot → pisaba los " +
+         "comentarios (hilo) y los pasos que el cliente marcó. _procArrSave debe " +
+         "re-leer y fusionar los hilos (_hiloMerge) para proc_objetivos. " +
+         "(Antes era _finArrSave/fin_objetivos, del nicho financiero reconvertido a Life.)",
     check() {
       const s = read("panel-v2.html");
       if (!s) return null;
       if (!/function _hiloMerge\(/.test(s)) return "panel-v2.html: falta _hiloMerge.";
-      const i = s.indexOf("function _finArrSave(");
-      if (i < 0) return "panel-v2.html: no se encuentra _finArrSave.";
+      const i = s.indexOf("function _procArrSave(");
+      if (i < 0) return "panel-v2.html: no se encuentra _procArrSave.";
       return /_hiloMerge/.test(s.slice(i, i + 1600)) ? null
-        : "panel-v2.html: _finArrSave ya no fusiona los hilos (pisa comentarios del cliente).";
+        : "panel-v2.html: _procArrSave ya no fusiona los hilos (pisa comentarios del cliente).";
     },
   },
   {
@@ -2099,7 +2101,7 @@ const RULES = [
     check() {
       const need = [
         ["pathway-fit-cliente.html", /setProperty\('--accent'/],
-        ["pathway-fin-cliente.html", /setProperty\('--accent'/],
+        ["pathway-life-cliente.html", /setProperty\('--accent'/],
         ["cliente.html", /setProperty\('--accent'/],
         ["panel-v2.html", /setProperty\("--accent"/],
       ];
@@ -2186,7 +2188,7 @@ const RULES = [
       if (p && !/c\.puntos/.test(p))
         return "panel-v2.html: el coach ya no lee candidatos.puntos (volvió a la medalla por semana_activa, se desincroniza del cliente).";
       // Los 3 portales deben persistir puntos y el mejor puntaje del juego.
-      for (const f of ["cliente.html", "pathway-fit-cliente.html", "pathway-fin-cliente.html"]) {
+      for (const f of ["cliente.html", "pathway-fit-cliente.html", "pathway-life-cliente.html"]) {
         const s = read(f); if (!s) continue;
         if (!/PW_GAME_SYNC\s*=\s*function/.test(s))
           return f + ": falta PW_GAME_SYNC (el puntaje del juego no se persiste → la medalla baja entre dispositivos).";
@@ -2202,15 +2204,15 @@ const RULES = [
          "duplicada veía la ficha vacía (sin datos ni coach). Debe ordenar por " +
          "completitud y recuperar coach_id de cualquier duplicado (como fitness).",
     check() {
-      const s = read("pathway-fin-cliente.html");
+      const s = read("pathway-life-cliente.html");
       if (!s) return null;
       const i = s.indexOf("function pwInit(");
-      if (i < 0) return "pathway-fin-cliente.html: no se encuentra pwInit.";
+      if (i < 0) return "pathway-life-cliente.html: no se encuentra pwInit.";
       const block = s.slice(i, i + 2000); // ventana amplia: entra el merge de duplicados sin falsos positivos
       if (!/_score|rows\.sort/.test(block))
-        return "pathway-fin-cliente.html: pwInit ya no elige la ficha más completa (perdió el dedup por score).";
+        return "pathway-life-cliente.html: pwInit ya no elige la ficha más completa (perdió el dedup por score).";
       if (!/if\(!CRAW\.coach_id\)/.test(block))
-        return "pathway-fin-cliente.html: pwInit ya no recupera coach_id de los duplicados.";
+        return "pathway-life-cliente.html: pwInit ya no recupera coach_id de los duplicados.";
       return null;
     },
   },
@@ -2223,7 +2225,7 @@ const RULES = [
       const targets = [
         { f: "cliente.html", fn: "function abrirAgenda(" },
         { f: "pathway-fit-cliente.html", fn: "function agendar(" },
-        { f: "pathway-fin-cliente.html", fn: "function agendar(" },
+        { f: "pathway-life-cliente.html", fn: "function agendar(" },
       ];
       for (const t of targets) {
         const s = read(t.f);
@@ -2440,7 +2442,7 @@ const RULES = [
     bug: "Las pestañas del cliente aparecen DE A UNA a medida que avanza (base siempre + " +
          "cadena por nicho). CANDADO: una pestaña con datos se muestra siempre y el siguiente " +
          "eslabón se abre solo cuando el anterior ya tiene contenido → nunca oculta algo con " +
-         "datos y no rompe a los coaches que ya trabajan. Config para carrera/fitness/financiero.",
+         "datos y no rompe a los coaches que ya trabajan. Config para carrera/fitness/life.",
     check() {
       const p = read("panel-v2.html");
       if (!p) return null;
@@ -2448,7 +2450,7 @@ const RULES = [
       if (!/_CLI_CASCADE\s*=/.test(p)) return "panel-v2.html: falta la config _CLI_CASCADE (cadena por nicho).";
       // El candado: una pestaña con datos se muestra (if(open || has)).
       if (!/if\(open \|\| has\)\s*shown\[step\.tab\]=true/.test(p)) return "panel-v2.html: _cliVisibleTabs ya no muestra una pestaña con datos (candado roto).";
-      if (!/carrera:.*fitness:.*financiero:/s.test(p)) return "panel-v2.html: la cascada no cubre los 3 nichos (carrera/fitness/financiero).";
+      if (!/carrera:.*fitness:.*life:/s.test(p)) return "panel-v2.html: la cascada no cubre los 3 nichos (carrera/fitness/life).";
       if (!/_cliVisibleTabs\(c,_tipo,_cliTabs\(_tipo\)\)/.test(p)) return "panel-v2.html: la ficha del cliente ya no aplica la cascada _cliVisibleTabs.";
       return null;
     },
@@ -3185,7 +3187,7 @@ const RULES = [
          "portales del cliente: carrera, fitness y financiero. Si falta en alguno, se " +
          "pierde la función y se rompe la unificación.",
     check() {
-      for (const f of ["cliente.html", "pathway-fit-cliente.html", "pathway-fin-cliente.html"]) {
+      for (const f of ["cliente.html", "pathway-fit-cliente.html", "pathway-life-cliente.html"]) {
         const s = read(f);
         if (!s) continue;
         if (!/Mis temas/.test(s)) return f + ": falta 'Mis temas / dudas' (Preparación de Sesiones).";
@@ -3195,7 +3197,7 @@ const RULES = [
     },
   },
   {
-    name: "fitness/financiero: sin acciones-foco desconectadas (el plan real es otro)",
+    name: "fitness/life: sin acciones-foco desconectadas (el plan real es otro)",
     bug: "Las 'acciones' (cv_acciones… agrupadas por etapa) NO llegan al cliente en " +
          "fitness ni financiero, así que el panel NO debe embeber _avanceHtml para " +
          "esos nichos y sus portales NO deben mostrar el 'Foco' estático. En fitness " +
@@ -3204,17 +3206,17 @@ const RULES = [
          "vuelve el embed o el foco, reaparece la parte desconectada.",
     check() {
       const p = read("panel-v2.html");
-      if (p && !/_tipo==='carrera'\|\|_tipo==='fitness'\|\|_tipo==='financiero'/.test(p))
-        return "panel-v2.html: fitness/financiero volvió a embeber las acciones desconectadas (_avanceHtml).";
+      if (p && !/_tipo==='carrera'\|\|_tipo==='fitness'\|\|_tipo==='life'/.test(p))
+        return "panel-v2.html: fitness/life volvió a embeber las acciones desconectadas (_avanceHtml).";
       const f = read("pathway-fit-cliente.html");
       if (f) {
         if (/Foco de esta semana/.test(f)) return "pathway-fit-cliente.html: volvió el 'Foco de esta semana' (acciones) — debía quedar solo las Tareas de la semana.";
         if (!/Tus tareas de la semana/.test(f)) return "pathway-fit-cliente.html: falta 'Tus tareas de la semana' (el plan del cliente fitness).";
       }
-      const fn = read("pathway-fin-cliente.html");
+      const fn = read("pathway-life-cliente.html");
       if (fn) {
-        if (/Foco de este mes/.test(fn)) return "pathway-fin-cliente.html: volvió el 'Foco de este mes' estático (desconectado).";
-        if (!/plan-step/.test(fn)) return "pathway-fin-cliente.html: falta el 'Plan por meses' (plan-step) que SÍ lee las etapas del coach.";
+        if (/Foco de este mes/.test(fn)) return "pathway-life-cliente.html: volvió el 'Foco de este mes' estático (desconectado).";
+        if (!/plan-step/.test(fn)) return "pathway-life-cliente.html: falta el 'Plan por meses' (plan-step) que SÍ lee las etapas del coach.";
       }
       return null;
     },
@@ -3267,10 +3269,10 @@ const RULES = [
       if (!/id=.cfg-services-list./.test(p)) return "panel-v2.html perdio el contenedor sortable de servicios (cfg-services-list).";
       if (!/saveCfg\(\{\s*servicios:/.test(p)) return "panel-v2.html: el orden de servicios ya no se guarda (servicios).";
       // Metas de ahorro del cliente: reordenables y persisten en fin_objetivos.
-      const fin = read("pathway-fin-cliente.html");
+      const fin = read("pathway-life-cliente.html");
       if (fin) {
-        if (!/pw-sortable\.js/.test(fin)) return "pathway-fin-cliente.html ya no incluye pw-sortable.js.";
-        if (!/function _metaReorder/.test(fin)) return "pathway-fin-cliente.html perdio el reordenar de metas (_metaReorder).";
+        if (!/pw-sortable\.js/.test(fin)) return "pathway-life-cliente.html ya no incluye pw-sortable.js.";
+        if (!/function _metaReorder/.test(fin)) return "pathway-life-cliente.html perdio el reordenar de metas (_metaReorder).";
       }
       return null;
     },
@@ -3325,7 +3327,7 @@ const RULES = [
          "app. Si se cae de alguno de los portales, ese portal vuelve a quedar sin " +
          "'actualizar para abajo'.",
     check() {
-      const portals = ["cliente.html", "pathway-fit-cliente.html", "pathway-fin-cliente.html"];
+      const portals = ["cliente.html", "pathway-fit-cliente.html", "pathway-life-cliente.html"];
       for (const f of portals) {
         const s = read(f);
         if (!s) continue;
@@ -3379,7 +3381,7 @@ const RULES = [
     check() {
       // Panel + los 2 portales con _authExpired: debe existir el reintento
       // guardado por sesión y el chequeo de sesión antes de desloguear.
-      var guarded = ["panel-v2.html", "pathway-fit-cliente.html", "pathway-fin-cliente.html"];
+      var guarded = ["panel-v2.html", "pathway-fit-cliente.html", "pathway-life-cliente.html"];
       for (var i = 0; i < guarded.length; i++) {
         var s = read(guarded[i]);
         if (!s) continue;
@@ -3486,7 +3488,7 @@ const RULES = [
       var c = read("pw-recursos.js");
       if (!c) return "pw-recursos.js: el componente unificado de recursos ya no existe.";
       if (!/window\.PwRecursos\s*=/.test(c)) return "pw-recursos.js: ya no expone window.PwRecursos.";
-      var portals = ["pathway-fit-cliente.html", "cliente.html", "pathway-fin-cliente.html"];
+      var portals = ["pathway-fit-cliente.html", "cliente.html", "pathway-life-cliente.html"];
       for (var i = 0; i < portals.length; i++) {
         var f = read(portals[i]);
         if (!f) continue;
@@ -3580,7 +3582,7 @@ const RULES = [
     check() {
       var c = read("pw-recursos.js");
       if (c && !/window\.PwLinkPreview\s*=/.test(c)) return "pw-recursos.js: ya no expone window.PwLinkPreview (link preview del chat).";
-      var files = ["pathway-fit-cliente.html", "pathway-fin-cliente.html", "cliente.html", "panel-v2.html"];
+      var files = ["pathway-fit-cliente.html", "pathway-life-cliente.html", "cliente.html", "panel-v2.html"];
       for (var i = 0; i < files.length; i++) {
         var f = read(files[i]);
         if (f && !/PwLinkPreview\.init/.test(f)) return files[i] + ": ya no inicializa el link preview del chat (PwLinkPreview.init).";
@@ -4536,9 +4538,9 @@ const RULES = [
          "cliente tiene org_id, se aplica la marca del dueño (color+logo) vía applyOrgBrand. Cubre fitness, " +
          "finanzas y carrera.",
     check() {
-      const fit = read("pathway-fit-cliente.html"), fin = read("pathway-fin-cliente.html"), car = read("cliente.html");
+      const fit = read("pathway-fit-cliente.html"), fin = read("pathway-life-cliente.html"), car = read("cliente.html");
       if (fit && (!/function applyOrgBrand\(/.test(fit) || !/applyOrgBrand\((c|CRAW)\.org_id\)/.test(fit))) return "pathway-fit-cliente.html: no aplica la marca de la red (applyOrgBrand por org_id).";
-      if (fin && (!/function applyOrgBrandFin\(/.test(fin) || !/applyOrgBrandFin\(CRAW\.org_id\)/.test(fin))) return "pathway-fin-cliente.html: no aplica la marca de la red (applyOrgBrandFin por org_id).";
+      if (fin && (!/function applyOrgBrandProc\(/.test(fin) || !/applyOrgBrandProc\(CRAW\.org_id\)/.test(fin))) return "pathway-life-cliente.html: no aplica la marca de la red (applyOrgBrandProc por org_id).";
       if (car && (!/function _applyOrgBrand\(/.test(car) || !/_applyOrgBrand\(C\.org_id\)/.test(car))) return "cliente.html: no aplica la marca de la red (_applyOrgBrand por org_id).";
       return null;
     },
@@ -4652,7 +4654,7 @@ const RULES = [
       if (fn === null) return "falta la edge function agenda-red-cliente (clases de la red para el cliente).";
       if (!/grupal=is\.true/.test(fn)) return "agenda-red-cliente: ya NO filtra a solo eventos grupales (expondría 1:1 privados ajenos).";
       // Los 3 portales del cliente muestran las clases de la red.
-      for (const f of ["pathway-fit-cliente.html", "pathway-fin-cliente.html", "cliente.html"]) {
+      for (const f of ["pathway-fit-cliente.html", "pathway-life-cliente.html", "cliente.html"]) {
         const p = read(f);
         if (p && (!/function _loadClasesRed\(/.test(p) || !/agenda-red-cliente/.test(p))) return f + ": ya no muestra las clases de la red (agenda-red-cliente).";
       }
@@ -4716,7 +4718,7 @@ const RULES = [
       if (mc && (!/function _comSave\(/.test(mc) || !/_comSave\('aviso'/.test(mc) || !/_comSave\('clase'/.test(mc) || !/_comSave\('reto'/.test(mc))) return "multicoach.html: avisos/clases/retos ya no persisten (_comSave por tipo).";
       // Las fotos del rail se adaptan al nicho (fitness/carrera/finanzas).
       if (mc && (!/var _RAIL_IMG=/.test(mc) || !/function _railNicheImg\(/.test(mc))) return "multicoach.html: las fotos del rail ya no se adaptan al nicho (_RAIL_IMG/_railNicheImg).";
-      for (const f of ["pathway-fit-cliente.html", "pathway-fin-cliente.html", "cliente.html"]) {
+      for (const f of ["pathway-fit-cliente.html", "pathway-life-cliente.html", "cliente.html"]) {
         const p = read(f);
         if (p && (!/function _loadNovedades\(/.test(p) || !/comunidad-red/.test(p) || !/novered-slot/.test(p))) return f + ": ya no muestra las Novedades de la red (comunidad-red).";
       }
@@ -4755,17 +4757,17 @@ const RULES = [
     bug: "El guardado del chat del cliente (fit/fin) terminaba en .catch(function(){}) y daba por " +
          "guardado (MSGS=merged) aunque la red/RLS fallara → el mensaje quedaba en pantalla pero NO " +
          "se persistía y el cliente no se enteraba (se perdía al recargar). Ahora _fitPersistChat/" +
-         "_finPersistChat verifican r.ok del sbPatch: si guardó, confirman; si no, muestran un banner " +
+         "_procPersistChat verifican r.ok del sbPatch: si guardó, confirman; si no, muestran un banner " +
          "'No se pudo enviar. Tocá para reintentar' (tappable = reintenta). Merge/dedup/escape intactos.",
     check() {
-      const fit = read("pathway-fit-cliente.html"), fin = read("pathway-fin-cliente.html");
+      const fit = read("pathway-fit-cliente.html"), fin = read("pathway-life-cliente.html");
       if (fit) {
         if (!/function _fitPersistChat\(/.test(fit)) return "pathway-fit-cliente.html: falta _fitPersistChat (guardado del chat verificado).";
         if (!/if\(r&&r\.ok\)\{ MSGS=merged; _fitChatWarn\(false\);/.test(fit)) return "pathway-fit-cliente.html: el chat ya no verifica r.ok antes de dar por guardado (guardado fantasma).";
       }
       if (fin) {
-        if (!/function _finPersistChat\(/.test(fin)) return "pathway-fin-cliente.html: falta _finPersistChat (guardado del chat verificado).";
-        if (!/if\(r&&r\.ok\)\{ MSGS=merged; _finChatWarn\(false\);/.test(fin)) return "pathway-fin-cliente.html: el chat ya no verifica r.ok antes de dar por guardado (guardado fantasma).";
+        if (!/function _procPersistChat\(/.test(fin)) return "pathway-life-cliente.html: falta _procPersistChat (guardado del chat verificado).";
+        if (!/if\(r&&r\.ok\)\{ MSGS=merged; _procChatWarn\(false\);/.test(fin)) return "pathway-life-cliente.html: el chat ya no verifica r.ok antes de dar por guardado (guardado fantasma).";
       }
       return null;
     },
@@ -5330,7 +5332,7 @@ const RULES = [
          "equivocado para el cliente y, en white-label, el embudo de captacion de Pathway " +
          "metido dentro del portal del cliente de otro coach.",
     check() {
-      const bad = ["cliente.html", "pathway-fit-cliente.html", "pathway-fin-cliente.html"]
+      const bad = ["cliente.html", "pathway-fit-cliente.html", "pathway-life-cliente.html"]
         .filter((f) => {
           const src = noComments(read(f).replace(/<!--[\s\S]*?-->/g, " "));
           return /comunidad\.html/.test(src) || /showCommunity\s*:\s*true/.test(src);
@@ -5889,7 +5891,7 @@ const RULES = [
          "Date aparte (`new Date(_now)`) y sacarle de ahi el anio/mes.",
     check() {
       const files = ["panel-v2.html", "multicoach.html", "cliente.html", "empleado.html",
-                     "sala.html", "pathway-fit-cliente.html", "pathway-fin-cliente.html"];
+                     "sala.html", "pathway-fit-cliente.html", "pathway-life-cliente.html"];
       // Metodos que SOLO existen en una instancia de Date — si el valor es el
       // numero que devuelve Date.now(), la llamada tira TypeError.
       const METODO = /\.(get(?:FullYear|Month|Date|Day|Hours|Minutes|Seconds|Time|Timezone\w*)|to(?:ISOString|LocaleDateString|LocaleTimeString|LocaleString|DateString|TimeString)|set(?:FullYear|Month|Date|Hours|Minutes|Seconds))\s*\(/;
@@ -5930,6 +5932,47 @@ const RULES = [
                      "Derivar un Date: `var d = new Date(" + n + ")`.";
           }
         }
+      }
+      return null;
+    },
+  },
+  {
+    name: "nicho Life: no vuelve la terminología ni los campos de Finanzas",
+    bug: "El nicho financiero se reconvirtió a Life (sep-2026): el portal, el intake " +
+         "y la pestaña del panel dejaron de hablar de presupuesto/deudas/patrimonio/ahorro " +
+         "y pasaron a objetivos + próximos pasos + seguimiento (proc_objetivos / " +
+         "proc_seguimiento). Las columnas fin_* quedan LEGACY en la base, vacías y sin " +
+         "consumidores. Esta regla evita que vuelva a colarse la terminología financiera " +
+         "o una lectura de fin_* — que dejaría el nicho a medio camino otra vez.",
+    check() {
+      // 1) Los archivos del nicho existen con el nombre nuevo (y no el viejo).
+      for (const f of ["pathway-life-cliente.html", "pathway-life-form.html"]) {
+        if (!read(f)) return f + ": falta el archivo del nicho Life.";
+      }
+      // 2) Ni el portal, ni el intake, ni el panel leen o escriben columnas fin_*.
+      const FIN_COLS = /\b(fin_pres|fin_objetivos|fin_patrimonio|fin_deudas|fin_diagnostico|fin_cierres|fin_previsibles)\b/;
+      for (const f of ["pathway-life-cliente.html", "pathway-life-form.html", "panel-v2.html"]) {
+        const s2 = read(f); if (!s2) continue;
+        if (FIN_COLS.test(s2)) return f + ": volvió una columna fin_* (legacy, vacía y sin uso). El nicho Life usa proc_objetivos / proc_seguimiento.";
+      }
+      // 3) El modelo nuevo sigue cableado en las dos puntas.
+      const port = read("pathway-life-cliente.html");
+      if (port) {
+        if (!/proc_objetivos/.test(port)) return "pathway-life-cliente.html: perdió proc_objetivos (el modelo del nicho Life).";
+        if (!/function _objPasos\(/.test(port) || !/function _objPct\(/.test(port))
+          return "pathway-life-cliente.html: el avance ya no sale de los próximos pasos (_objPasos/_objPct).";
+      }
+      const pan = read("panel-v2.html");
+      if (pan) {
+        if (!/proc_objetivos/.test(pan) || !/proc_seguimiento/.test(pan))
+          return "panel-v2.html: la pestaña Proceso perdió proc_objetivos/proc_seguimiento.";
+        if (/t===?"fin_pres"/.test(pan)) return "panel-v2.html: volvió la pestaña fin_pres (era la de Finanzas).";
+      }
+      // 4) Ningún nicho vuelve a llamarse 'financiero' en el ruteo del portal.
+      for (const f of ["login.html", "auth-callback.html", "panel-v2.html", "reservar.html"]) {
+        const s3 = read(f); if (!s3) continue;
+        if (/'financiero'|"financiero"/.test(s3)) return f + ": volvió el nicho 'financiero' (se reconvirtió a 'life').";
+        if (/pathway-fin-cliente\.html/.test(s3)) return f + ": apunta al portal viejo (pathway-fin-cliente.html).";
       }
       return null;
     },
