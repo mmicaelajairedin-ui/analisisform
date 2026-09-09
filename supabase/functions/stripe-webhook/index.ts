@@ -125,6 +125,21 @@ function subPeriodEnd(sub: StripeSubscription): number | undefined {
   return max > 0 ? max : undefined;
 }
 
+// ── ¿Mensual o anual? ────────────────────────────────────────
+// BUG (sep-2026): NADIE escribia `configuracion.billing`, pero el panel lo lee
+// en 6 sitios (MRR, "Mi plan", CTA de Stripe). Al no estar, TODO suscriptor
+// anual se contaba como mensual: un Pro anual sumaba $59/mes al MRR en vez de
+// $44,25 ($531/12). Se deduce del intervalo del precio y, si el Payment Link
+// viejo no lo trae, de los montos anuales conocidos.
+const MONTOS_ANUALES = new Set([26100, 53100, 119200, 199200, 319200]);
+function subBilling(sub: StripeSubscription): "mensual" | "anual" {
+  const it = sub.items?.data?.[0];
+  const interval = it?.price?.recurring?.interval;
+  if (interval === "year") return "anual";
+  if (interval === "month") return "mensual";
+  return MONTOS_ANUALES.has(it?.price?.unit_amount || 0) ? "anual" : "mensual";
+}
+
 // ── Signature helpers ─────────────────────────────────────────
 function parseSigHeader(header: string): { t?: string; v1?: string } {
   const parts: { t?: string; v1?: string } = {};
@@ -695,6 +710,7 @@ async function handleRedSubscription(
     es_multicoach: true,
     stripe_customer_id: sub.customer,
     stripe_subscription_id: sub.id,
+    billing: subBilling(sub),
     fecha_fin_prueba: trialEndISO,
     fecha_fin_periodo: periodEndISO,
   };
@@ -805,6 +821,7 @@ async function handleCoachSubscription(
     plan: isVitalicio ? "pro" : plan,
     stripe_customer_id: sub.customer,
     stripe_subscription_id: sub.id,
+    billing: subBilling(sub),
     fecha_fin_prueba: isVitalicio ? null : trialEndISO,
     fecha_fin_periodo: isVitalicio ? null : periodEndISO,
   };
@@ -1185,11 +1202,15 @@ async function handleCoachInvoice(inv: StripeInvoice, paid: boolean) {
   const motivo = inv.billing_reason || "";
   const ahora = new Date().toISOString();
 
+  // ¿La factura es de una RED o de un coach suelto? Se marca ACA, que es donde
+  // se sabe: el panel no puede deducirlo del plan (una red Pro y un coach Pro
+  // se llaman igual) ni de la lista de coaches (los dueños de red no estan ahi).
+  const esRed = cfg.es_multicoach === true;
   const base = {
     dominio: "Billing",
     actor_email: email,
-    actor_rol: "coach",
-    entidad_tipo: "coach",
+    actor_rol: esRed ? "owner" : "coach",
+    entidad_tipo: esRed ? "red" : "coach",
     entidad_id: email,
     page: "stripe-webhook",
   };
@@ -1206,6 +1227,7 @@ async function handleCoachInvoice(inv: StripeInvoice, paid: boolean) {
         motivo,
         ciclo: motivo === "subscription_cycle" ? "renovacion" : "inicial",
         plan: cfg.plan || null,
+        es_red: esRed,
         periodo_fin: periodEndISO,
       },
     });
@@ -1223,6 +1245,7 @@ async function handleCoachInvoice(inv: StripeInvoice, paid: boolean) {
         monto: inv.amount_due || 0,
         moneda,
         motivo,
+        es_red: esRed,
         intento: inv.attempt_count || 0,
         proximo_intento: inv.next_payment_attempt
           ? new Date(inv.next_payment_attempt * 1000).toISOString()

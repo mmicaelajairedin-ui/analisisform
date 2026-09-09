@@ -5669,7 +5669,7 @@ const RULES = [
       if (!p) return null;
       if (/mrr\s*:\s*_proPaid\s*\*\s*\d+/.test(p))
         return "panel-v2.html: el MRR volvio a multiplicar por un precio hardcodeado en vez de usar _coachMRR().";
-      const m = p.match(/function _coachMRR\(u\)\{[\s\S]{0,700}?\n\}/);
+      const m = p.match(/function _coachMRR\(u\)\{[\s\S]{0,1600}?\n\}/);
       if (!m) return "panel-v2.html: desaparecio _coachMRR() — el MRR vuelve a contar vitalicios y coaches de red como ingreso.";
       const body = m[0];
       for (const [re, msg] of [
@@ -5677,6 +5677,8 @@ const RULES = [
         [/es_coach_red/, "no excluye a los coaches dentro de una red (paga el dueno, no ellos)"],
         [/plan\s*===?\s*["']red["']/, "no excluye el plan 'red' del MRR"],
         [/rol\s*===?\s*["']owner["']/, "no excluye las cuentas internas (owner/admin) del MRR"],
+        [/RED_MRR_USD/, "no usa los precios de RED — un dueño de red que paga 149/249/399 vuelve a contarse como coach (59/29) o directamente como 0"],
+        [/_esDuenoRed\(/, "no distingue al dueño de una red — su plan se llama igual que el de un coach suelto ('pro'), asi que sin esto se le cobra el precio equivocado"],
         [/_pagoFallado\(/, "no descuenta los cobros REBOTADOS — `past_due` se mapea a 'activa', asi que sin esto un coach al que no le entro la plata vuelve a sumar al MRR"],
       ]) if (!re.test(body)) return "panel-v2.html: _coachMRR() " + msg + ".";
       const fm = p.match(/function _pagoFallado\(cg\)\{[\s\S]{0,900}?\n\}/);
@@ -5688,6 +5690,15 @@ const RULES = [
       ]) if (!re2.test(fm[0])) return "panel-v2.html: _pagoFallado() " + msg2 + ".";
       if (!/Cobro fall/.test(p))
         return "panel-v2.html: la lista de Coaches dejo de mostrar el badge 'Cobro fallo' — un cobro rebotado vuelve a salir como 'Pago' en verde.";
+      if (/rol\s*===?\s*["']owner["'][^;]{0,24}return 0/.test(p.slice(p.indexOf("function _coachMRR"), p.indexOf("function _coachMRR") + 1600)))
+        return "panel-v2.html: _coachMRR() volvio a devolver 0 para rol='owner' — los dueños de red son clientes que pagan, no cuentas internas: su plata desaparece del MRR.";
+      const rm = p.match(/var RED_MRR_USD\s*=\s*\{[^;]*\};/);
+      if (!rm) return "panel-v2.html: desaparecio RED_MRR_USD — vuelven a faltar los precios de red.";
+      for (const [re3, msg3] of [
+        [/boutique\s*:\s*\{\s*mensual\s*:\s*149\b/, "boutique ($149)"],
+        [/studio\s*:\s*\{\s*mensual\s*:\s*249\b/, "studio ($249)"],
+        [/pro\s*:\s*\{\s*mensual\s*:\s*399\b/, "pro ($399)"],
+      ]) if (!re3.test(rm[0])) return "panel-v2.html: RED_MRR_USD dejo de coincidir con el precio real de " + msg3 + " (el mismo monto con el que stripe-webhook reconoce una suscripcion de red).";
       const pm = p.match(/var PLAN_MRR_USD\s*=\s*\{[^;]*\};/);
       if (!pm) return "panel-v2.html: desaparecio PLAN_MRR_USD — el precio del plan vuelve a estar suelto.";
       if (!/pro\s*:\s*\{\s*mensual\s*:\s*59\b/.test(pm[0]) || !/basic\s*:\s*\{\s*mensual\s*:\s*29\b/.test(pm[0]))
@@ -5775,6 +5786,48 @@ const RULES = [
         return "panel-v2.html: desaparecio ledgerCard() — la pestana Pagos vuelve a no listar los cobros.";
       if (!/Payouts a coaches/.test(p))
         return "panel-v2.html: desaparecio la tarjeta de Payouts — son plata que Pathway TRANSFIERE al coach, no las cuotas que el coach PAGA: no se fusionan.";
+      return null;
+    },
+  },
+
+  {
+    name: "admin: todo el dinero es visible y las suscripciones dicen la verdad",
+    bug: "Cuatro agujeros que hacian que el panel mintiera sobre la plata. " +
+         "(1) NADIE escribia `configuracion.billing`, pero el panel lo lee en 6 " +
+         "sitios: TODO suscriptor anual se contaba como mensual (un Pro anual " +
+         "sumaba $59 en vez de $44,25). (2) `loadReal` pedia `solicitudes` " +
+         "filtradas por coach_id=ME.id TAMBIEN siendo admin, asi que las " +
+         "comisiones de la plataforma eran invisibles y la fila decia '—'. " +
+         "(3) En la pestana MultiCoach TODAS las redes salian 'Suspendido': " +
+         "`reloadOrgs` no pedia la columna estado_sub, y ademas se comparaba " +
+         "contra 'activo' cuando la base guarda 'activa'. (4) La tarjeta de " +
+         "Ingresos estaba COPIADA en dos sitios.",
+    check() {
+      const p = read("panel-v2.html");
+      const w = read("supabase/functions/stripe-webhook/index.ts");
+      if (!p || !w) return null;
+      // (1) El webhook sella mensual/anual en las DOS suscripciones.
+      if (!/function subBilling\(/.test(w))
+        return "stripe-webhook: desaparecio subBilling() — sin `billing` todo suscriptor anual vuelve a contarse como mensual en el MRR.";
+      if ((w.match(/billing:\s*subBilling\(sub\)/g) || []).length < 2)
+        return "stripe-webhook: `billing: subBilling(sub)` tiene que estar en la config del COACH y en la del DUEÑO DE RED (faltan una o las dos).";
+      // (2) El admin lee las solicitudes de TODA la plataforma.
+      if (!/solicitudes\?select=[^"']*&order=created_at\.desc&limit=500/.test(p))
+        return "panel-v2.html: se perdio la query de solicitudes SIN filtro de coach — el admin vuelve a no ver las comisiones de la plataforma.";
+      if (!/solicitudes:\s*res\[13\]/.test(p))
+        return "panel-v2.html: RADM.solicitudes dejo de cargarse — 'Comisión Pathway' vuelve a salir en blanco.";
+      // (3) Estado real de las redes.
+      if (!/organizaciones\?select=[^"']*estado_sub/.test(p))
+        return "panel-v2.html: reloadOrgs dejo de pedir estado_sub — todas las redes vuelven a salir 'Suspendido'.";
+      if (/org\.estado_sub\s*===?\s*["']activo["']/.test(p))
+        return "panel-v2.html: se volvio a comparar estado_sub contra 'activo'; la base guarda 'activa' — ninguna red saldria como pagada.";
+      if (!/function _estadoRed\(/.test(p))
+        return "panel-v2.html: desaparecio _estadoRed() — el estado de las redes vuelve a derivarse a mano.";
+      // (4) Una sola tarjeta de Ingresos.
+      if (!/function ingresosCard\(/.test(p))
+        return "panel-v2.html: desaparecio ingresosCard() — la tarjeta de Ingresos vuelve a estar duplicada.";
+      if ((p.match(/Ingresos de la plataforma<span/g) || []).length > 1)
+        return "panel-v2.html: la tarjeta 'Ingresos de la plataforma' volvio a estar duplicada — un arreglo en una copia no llega a la otra.";
       return null;
     },
   },

@@ -8854,7 +8854,7 @@ function _iaChatScrollDown(){ try{ requestAnimationFrame(function(){ var s=docum
 /* ═══ Admin (vista de plataforma — no estaba en el handoff, diseñada en V2) ═══ */
 function reloadCoaches(){ return _sb("usuarios?rol=in.(coach,admin)&select=id,nombre,email,rol,activo,configuracion,foto_url,created_at,game_pts,game_medal,auth_id,org_id&order=created_at.desc").then(function(rows){ RCOACHES=rows||[]; reloadOrgs(); render(); }); }
 // Redes (multicoaches) para la gestión desde el admin (transferir dueño).
-function reloadOrgs(){ return _sb("organizaciones?select=id,nombre,owner_email,plan,activo,marca&order=created_at.desc").then(function(rows){ RORGS=rows||[]; render(); }).catch(function(){ RORGS=[]; }); }
+function reloadOrgs(){ return _sb("organizaciones?select=id,nombre,owner_email,plan,activo,marca,estado_sub,fecha_fin_prueba,max_coaches,max_clientes&order=created_at.desc").then(function(rows){ RORGS=rows||[]; render(); }).catch(function(){ RORGS=[]; }); }
 // Admin: subir el LOGO de una empresa (org) por el cliente. SVG/imagen chica tal
 // cual (conserva transparencia); grande → PNG 512. Guarda por guardar-red (merge).
 function _orgLogoPick(orgId){
@@ -8977,6 +8977,18 @@ function _buildEmpLeadStats(rows){
 // Precio real de la plataforma (PLAN_PRICE): Pro USD $59/mes · Basic USD $29/mes.
 // Anual se prorratea a mes ($531/12 y $261/12) para que el MRR no se dispare.
 var PLAN_MRR_USD={ pro:{mensual:59, anual:531/12}, basic:{mensual:29, anual:261/12} };
+// Precios de RED (multicoach). Son los MISMOS montos con los que el webhook
+// reconoce una suscripcion de red (RED_PLAN_BY_AMOUNT en stripe-webhook):
+// mensual 149/249/399 y anual 1192/1992/3192. Sin esta tabla, el dueño de una
+// red Pro ($399) se contaba como un coach Pro ($59) — o directamente como 0.
+var RED_MRR_USD={ boutique:{mensual:149, anual:1192/12}, studio:{mensual:249, anual:1992/12}, pro:{mensual:399, anual:3192/12} };
+// ¿Es el DUEÑO de una red? Hace falta preguntarlo aparte porque su plan se
+// llama igual que el de un coach suelto ("pro"): sin esto no hay forma de
+// distinguir $399/mes de $59/mes. Lo marca el webhook al cobrar (es_multicoach).
+function _esDuenoRed(u){
+  var cg=(u&&u.configuracion)||{};
+  return cg.es_multicoach===true || (u&&u.rol==="owner");
+}
 // ¿El ULTIMO movimiento de cobro de este coach fue un fallo?
 // Existe porque `estado_sub` NO alcanza: el stripe-webhook mapea `past_due`
 // (tarjeta rebotada, Stripe reintentando) a "activa", asi que un coach al que
@@ -8997,17 +9009,42 @@ function _pagoFallado(cg){
   });
   return f>ok;
 }
+// Estado de una RED a partir de su fila en `organizaciones`. Devuelve
+// [etiqueta, color] con el mismo vocabulario que el badge del coach:
+// Pagó / Prueba · quedan N d / Vencida hace N d / Cancelada / Inactiva.
+function _estadoRed(org){
+  org=org||{};
+  var es=(""+(org.estado_sub||"")).toLowerCase();
+  if(org.activo===false) return ["Inactiva","var(--pw-danger)"];
+  if(es==="activa") return ["Pagó","var(--pw-bosque)"];
+  if(es==="cancelada"||es==="vencida") return ["Cancelada","var(--pw-danger)"];
+  var ffp=org.fecha_fin_prueba?new Date(org.fecha_fin_prueba):null;
+  if(ffp && !isNaN(ffp.getTime())){
+    var d=Math.ceil((ffp.getTime()-Date.now())/86400000);
+    if(d>0) return ["Prueba · quedan "+d+" d", d<=3?"#B5651D":"var(--pw-bosque)"];
+    return ["Vencida hace "+Math.abs(d)+" d","var(--pw-danger)"];
+  }
+  return ["Prueba","#B5651D"];
+}
 function _coachMRR(u){
   var cg=(u&&u.configuracion)||{};
   if((""+(cg.estado_sub||"")).toLowerCase()!=="activa") return 0;
   // El ultimo cobro rebotó: todavia no es ingreso. Vuelve a contar solo cuando
   // entre el cobro (o cuando se lo marque pagado a mano).
   if(_pagoFallado(cg)) return 0;
-  if(u&&(u.rol==="admin"||u.rol==="owner")) return 0;
-  if(cg.es_pro_vitalicio===true) return 0;
-  if(cg.es_coach_red===true || cg.plan==="red") return 0;
-  var pl=(cg.plan==="pro")?"pro":"basic";
+  if(u&&u.rol==="admin") return 0;                        // cuenta interna
+  if(cg.es_pro_vitalicio===true) return 0;                // cortesia, no ingreso
+  if(cg.es_coach_red===true || cg.plan==="red") return 0; // asiento de red: paga el dueño
   var bl=(cg.billing==="anual")?"anual":"mensual";
+  // Dueño de red: paga por la RED, con su propia tabla de precios. Antes se
+  // devolvia 0 por `rol==="owner"` (se los trataba como cuenta interna), asi
+  // que una red que pagaba $249 no aparecia en ningun lado.
+  if(_esDuenoRed(u)){
+    // Sin un plan de red conocido no inventamos ingreso: mejor 0 que una cifra
+    // sacada de la nada (cuentas de prueba/QA que quedaron con rol owner).
+    return RED_MRR_USD[cg.plan] ? RED_MRR_USD[cg.plan][bl] : 0;
+  }
+  var pl=(cg.plan==="pro")?"pro":"basic";
   return PLAN_MRR_USD[pl][bl];
 }
 // Emails de coaches que ya pagaron DE VERDAD. Un lead cuenta como "convirtió"
@@ -9744,6 +9781,31 @@ function viewAdmin(){
       "<td>"+stars+"</td>"+
       "<td style='text-align:right;white-space:nowrap'>"+askRev+"<button class='cp-btn cp-btn-ghost' style='height:28px;padding:0 10px;font-size:11px;margin-right:6px' data-act='cvx-resend' data-em='"+esc(c.em||"")+"' data-n='"+esc(c.n||"")+"'>Reenviar acceso</button>"+verCv+"</td></tr>";
   }).join("") || "<tr><td colspan='6' style='padding:18px;color:var(--pw-text-soft);font-size:13px'>Sin registros de CV Express todavía.</td></tr>";
+  // ── Ingresos de la plataforma ─────────────────────────────────────
+  // Una sola funcion: antes esta tarjeta estaba COPIADA en la pestana Pagos y
+  // en el dashboard, asi que cualquier arreglo habia que hacerlo dos veces.
+  // Desglosa por fuente para que se vea DE DONDE viene la plata; el subtotal
+  // recurrente (MRR) separa coaches de redes, que tienen precios distintos.
+  function ingresosCard(conNota){
+    var mixEur = A ? ((A.cvxRevMes||0)+(A.comMes||0)) : 0;
+    var nota = A
+      ? ("Recurrente: "+(A.proPaid+A.basicPaid)+" coach"+((A.proPaid+A.basicPaid)===1?"":"es")+" ("+A.proPaid+" Pro · "+A.basicPaid+" Basic) y "+(A.redesPagas||0)+" red"+((A.redesPagas||0)===1?"":"es")+" que <strong>pagaron</strong>. No cuentan los de prueba, los Pro vitalicios ni los coaches dentro de una red (paga el dueño). Los <strong>payouts</strong> a coaches no son ingreso y siguen sin cablear: se ven en Stripe.")
+      : "Los <strong>€14.880</strong> de payouts (80% de lo referido) no son ingreso — se transfieren tras las 24 h.";
+    return "<div class='cp-card'><div class='cp-card-hd'><h3 class='cp-card-title'>Ingresos de la plataforma<span class='dot'>.</span></h3>"+
+        "<span class='cp-eyebrow'>"+_mesActual()+"</span></div>"+
+        "<div class='cp-card-pad' style='padding-top:8px;padding-bottom:8px'>"+
+          row("Suscripciones de coaches"+(A?" ("+(A.proPaid+A.basicPaid)+")":""), (A?usd(A.mrrCoach||0):"€1.091")+"<span style='font-size:12px;color:var(--pw-text-soft);font-weight:400'> /mes</span>",{muted:true})+
+          row("Redes multicoach"+(A?" ("+(A.redesPagas||0)+")":""), (A?usd(A.mrrRed||0):"€0")+"<span style='font-size:12px;color:var(--pw-text-soft);font-weight:400'> /mes</span>",{muted:true})+
+          row("Ingreso recurrente (MRR)", (A?usd(A.mrr||0):"€1.091")+"<span style='font-size:12px;color:var(--pw-text-soft);font-weight:400'> /mes</span>",{top:true})+
+          row("Comisión Pathway (este mes)", A?eur(A.comMes||0):"€3.720",{muted:true,top:true})+
+          row("CV Express (este mes)", A?eur(A.cvxRevMes||0):"€1.073",{muted:true})+
+          row("Total del mes", A?totalReal(A.mrr||0,mixEur):"€5.884",{big:true,strongC:"var(--pw-bosque)",top:true})+
+          row("CV Express (acumulado)", A?eur(A.cvxRev||0):"€1.073",{muted:true,top:true})+
+          row("Comisión Pathway (acumulada)", A?eur(A.comTot||0):"€3.720",{muted:true})+
+        "</div>"+
+        (conNota?"<p class='cp-reassurance' style='margin:0 22px 20px;border-radius:12px'>"+nota+"</p>":"")+
+      "</div>";
+  }
   // ── Cobros de suscripcion, uno por factura ────────────────────────
   // OJO: esto NO son los payouts. Payouts = plata que Pathway le TRANSFIERE al
   // coach por Stripe Connect. Esto son las cuotas que el coach le PAGA a
@@ -9758,7 +9820,7 @@ function viewAdmin(){
     var evs = (RLEDGER && RLEDGER.eventos) || [];
     if(!evs.length) return hd+pad("Todavía no hay cobros registrados. El registro arranca cuando el webhook de Stripe tenga habilitados <strong>invoice.paid</strong> e <strong>invoice.payment_failed</strong>: desde ahí queda una fila por cada cobro mensual. <a href='"+esc(STRIPE_PORTAL)+"' target='_blank' rel='noopener' style='color:var(--pw-bosque);font-weight:600'>Ver en Stripe →</a>");
     var d0=new Date(), ini=Date.UTC(d0.getUTCFullYear(), d0.getUTCMonth(), 1);
-    var mesUsd=0, mesEur=0, mesN=0, fallos=0;
+    var mesUsd=0, mesEur=0, mesN=0, fallos=0, coachN=0, redN=0;
     var rows = evs.map(function(e){
       var pay=(e&&e.payload)||{}, ok=(e.tipo==="InvoicePaid");
       var t=+new Date(e.ts)||0;
@@ -9767,14 +9829,20 @@ function viewAdmin(){
       if(t>=ini){ if(ok){ mesN++; if(esEur) mesEur+=monto; else mesUsd+=monto; } else { fallos++; } }
       var fecha="—"; try{ fecha=new Date(e.ts).toLocaleDateString("es-ES",{day:"numeric",month:"short"}); }catch(_e){}
       var ciclo = pay.ciclo==="renovacion" ? "Renovación" : (pay.ciclo==="inicial" ? "Primer cobro" : "—");
-      return "<tr><td style='font-weight:600;color:var(--pw-carbon)'>"+esc(e.actor_email||"—")+"</td>"+
+      // El tipo lo marca el webhook (payload.es_red): el panel no puede deducirlo
+      // solo (una red Pro y un coach Pro tienen el mismo nombre de plan).
+      var esRed = pay.es_red===true;
+      if(esRed){ if(ok) redN++; } else if(ok){ coachN++; }
+      var tipoChip = "<span class='cp-chipk"+(esRed?"":" on")+"' style='margin-left:7px'>"+(esRed?"Red":"Coach")+"</span>";
+      return "<tr><td style='font-weight:600;color:var(--pw-carbon)'>"+esc(e.actor_email||"—")+tipoChip+"</td>"+
         "<td style='color:var(--pw-text-soft)'>"+esc(fecha)+"</td>"+
         "<td><span class='cp-bill-amount'>"+(esEur?eur(monto):usd(monto))+"</span></td>"+
         "<td style='color:var(--pw-text-soft)'>"+esc(ciclo)+"</td>"+
         "<td>"+pill(ok?"Cobrado":"Falló", ok?"ok":"danger")+"</td></tr>";
     }).join("");
+    var det=[]; if(coachN) det.push(coachN+" coach"+(coachN===1?"":"es")); if(redN) det.push(redN+" red"+(redN===1?"":"es"));
     var tot = mesN
-      ? ("Cobrado este mes: <strong>"+(mesUsd?usd(mesUsd):"")+(mesUsd&&mesEur?" + ":"")+(mesEur?eur(mesEur):"")+"</strong> en "+mesN+" cobro"+(mesN===1?"":"s"))
+      ? ("Cobrado este mes: <strong>"+(mesUsd?usd(mesUsd):"")+(mesUsd&&mesEur?" + ":"")+(mesEur?eur(mesEur):"")+"</strong> en "+mesN+" cobro"+(mesN===1?"":"s")+(det.length?" ("+det.join(" · ")+")":""))
       : "Este mes todavía no entró ningún cobro";
     return hd+
       "<p class='cp-reassurance' style='margin:0 22px 12px;border-radius:12px'>"+tot+
@@ -9809,7 +9877,7 @@ function viewAdmin(){
   function totalReal(mrr,cvx){ return cvx>0 ? usd(mrr)+" + "+eur(cvx) : usd(mrr); }
   var A=null;
   if(REAL && RCOACHES){
-    var _now=Date.now(), _D=86400000, _pro=0,_basic=0,_prueba=0,_act7=0,_inact14=0,_nuevas7=0,_venc3=0,_sinUso=0,_proPaid=0,_basicPaid=0,_mrr=0;
+    var _now=Date.now(), _D=86400000, _pro=0,_basic=0,_prueba=0,_act7=0,_inact14=0,_nuevas7=0,_venc3=0,_sinUso=0,_proPaid=0,_basicPaid=0,_mrr=0,_mrrCoach=0,_mrrRed=0,_redesPagas=0;
     RCOACHES.forEach(function(u){
       var cgf=u.configuracion||{};
       var vit=cgf.es_pro_vitalicio===true||u.rol==="admin";
@@ -9820,7 +9888,13 @@ function viewAdmin(){
       // MRR real: SOLO los que PAGAN (_coachMRR). No alcanza estado_sub='activa':
       // los vitalicios y los asientos de red también lo tienen y no son ingreso.
       var _m=_coachMRR(u);
-      if(_m>0){ _mrr+=_m; if(pl==="pro")_proPaid++; else _basicPaid++; }
+      if(_m>0){
+        _mrr+=_m;
+        // Desglose por tipo: una red y un coach suelto no son lo mismo ni en
+        // precio ni en producto, y mezclarlos escondia de donde viene la plata.
+        if(_esDuenoRed(u)){ _mrrRed+=_m; _redesPagas++; }
+        else { _mrrCoach+=_m; if(pl==="pro")_proPaid++; else _basicPaid++; }
+      }
       var la=cgf.last_login||u.last_login;
       if(la){ var dd=(_now-new Date(la))/_D; if(dd<=7)_act7++; if(dd>14)_inact14++; } else { _inact14++; }
       if(u.created_at && (_now-new Date(u.created_at))/_D<=7) _nuevas7++;
@@ -9845,10 +9919,24 @@ function viewAdmin(){
       var t=new Date(x.paid_at).getTime();
       return (!isNaN(t) && t>=_mIni) ? s+(Number(x.pago_monto)||0) : s;
     },0);
+    // ── Comisiones de Pathway (marketplace / Stripe Connect) ──────────
+    // Solo cuentan las solicitudes ACEPTADAS: una expirada nunca se cobro.
+    // Antes esto no se calculaba porque el admin no tenia los datos (la query
+    // venia filtrada por su propio coach_id) y la fila salia "—".
+    var _sols=(_R.solicitudes||[]), _comTot=0, _comMes=0, _brutoMes=0, _solMes=0;
+    _sols.forEach(function(x){
+      if(!x || x.estado!=="aceptada") return;
+      var com=Number(x.comision); if(!(com>=0)) com=0;
+      _comTot+=com;
+      var t=x.created_at?new Date(x.created_at).getTime():0;
+      if(t && !isNaN(t) && t>=_mIni){ _comMes+=com; _brutoMes+=(Number(x.monto)||0); _solMes++; }
+    });
     A={ total:RCOACHES.length, pro:_pro, basic:_basic, prueba:_prueba, act7:_act7, inact14:_inact14,
         nuevas7:_nuevas7, venc3:_venc3, sinUso:_sinUso, mrr:_mrr, proPaid:_proPaid, basicPaid:_basicPaid,
         candsTot:(_R.cands||[]).length, cands30:_c30, cvx:_cx.length, cvxPaid:_cxP, cvxRev:_cxR, cvxRevMes:_cxRMes,
-        leadsTot:_lds.length, leadsTrial:_lt, leadsPago:_lp };
+        leadsTot:_lds.length, leadsTrial:_lt, leadsPago:_lp,
+        mrrCoach:_mrrCoach, mrrRed:_mrrRed, redesPagas:_redesPagas,
+        comTot:_comTot, comMes:_comMes, brutoMes:_brutoMes, solMes:_solMes };
   }
 
   var tabs = [["coaches","Coaches"],["multicoach","MultiCoach"],["empleados","Empleados"],["ranking","Ranking"],["novedades","Novedades"],["contactos","Contactos"],["cvx","CV Express"],["resenas","Reseñas"],["pagos","Pagos"],["emails","Emails"]];
@@ -10155,8 +10243,13 @@ function viewAdmin(){
       var maxClients = org.max_clientes || "∞";
       var clientsLabel = (typeof maxClients==="number") ? (actualClients+" / "+maxClients) : (actualClients+" / "+maxClients);
       var planLabel = (org.plan==="pro")?"Pro":(org.plan==="studio")?"Studio":"Boutique";
-      var estLabel = org.estado_sub==="activo"?"Activo":(org.estado_sub==="prueba"?"Prueba":"Suspendido");
-      var estColor = org.estado_sub==="activo"?"var(--pw-bosque)":(org.estado_sub==="prueba"?"#B5651D":"var(--pw-danger)");
+      // Estado REAL de la red. Antes salian TODAS como "Suspendido" por dos bugs
+      // apilados: (1) `reloadOrgs` no pedia la columna estado_sub, asi que era
+      // undefined; (2) aun pidiendola, se comparaba contra "activo" y la base
+      // guarda "activa". Mismo vocabulario que el badge de un coach para que la
+      // plataforma diga lo mismo en todos lados.
+      var _e=_estadoRed(org);
+      var estLabel=_e[0], estColor=_e[1];
       return "<tr style='position:relative'><td style='font-weight:600;color:var(--pw-carbon)'>"+esc(org.nombre||"—")+"</td>"+
         "<td>"+esc(ownerName)+"</td>"+
         "<td style='text-align:center;font-size:12px'><span style='font-weight:600'>"+coachesLabel+"</span></td>"+
@@ -10522,16 +10615,7 @@ function viewAdmin(){
       "</div></div>"+
       _revCard;
   } else if(state.adminTab==="pagos"){
-    body = "<div class='cp-card'><div class='cp-card-hd'><h3 class='cp-card-title'>Ingresos de la plataforma<span class='dot'>.</span></h3>"+
-        "<span class='cp-eyebrow'>"+_mesActual()+"</span></div>"+
-        "<div class='cp-card-pad' style='padding-top:8px;padding-bottom:8px'>"+
-          row("Suscripciones de coaches (pagas)", (A?usd(A.mrr):"€1.091")+"<span style='font-size:12px;color:var(--pw-text-soft);font-weight:400'> /mes</span>",{muted:true})+
-          row("Comisión Pathway", A?"—":"€3.720",{muted:true})+
-          row("CV Express (este mes)", A?eur(A.cvxRevMes):"€1.073",{muted:true})+
-          row("Total del mes", A?totalReal(A.mrr||0,A.cvxRevMes||0):"€5.884",{big:true,strongC:"var(--pw-bosque)",top:true})+
-          row("CV Express (acumulado)", A?eur(A.cvxRev):"€1.073",{muted:true,top:true})+
-        "</div>"+
-        "<p class='cp-reassurance' style='margin:0 22px 20px;border-radius:12px'>"+(A?"Solo coaches que <strong>pagaron</strong> ("+A.proPaid+" Pro · "+A.basicPaid+" Basic, USD $59 y $29 al mes). No cuentan los de prueba, los Pro vitalicios ni los coaches dentro de una red (paga el dueño). Comisión/payouts en Stripe.":"Los <strong>€14.880</strong> de payouts (80% de lo referido) no son ingreso — se transfieren tras las 24 h.")+"</p></div>"+
+    body = ingresosCard(true)+
       ledgerCard()+
       "<div class='cp-card'><div class='cp-card-hd'><h3 class='cp-card-title'>Payouts a coaches — pendientes<span class='dot'>.</span></h3>"+
         "<span class='cp-eyebrow' style='color:var(--pw-sendero)'>● vía Stripe</span></div>"+
@@ -10562,18 +10646,10 @@ function viewAdmin(){
         fc(""+(A?A.nuevas7:1),"Coaches nuevas (7 d)")+
         fc("<span style='color:var(--pw-bosque)'>"+(A?(A.leadsPago||"—"):9)+"</span>","Ventas (leads pagados)")+
       "</div></div>"+
-      "<div class='cp-card'><div class='cp-card-hd'><h3 class='cp-card-title'>Ingresos de la plataforma<span class='dot'>.</span></h3>"+
-        "<span class='cp-eyebrow'>"+_mesActual()+"</span></div>"+
-        "<div class='cp-card-pad' style='padding-top:8px;padding-bottom:8px'>"+
-          row("Suscripciones de coaches (pagas)", (A?usd(A.mrr):"€1.091")+"<span style='font-size:12px;color:var(--pw-text-soft);font-weight:400'> /mes</span>",{muted:true})+
-          row("Comisión Pathway", A?"—":"€3.720",{muted:true})+
-          row("CV Express (este mes)", A?eur(A.cvxRevMes):"€1.073",{muted:true})+
-          row("Total del mes", A?totalReal(A.mrr||0,A.cvxRevMes||0):"€5.884",{big:true,strongC:"var(--pw-bosque)",top:true})+
-          row("CV Express (acumulado)", A?eur(A.cvxRev):"€1.073",{muted:true,top:true})+
-        "</div></div>";
+      ingresosCard(false);
   }
   var realNote = REAL
-    ? "<div class='cp-reassurance' style='margin:0;border-radius:12px'><strong>Datos reales:</strong> coaches, contactos, candidatos, CV Express y MRR por plan. Comisión y payouts se gestionan en Stripe (no cableados).</div>"
+    ? "<div class='cp-reassurance' style='margin:0;border-radius:12px'><strong>Datos reales:</strong> coaches, contactos, candidatos, CV Express, MRR (coaches + redes) y comisiones. Los <strong>payouts</strong> a coaches siguen sin cablear: se ven en Stripe.</div>"
     : "";
   return "<header class='cp-topbar'><div><h1 class='cp-h1'>Admin<span class='dot'>.</span></h1>"+
       "<div class='cp-sub'>Vista de plataforma"+(REAL?" · datos en vivo":" · datos de ejemplo")+"</div></div></header>"+
@@ -16444,6 +16520,15 @@ function loadReal(){
     // estas sesiones junto a las cargadas a mano (sesiones_registro). Fuente única
     // de sesiones = Calendario. Falla suave: si la tabla no existe, queda [].
     _sb("citas?coach_id=eq."+encodeURIComponent(ME.id)+"&inicio=gte."+encodeURIComponent((function(){var d=new Date();d.setDate(1);d.setHours(0,0,0,0);return d.toISOString();})())+"&select=inicio,estado&order=inicio.asc").catch(function(){return [];})
+    ,
+    // COMISIONES DE TODA LA PLATAFORMA (solo admin). La query de arriba trae
+    // `solicitudes` filtradas por coach_id=ME.id — o sea, las TUYAS — asi que el
+    // admin nunca veia las del resto y "Comisión Pathway" salia siempre "—".
+    // Esta va sin filtro de coach. NO reemplaza a RSOL (esa la usa tu pantalla
+    // "Clientes de Pathway", que debe seguir mostrando solo lo tuyo).
+    (ME.rol==="admin"
+      ? _sb("solicitudes?select=id,coach_id,estado,monto,comision,created_at&order=created_at.desc&limit=500")
+      : Promise.resolve([]))
   // RED DE SEGURIDAD: cada query falla SUAVE (devuelve vacío) para que UNA que
   // se rompa (p.ej. una columna que no existe) NO tumbe la carga entera y deje
   // el panel en blanco. Se ve vacía SOLO esa parte; el resto (config, link del
@@ -16465,7 +16550,7 @@ function loadReal(){
       return em.indexOf("ejemplo@pathwaycareercoach.com")>=0 || em.indexOf("maria.ejemplo")===0;
     };
     var _adminCands=(res[6]||[]).filter(function(x){ return !_isDemoCand(x); });
-    RADM = (ME.rol==="admin") ? { cands:_adminCands, cvx:res[7]||[], leads:[], resenas:res[10]||[], informes:res[8]||[] } : null;
+    RADM = (ME.rol==="admin") ? { cands:_adminCands, cvx:res[7]||[], leads:[], resenas:res[10]||[], informes:res[8]||[], solicitudes:res[13]||[] } : null;
     RSOL = res[9]||[];
     RMSG = res[11]||[];
     RCITAS = res[12]||[];
