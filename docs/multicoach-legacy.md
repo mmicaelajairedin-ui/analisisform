@@ -100,7 +100,49 @@ entra en el cierre núcleo.
 
 ---
 
-## 4. `pathway-handoff` — conservada, sin uso
+## 4. Alta self-serve de red — fuera del cierre, y por qué
+
+La Fase 8 del plan decía: implementar solo si abrir el gate de
+`crear-multicoach` es un cambio mínimo y seguro; si toca una decisión de
+producto o de cobros, documentarlo y dejarlo fuera. **Toca una decisión de
+cobros, así que queda fuera.**
+
+`crear-multicoach` recibe en el cuerpo `{ email, nombre, nombre_red, plan, nicho,
+dias }` y crea al dueño y su organización con los límites del plan y la duración
+de prueba que se le pidan. Hoy está gateada a `rol='admin'` y eso es lo que la
+hace segura: quien decide plan y prueba es Micaela.
+
+Abrirla al público no es cambiar un gate — es decidir antes:
+
+- ¿Se cobra antes o después de crear la red? (`stripe-webhook` ya trata el plan
+  «red», pero **espera encontrar un dueño con ese email**: si no lo encuentra
+  avisa a la admin y no crea nada. Así que el orden importa.)
+- ¿Qué planes son self-serve? Tal como está, el cuerpo puede pedir `plan:'pro'`
+  —coaches y clientes ilimitados— gratis.
+- ¿Cuántos días de prueba, y quién impide que alguien pida 3 650?
+- ¿Qué evita el alta masiva de redes falsas?
+
+Ninguna de esas respuestas está en el repositorio. Hasta que existan, el alta de
+una red se sigue haciendo desde el panel admin, que es lo que hay hoy.
+
+---
+
+## 5. Pendiente técnico único: almacenamiento de los adjuntos
+
+Las fotos, planes, documentos y recursos de la ficha del cliente se ven al
+soltarlos pero **viven solo en memoria**: se pierden al recargar. En el cierre se
+quitó el «✓» que afirmaba lo contrario y ahora, en una red real, la zona de
+arrastre avisa de que es una vista previa.
+
+Falta decidir el almacenamiento: **Uploadcare** (ya en uso para los CV, con
+cuenta y widget montados) o **Supabase Storage** (mismo proveedor que el resto
+de los datos, con RLS por org). Es una decisión, no un desarrollo: en cuanto
+esté, son cinco puntos de subida (`_avatarDrop`, `_cliDocFiles`, `_progFiles`,
+`_sesFiles`, `_recursosFiles`) y una columna donde guardar las URLs.
+
+---
+
+## 6. `pathway-handoff` — conservada, sin uso
 
 `login.html` mandaba al dueño a `pathwayplatforms.com` con un código de un solo
 uso emitido por `pathway-handoff`. Ese dominio nunca se activó
@@ -112,3 +154,40 @@ La función **sigue desplegada y sin tocar**. Si algún día se activa el domini
 propio, se vuelve a ella cambiando el bloque del login — y actualizando a la vez
 el guardrail `multicoach: el dueño logueado ve su RED REAL`, que hoy exige el
 destino único.
+
+---
+
+## 7. Pasos de despliegue de este cierre
+
+Nada de esto se ha desplegado. En orden:
+
+1. **SQL Editor de Supabase** — aplicar `supabase/migrations/0112_programs_rls_fix.sql`.
+   Es idempotente y solo toca policies. **Sin ella no hay Programas**: la tabla
+   sigue siendo invisible para el dueño y el listado sale vacío.
+2. **Edge functions** — redesplegar las dos que cambiaron:
+   `supabase functions deploy mi-red --no-verify-jwt`
+   `supabase functions deploy add-coach-to-org --no-verify-jwt`
+   (`mi-red` es la que hace que la nota del cliente vuelva al recargar.)
+3. **Frontend** — el push a `main` lo publica solo (Cloudflare Pages).
+
+Comprobación después de desplegar, con sesión de dueño real:
+- entrar por el login y aterrizar en `/multicoach.html`;
+- Programas: crear uno, recargar, y que siga;
+- ficha de cliente: escribir una nota, recargar, y que siga;
+- ficha de coach → Acceso: quitar un módulo, guardar, entrar como ese
+  colaborador y comprobar que no ve esa sección.
+
+---
+
+## 8. Un hallazgo fuera del alcance del cierre
+
+`tests/coach-services-ios-blocking.test.js` está escrito en estilo Jest
+(`describe`/`test` globales, sin importarlos de `@playwright/test`). Como
+`playwright.config.js` recoge todo `./tests`, el runner **aborta al recolectar y
+la suite entera se queda en 0 tests**. Se ha comprobado que ocurre igual en
+`origin/main`, así que **es anterior a este cierre y no lo causa**.
+
+Consecuencia: la suite de Playwright de este repositorio llevaba tiempo sin
+ejecutar nada, lo que explica que «los tests estén verdes» no significara nada.
+No se ha tocado el archivo — es de iOS, no de MultiCoach. Arreglarlo (moverlo a
+un runner de Jest o reescribirlo con la API de Playwright) es una tarea aparte.
