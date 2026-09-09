@@ -130,36 +130,39 @@ RESPONDÉ SOLO CON JSON VÁLIDO, sin markdown. Estructura EXACTA (mismas claves)
 }
 Los scores van de 0-100 y reflejan el estado actual del cliente.`;
 
-// ── Nicho FINANZAS ── mismas claves de salida (etapas: Diagnóstico/Presupuesto/Deudas/Ahorro).
-const SYSTEM_FINANZAS = `Sos un coach financiero con 15 años de experiencia ayudando a personas a ordenar sus finanzas, salir de deudas y construir el hábito del ahorro. No das consejos de inversión específicos ni recomendás productos.
+// ── Nicho LIFE ── mismas claves de salida (etapas: Primera sesión/Objetivos/Seguimiento/Cierre).
+// Transversal a propósito: sirve para life coaching, mentoring, bienestar y
+// disciplinas afines. NO se especializa en ninguna escuela ni disciplina.
+const SYSTEM_LIFE = `Sos un coach de acompañamiento personal con 15 años de experiencia ayudando a personas a ganar claridad, definir objetivos propios y sostenerlos en el tiempo. Trabajás desde las preguntas y los acuerdos, no desde el consejo.
 
 Tu tarea: generar un análisis ACCIONABLE y ESPECÍFICO para el cliente en JSON. No genérico.
 
 REGLAS CRÍTICAS:
-1. Trabajá con los números que da el cliente (ingresos, gastos, deudas, objetivo).
-2. Acciones CONCRETAS y medibles ("recortar 120€/mes en suscripciones", NO "gastar menos").
-3. El plan va por 4 etapas: Diagnóstico → Presupuesto → Deudas → Ahorro. 3-5 acciones por etapa.
-4. Para deudas usá método bola de nieve (saldar la más chica primero) salvo que convenga otra por tasa.
+1. Trabajá con lo que el cliente cuenta (su objetivo, su momento, lo que le frena).
+2. Acciones CONCRETAS y observables ("escribir 3 páginas cada mañana", NO "trabajar en uno mismo").
+3. El proceso va por 4 etapas: Primera sesión → Objetivos → Seguimiento → Cierre. 3-5 acciones por etapa.
+4. NO diagnostiques ni sugieras tratamiento: esto es acompañamiento, no terapia ni medicina. Si aparece algo que excede el coaching (salud mental, consumo, violencia), decilo en "alertas" y sugerí derivar a un profesional.
 5. mensaje_candidato CÁLIDO y sin juzgar (2-3 frases).
+6. No asumas ninguna disciplina concreta (astrología, bio, ontológico…): escribí de forma que le sirva a cualquier profesional del acompañamiento.
 
 RESPONDÉ SOLO CON JSON VÁLIDO, sin markdown. Estructura EXACTA (mismas claves):
 {
-  "resumen": "3-4 oraciones sobre la situación financiera",
+  "resumen": "3-4 oraciones sobre el momento del cliente",
   "fortalezas": ["fortaleza 1", "2"],
-  "gaps": ["área a mejorar 1", "2"],
+  "gaps": ["área a trabajar 1", "2"],
   "estrategia": "4-5 oraciones",
-  "cv_acciones": ["acción de Diagnóstico 1", "2", "3"],
-  "linkedin_acciones": ["acción de Presupuesto 1", "2", "3"],
-  "networking_acciones": ["acción de Deudas 1", "2", "3"],
-  "preguntas": ["acción de Ahorro 1", "2", "3"],
-  "alertas": ["alerta si aplica"],
+  "cv_acciones": ["acción de Primera sesión 1", "2", "3"],
+  "linkedin_acciones": ["acción de Objetivos 1", "2", "3"],
+  "networking_acciones": ["acción de Seguimiento 1", "2", "3"],
+  "preguntas": ["pregunta poderosa para la próxima sesión 1", "2", "3"],
+  "alertas": ["alerta si aplica (incluida derivación a otro profesional)"],
   "mensaje_candidato": "mensaje cálido 2-3 oraciones",
   "scores": [
-    {"label":"Salud financiera","val":50},
-    {"label":"Control del gasto","val":45},
-    {"label":"Nivel de deuda","val":40},
-    {"label":"Hábito de ahorro","val":35},
-    {"label":"Claridad de objetivo","val":70}
+    {"label":"Claridad del objetivo","val":50},
+    {"label":"Compromiso con el proceso","val":45},
+    {"label":"Red de apoyo","val":40},
+    {"label":"Constancia","val":35},
+    {"label":"Autoconocimiento","val":70}
   ]
 }
 Los scores van de 0-100 y reflejan el estado actual del cliente.`;
@@ -419,24 +422,24 @@ function buildInformePrompt(c: CandidatoPayload): string {
   return parts.join("\n");
 }
 
-// Prompt para nichos fitness/financiero: usa los campos del intake del nicho.
+// Prompt para nichos fitness/life: usa los campos del intake del nicho.
 function buildNichoPrompt(c: Record<string, unknown>, nicho: string): string {
   const parts: string[] = [];
-  parts.push(nicho === "fitness" ? `Perfil del cliente (fitness):` : `Perfil del cliente (finanzas):`);
+  parts.push(nicho === "fitness" ? `Perfil del cliente (fitness):` : `Perfil del cliente (life):`);
   const g = (k: string) => (c[k] != null && c[k] !== "" ? String(c[k]) : "");
   if (g("nombre")) parts.push(`- Nombre: ${g("nombre")}`);
   if (g("objetivo")) parts.push(`- Objetivo: ${g("objetivo")}`);
   if (g("situacion")) parts.push(`- Situación: ${g("situacion")}`);
   const fitKeys = ["nivel", "dias", "lugar", "equipo", "peso", "altura", "lesiones", "medicacion", "restricciones", "nutricion", "edad"];
-  const finKeys = ["ingresos", "gastos", "deudas", "objetivo_ahorro", "plazo", "ahorro_actual"];
+  const lifeKeys = ["edad", "situacion", "urgencia", "obstaculos", "etapas"];
   const labels: Record<string, string> = {
     nivel: "Nivel", dias: "Días disponibles/semana", lugar: "Lugar (gym/casa)", equipo: "Equipo disponible",
     peso: "Peso (kg)", altura: "Altura (cm)", lesiones: "Lesiones/condiciones", medicacion: "Medicación",
     restricciones: "Restricciones (no puede/no debe)", nutricion: "Hábitos de alimentación", edad: "Edad",
-    ingresos: "Ingresos mensuales", gastos: "Gastos fijos", deudas: "Deudas", objetivo_ahorro: "Objetivo de ahorro",
-    plazo: "Plazo", ahorro_actual: "Ahorro actual",
+    situacion: "Situación actual", urgencia: "Qué lo trae ahora", obstaculos: "Lo que le frena",
+    etapas: "Etapas del proceso ya definidas",
   };
-  (nicho === "fitness" ? fitKeys : finKeys).forEach((k) => { if (g(k)) parts.push(`- ${labels[k] || k}: ${g(k)}`); });
+  (nicho === "fitness" ? fitKeys : lifeKeys).forEach((k) => { if (g(k)) parts.push(`- ${labels[k] || k}: ${g(k)}`); });
   if (g("extra")) parts.push(`- Notas extra: ${g("extra")}`);
   if (g("linkedin_texto")) { parts.push(``); parts.push(`Material/notas del cliente:`); parts.push(String(c["linkedin_texto"]).slice(0, 3000)); }
   parts.push(``);
@@ -768,12 +771,12 @@ Deno.serve(async (req: Request) => {
     }
 
     // generar_informe (default). Elegimos el prompt según el nicho del coach:
-    // carrera = SYSTEM_INFORME; fitness / financiero = sus prompts propios.
+    // carrera = SYSTEM_INFORME; fitness / life = sus prompts propios.
     const nicho = String((body as Record<string, unknown>).nicho || "carrera");
     let systemPrompt = SYSTEM_INFORME;
     let prompt: string;
     if (nicho === "fitness") { systemPrompt = SYSTEM_FITNESS; prompt = buildNichoPrompt(body as Record<string, unknown>, "fitness"); }
-    else if (nicho === "financiero") { systemPrompt = SYSTEM_FINANZAS; prompt = buildNichoPrompt(body as Record<string, unknown>, "financiero"); }
+    else if (nicho === "life") { systemPrompt = SYSTEM_LIFE; prompt = buildNichoPrompt(body as Record<string, unknown>, "life"); }
     else { prompt = buildInformePrompt(body); }
     const response = await callClaude(systemPrompt, prompt, apiKey);
     const parsed = extractJson(response);
