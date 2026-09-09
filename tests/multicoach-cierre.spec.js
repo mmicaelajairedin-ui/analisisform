@@ -243,3 +243,67 @@ test.describe('MultiCoach · honestidad de la interfaz', () => {
     expect(errores, errores.join(' | ')).toHaveLength(0);
   });
 });
+
+/**
+ * El nicho financiero se reconvirtio a Life en main (sep-2026): `pathway-fin-cliente.html`
+ * dejo de existir. MultiCoach no estaba en la lista de archivos que se revisaron al
+ * renombrarlo, asi que su router de nicho seguia mandando al portal borrado y su
+ * `mcNichoKey` no reconocia `life` (caia en `carrera` sin avisar). Esto lo fija.
+ */
+test.describe('MultiCoach · nicho Life', () => {
+  test('mcNichoKey reconoce life y no queda ninguna ruta al portal borrado', async ({ page }) => {
+    await page.goto(MC(), { waitUntil: 'load' });
+    await page.waitForTimeout(900);
+    const r = await page.evaluate(() => ({
+      life: window.mcNichoKey('life'),
+      fitness: window.mcNichoKey('fitness'),
+      carrera: window.mcNichoKey('carrera'),
+      vacio: window.mcNichoKey(''),
+      financieroViejo: window.mcNichoKey('financiero'),
+      hayPlantilla: !!(window.MCN && window.MCN.life) && !!(window.MCDET && window.MCDET.life),
+      hayFinanzas: !!(window.MCN && window.MCN.finanzas),
+    }));
+    expect(r.life).toBe('life');
+    expect(r.fitness).toBe('fitness');
+    expect(r.carrera).toBe('carrera');
+    expect(r.vacio).toBe('carrera');
+    // main borro el nicho 'financiero': ya no se le inventa compatibilidad.
+    expect(r.financieroViejo).toBe('carrera');
+    // Sin la clave `life`, NM()/DET() devuelven undefined y el panel del dueno no arranca.
+    expect(r.hayPlantilla).toBe(true);
+    expect(r.hayFinanzas).toBe(false);
+
+    const src = await (await fetch(`${BASE}multicoach.html`)).text();
+    expect(src).not.toMatch(/pathway-fin-cliente\.html/);
+    expect(src).toMatch(/pathway-life-cliente\.html/);
+  });
+
+  test('el portal del cliente Life abre /pathway-life-cliente.html', async ({ page }) => {
+    await page.goto(MC(), { waitUntil: 'load' });
+    await page.waitForTimeout(900);
+    const urls = await page.evaluate(() => {
+      const k = { email: 'ana@example.com' }, prev = window.MC_N, out = {};
+      ['fitness', 'carrera', 'life'].forEach(n => { window.MC_N = n; out[n] = window._mcPortalUrl(k); });
+      window.MC_N = prev;
+      return out;
+    });
+    expect(urls.life).toContain('/pathway-life-cliente.html');
+    expect(urls.life).toContain('coach_view=ana%40example.com');
+    // Los otros dos nichos no se rompieron al cambiar la rama del medio.
+    expect(urls.fitness).toContain('/pathway-fit-cliente.html');
+    expect(urls.carrera).toContain('/cliente.html');
+  });
+
+  test('la red Life no habla de asesores ni de finanzas en ninguna seccion', async ({ page }) => {
+    const errores = [];
+    page.on('pageerror', e => errores.push(e.message));
+    await page.goto(MC('&nicho=life'), { waitUntil: 'load' });
+    await page.waitForTimeout(900);
+    expect(await page.evaluate(() => window.MC_N)).toBe('life');
+    for (const s of SECCIONES) await ir(page, s);
+    expect(errores, errores.join(' | ')).toHaveLength(0);
+    const txt = await page.evaluate(() => document.body.innerText);
+    expect(txt).not.toMatch(/asesor/i);
+    expect(txt).not.toMatch(/presupuesto|deuda|invers/i);
+  });
+});

@@ -110,6 +110,49 @@ el cliente es **`notas_privadas`**, que es la que panel-v2 escribe y lee.
 
 ---
 
+## 1-ter. Reconversión del nicho Finanzas → Life (septiembre 2026)
+
+`main` reconvirtió el nicho financiero a **Life**: renombró
+`pathway-fin-cliente.html` → `pathway-life-cliente.html` y
+`pathway-fin-form.html` → `pathway-life-form.html`, cambió el valor de nicho
+`financiero`/`finanzas` por `life` y sustituyó el modelo de datos (`fin_*`) por
+`proc_objetivos` / `proc_seguimiento`.
+
+**MultiCoach se quedó fuera de esa reconversión.** No aparece en la lista de
+archivos que revisa la regla `nicho Life: no vuelve la terminología ni los
+campos de Finanzas` de `check-guardrails.js` (`login.html`, `auth-callback.html`,
+`panel-v2.html`, `reservar.html`), así que nada avisó de que:
+
+- `_mcPortalUrl` seguía abriendo `/pathway-fin-cliente.html`, un archivo que ya
+  no existe → el botón «Ver portal» daba 404 para una red del nicho Life.
+- `mcNichoKey` no reconocía `life`: como no contiene `fit` ni `financ`, caía en
+  el `return 'carrera'` final **en silencio**. Una red Life se pintaba entera
+  como una red de Carrera.
+- Los objetos indexados por esa clave (`MCN`, `MCDET`, `MCAG`, `MC_RECURSOS`,
+  `_RAIL_IMG`, `MC_REC_LABEL`, `MC_REC_EJEMPLOS`) sólo tenían la clave
+  `finanzas`. `NM()` y `DET()` no tienen valor por defecto: con `MC_N='life'`
+  habrían devuelto `undefined` y el panel del dueño no arranca.
+
+Todo eso está corregido **dentro de MultiCoach**; no se tocó ningún archivo de
+`main` para acomodarlo. `multicoach.html` se añadió además a la lista de esa
+regla, para que la próxima vez sí avise.
+
+**No se inventó compatibilidad hacia atrás.** Se comprobó contra producción
+antes de decidirlo: `candidatos.nicho` = 27 carrera · 17 fitness · **2 life** ·
+29 nulos, y **cero** `financiero`/`finanzas`; `usuarios.configuracion->>coach_type`
+= 30 carrera · 19 fitness · **3 life** · 34 nulos. La migración de datos está
+hecha, así que `mcNichoKey('financiero')` ya no devuelve un nicho financiero —
+cae en `carrera`, igual que cualquier otro valor desconocido.
+
+Los textos que quedaban bajo la clave (marca de la maqueta, categorías,
+`coachSing`/`coachCap`/`coachLow`, `medLabel`, etiquetas de la agenda) **no eran
+sólo demo**: `mcApplyNiche` y `DET()` se ejecutan también en modo REAL, así que
+una red Life de verdad habría visto «Asesores» en el menú, «Asignar asesor» en
+los atajos, las áreas «Ahorro & deuda / Inversión» y «Reunión de asesores» en la
+agenda. Por eso se adaptó el contenido del bloque completo, no sólo la clave.
+
+---
+
 ## 2. Carriles retirados — todavía en el repositorio
 
 Ninguno se ha borrado ni redirigido en esta fase.

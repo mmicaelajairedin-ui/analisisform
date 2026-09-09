@@ -5977,7 +5977,10 @@ const RULES = [
         if (/t===?"fin_pres"/.test(pan)) return "panel-v2.html: volvió la pestaña fin_pres (era la de Finanzas).";
       }
       // 4) Ningún nicho vuelve a llamarse 'financiero' en el ruteo del portal.
-      for (const f of ["login.html", "auth-callback.html", "panel-v2.html", "reservar.html"]) {
+      // multicoach.html se sumo al cerrar MultiCoach: su router de nicho seguia
+      // mandando al portal borrado (/pathway-fin-cliente.html) porque no estaba
+      // en esta lista y nadie lo miro al renombrar el nicho.
+      for (const f of ["login.html", "auth-callback.html", "panel-v2.html", "reservar.html", "multicoach.html"]) {
         const s3 = read(f); if (!s3) continue;
         if (/'financiero'|"financiero"/.test(s3)) return f + ": volvió el nicho 'financiero' (se reconvirtió a 'life').";
         if (/pathway-fin-cliente\.html/.test(s3)) return f + ": apunta al portal viejo (pathway-fin-cliente.html).";
