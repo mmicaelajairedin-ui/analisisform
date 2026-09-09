@@ -1778,7 +1778,32 @@ function _mcSesCoachReal(c){
 function mcNichoKey(n){ n=(''+(n||'')).toLowerCase(); if(n.indexOf('fit')>=0)return 'fitness'; if(n.indexOf('financ')>=0||n.indexOf('finanz')>=0)return 'finanzas'; return 'carrera'; }
 function mcEmptyRow(t,s){ return '<div class="row" style="opacity:.85"><div><div class="nm">'+_mcEsc(t)+'</div><div class="sub">'+_mcEsc(s||'')+'</div></div></div>'; }
 // Mapea una fila real de usuarios(coach) al shape que usan las tarjetas.
-function mcMapCoach(u, cliCount){ var cfg=(u&&u.configuracion)||{}; var cat=(NICHOS&&NICHOS[0]&&NICHOS[0].id)||''; return {id:u.id, n:u.nombre||u.email||'Coach', email:(u.email||'').toLowerCase(), tel:(cfg.telefono||cfg.tel||u.telefono||''), ini:_mcIni(u.nombre||u.email), nicho:cat, rat:+cfg.rating||0, ret:(cfg.retencion!=null?+cfg.retencion:null), cli:cliCount||0, ses:+cfg.sesiones||0, esp:cfg.especialidad||'', est:(u.activo===false?'inactivo':'activo'), foto:u.foto_url||cfg.foto||'', tipo:(cfg.member_role==='colaborador'?'colaborador':'coach'), permisos:(cfg.permisos&&typeof cfg.permisos==='object'?cfg.permisos:null), servicios:(Object.prototype.toString.call(cfg.servicios)==='[object Array]'?cfg.servicios:[])}; }
+function mcMapCoach(u, cliCount){ var cfg=(u&&u.configuracion)||{}; var cat=(NICHOS&&NICHOS[0]&&NICHOS[0].id)||''; return {id:u.id, n:u.nombre||u.email||'Coach', email:(u.email||'').toLowerCase(), tel:(cfg.telefono||cfg.tel||u.telefono||''), ini:_mcIni(u.nombre||u.email), nicho:cat, rat:+cfg.rating||0, ret:(cfg.retencion!=null?+cfg.retencion:null), cli:cliCount||0, ses:+cfg.sesiones||0, esp:cfg.especialidad||'', est:(u.activo===false?'inactivo':'activo'), foto:u.foto_url||cfg.foto||'', tipo:(cfg.member_role==='colaborador'?'colaborador':'coach'), permisos:(cfg.permisos&&typeof cfg.permisos==='object'?cfg.permisos:null), mcGrants:_mcGrantsDe(cfg), servicios:(Object.prototype.toString.call(cfg.servicios)==='[object Array]'?cfg.servicios:[])}; }
+/* ===== ACCESO A MULTICOACH — fuente unica: usuarios.configuracion.mc_permisos ==
+   Contrato (lo valida editar-coach-red): { v:1, org_id:<org>, grants:[modulo…] }.
+   `grants` es la lista COMPLETA, no un incremento: quitar un permiso es guardar
+   la lista sin el. El vocabulario es de MultiCoach — la edge function lo guarda
+   verbatim, asi que se define aca y en un solo sitio.
+   NO se usa configuracion.permisos (son capacidades de Pathway: negocio, perfil
+   publico, marketplace) ni la tabla colaborador_permisos (legacy sin escritor:
+   ver docs/multicoach-legacy.md). */
+var MC_GRANT_DEFS=[
+  ['clientes','Clientes','Ver la lista de clientes de la red y abrir sus fichas'],
+  ['coaches','Equipo','Ver el equipo y las fichas de cada coach'],
+  ['programas','Programas','Ver y editar los programas de la red'],
+  ['agenda','Agenda','Ver la agenda del equipo y crear sesiones'],
+  ['comunidad','Comunidad','Publicar avisos, clases y retos'],
+  ['analytics','Analytics','Ver el rendimiento de la red'],
+  ['cobros','Cobros','Ver los cobros y la cuenta de Stripe de la red']
+];
+var MC_GRANT_IDS=MC_GRANT_DEFS.map(function(g){return g[0];});
+// Lee los grants de una `configuracion`. null = acceso completo (no es un
+// colaborador limitado); [] = colaborador sin ningun modulo.
+function _mcGrantsDe(cfg){
+  var mp=cfg&&cfg.mc_permisos;
+  if(!mp||typeof mp!=='object'||Object.prototype.toString.call(mp.grants)!=='[object Array]') return null;
+  return mp.grants.filter(function(g){return MC_GRANT_IDS.indexOf(g)>=0;});
+}
 // Etiqueta del tipo de miembro (Coach / Colaborador) para las tarjetas y la ficha.
 function _mcTipoBadge(c){ if(!c||c.tipo!=='colaborador') return ''; return '<span style="display:inline-flex;align-items:center;font-size:9.5px;font-weight:800;letter-spacing:.4px;text-transform:uppercase;color:#7A5CA8;background:rgba(122,92,168,.14);padding:2px 7px;border-radius:100px;margin-left:6px">Colaborador</span>'; }
 // Mapea una fila real de candidatos al shape que usan las tarjetas.
@@ -2031,14 +2056,13 @@ function mcBoot(){
         // Un coach DE la red no gestiona acá: su mundo es su panel de siempre.
         window.location.href='panel-v2.html?v='+Date.now();
       } else if(f.rol==='colaborador'&&f.org_id){
-        // Colaborador: puede acceder a MultiCoach si tiene permisos.
-        // Cargar permisos granulares desde BD
-        _hdr().then(function(h){
-          return fetch(SB+'/rest/v1/colaborador_permisos?usuario_id=eq.'+encodeURIComponent(f.id)+'&org_id=eq.'+encodeURIComponent(f.org_id)+'&select=permisos',{headers:h});
-        }).then(function(r){ return r.ok?r.json():[]; }).then(function(rows){
-          if(rows&&rows.length&&rows[0].permisos) MC_USER_PERMISOS=(Array.isArray(rows[0].permisos)?rows[0].permisos:[]);
-          mcApplyNiche();
-        }).catch(function(){ mcApplyNiche(); });
+        // Colaborador: entra a MultiCoach con los modulos que le dio el dueño.
+        // La fuente es configuracion.mc_permisos, que ya viene en esta misma
+        // consulta — antes se pedia la tabla colaborador_permisos en una segunda
+        // llamada, y esa tabla NO la escribe ninguna pantalla (solo se podia
+        // poblar por SQL), asi que el colaborador acababa siempre sin permisos.
+        MC_USER_PERMISOS=_mcGrantsDe(f.configuracion||{});
+        mcApplyNiche();
         return;
       }
       // Coach individual o admin mirando la maqueta → se queda en la demo.
@@ -2497,9 +2521,80 @@ function fichaCoach(id){_curCoach=id;_coachTab='perfil';
   }
 }
 function _goCoachTab(t){_coachTab=t;_renderCoachFicha();}
+/* ===== Pestaña "Acceso" — qué ve esta persona dentro de MultiCoach =====
+   Antes esto no existía en ninguna pantalla: la única forma de dar acceso a un
+   colaborador era un INSERT a mano en la base. Escribe en mc_permisos vía
+   editar-coach-red, que es la única función que valida el contrato. */
+var _mcAccSel=null;   // selección en curso (ids de módulo) mientras la pestaña está abierta
+var _mcAccFor='';     // de qué coach es esa selección
+function _mcAccState(c){
+  if(_mcAccFor!==c.id||_mcAccSel===null){ _mcAccFor=c.id; _mcAccSel=(c.mcGrants?c.mcGrants.slice():null); }
+  return _mcAccSel;
+}
+function _coachAcceso(c){
+  var sel=_mcAccState(c);
+  var full=(sel===null);
+  var esColab=(c.tipo==='colaborador');
+  var nota=esColab
+    ? 'Marca a qué partes de la red entra '+_mcEsc(c.n.split(' ')[0])+'. Lo que no marques no le aparece en el menú, ni en el móvil, ni escribiendo la dirección.'
+    : _mcEsc(c.n.split(' ')[0])+' es <b>coach</b>: trabaja en su propio panel y no entra a MultiCoach. Estos permisos solo se aplican si le cambias el tipo a <b>Colaborador</b> desde la pestaña Perfil.';
+  var filas=MC_GRANT_DEFS.map(function(g){
+    var on=full||sel.indexOf(g[0])>=0;
+    return '<div class="cp-toggle"><div class="cp-toggle-body"><div class="cp-toggle-title">'+_mcEsc(g[1])+'</div><div class="cp-toggle-desc">'+_mcEsc(g[2])+'</div></div>'
+      +'<button class="cp-switch'+(on?' is-on':'')+'" role="switch" aria-checked="'+(on?'true':'false')+'" aria-label="'+_mcEsc(g[1])+'" data-g="'+_mcEsc(g[0])+'" onclick="if(this.dataset.g)_mcAccToggle(this.dataset.g)"><span></span></button></div>';
+  }).join('');
+  var resumen=full
+    ? 'Acceso completo — hoy entra a todo. En cuanto quites uno, se guarda una lista concreta.'
+    : (sel.length? ('Entra a '+sel.length+' de '+MC_GRANT_DEFS.length+' secciones.') : 'Sin acceso a ninguna sección. Solo verá el panel de inicio.');
+  return '<div class="cp-card cp-card-pad">'
+   +'<h3 class="cp-card-title">Acceso a MultiCoach<span class="dot">.</span></h3>'
+   +'<p style="font-size:12.5px;color:var(--pw-text-soft);line-height:1.55;margin:4px 0 14px">'+nota+'</p>'
+   +(esColab?'':'<div style="font-size:12px;color:var(--pw-text-soft);background:var(--pw-niebla-3);border-radius:9px;padding:9px 11px;margin-bottom:12px">Puedes dejarlos preparados igualmente.</div>')
+   +filas
+   +'<div style="display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-top:16px;padding-top:14px;border-top:1px solid var(--pw-border)">'
+    +'<span style="font-size:12px;color:var(--pw-text-soft)">'+resumen+'</span>'
+    +'<div style="display:flex;gap:8px">'
+     +(full?'':'<button class="cp-btn cp-btn-ghost" onclick="_mcAccTodo()">Dar acceso completo</button>')
+     +'<button class="cp-btn cp-btn-primary" id="mc-acc-save" data-coach-id="'+_mcEsc(c.id)+'" onclick="if(this.dataset.coachId)_mcAccSave(this.dataset.coachId)">Guardar acceso</button>'
+    +'</div></div></div>';
+}
+function _mcAccToggle(g){
+  var c=_coach(_curCoach); if(!c) return;
+  var sel=_mcAccState(c);
+  // La primera vez que se toca partiendo de "acceso completo", la lista concreta
+  // arranca con TODO marcado y se le quita el que se acaba de tocar.
+  if(sel===null){ sel=MC_GRANT_IDS.slice(); }
+  var i=sel.indexOf(g);
+  if(i>=0) sel.splice(i,1); else sel.push(g);
+  _mcAccSel=sel; _renderCoachFicha();
+}
+function _mcAccTodo(){ _mcAccSel=null; _renderCoachFicha(); }
+function _mcAccSave(id){
+  var c=_coach(id); if(!c) return;
+  var sel=_mcAccState(c);
+  var grants=(sel===null)?MC_GRANT_IDS.slice():sel.filter(function(g){return MC_GRANT_IDS.indexOf(g)>=0;});
+  if(!MC_REAL||!MC_ORG||!MC_ORG.id){ c.mcGrants=grants; __toast('Acceso guardado ✓ (demo)'); _renderCoachFicha(); return; }
+  var btn=document.getElementById('mc-acc-save'); if(btn){btn.disabled=true;btn.textContent='Guardando…';}
+  var prev=c.mcGrants;
+  _hdr({'Content-Type':'application/json'}).then(function(h){
+    return fetch(SB+'/functions/v1/editar-coach-red',{method:'POST',headers:h,body:JSON.stringify({coach_id:id,mc_permisos:{v:1,org_id:MC_ORG.id,grants:grants}})});
+  }).then(function(r){ return r.json().catch(function(){return {};}).then(function(d){ return {ok:r.ok,d:d||{}}; }); }).then(function(res){
+    if(btn){btn.disabled=false;btn.textContent='Guardar acceso';}
+    if(!res.ok||!res.d.ok){
+      c.mcGrants=prev;
+      var er=res.d.error;
+      __toast(er==='not_owner'?'Tu sesión no está activa — reingresa':er==='coach_ajeno'?'Esa persona no es de tu red':er==='mc_permisos_invalido'?'No se pudo guardar: lista de permisos inválida':'No se pudo guardar. Reintenta');
+      _renderCoachFicha(); return;
+    }
+    c.mcGrants=grants; _mcAccSel=grants.slice();
+    __toast('Acceso guardado ✓');
+    _renderCoachFicha();
+  }).catch(function(){ if(btn){btn.disabled=false;btn.textContent='Guardar acceso';} c.mcGrants=prev; __toast('Error de conexión. Reintenta'); _renderCoachFicha(); });
+}
 function _coachBody(c,t){
  var suyos=DB.clientes.filter(function(k){return k.coach===c.id;});
  var apiData=_MC_COACH_DATA[c.id]||null; // datos reales del gateway si existen
+ if(t==='acceso') return _coachAcceso(c);
  if(t==='perfil'){
   return '<div class="cp-card cp-card-pad"><h3 class="cp-card-title">Datos del '+DET().coachSing.toLowerCase()+'<span class="dot">.</span></h3>'
    +'<div class="cp-infogrid">'+_info('Área',_areaLbl(c.nicho))+_info('Especialidad',c.esp||(c.esOwner?'Dueño':'—'))+_info('Estado',({activo:'Activo',inactivo:'Suspendido',pendiente:'Invitación pendiente'}[c.est]||'—'))+_info('Clientes',(apiData&&apiData.metrics?apiData.metrics.client_count_current:suyos.length))+_info('Retención',(apiData&&apiData.metrics?apiData.metrics.retention_pct+'%':(c.ret!=null?c.ret+'%':'—')))+_info('Satisfacción',(apiData&&apiData.metrics?apiData.metrics.satisfaction_pct+'%':'—'))+'</div></div>'
@@ -2568,6 +2663,7 @@ function _renderCoachFicha(){
  console.log('[MC] Rendering coach ficha with health='+(h[1]+' ('+h[0]+')'));
  var tabs=[['perfil','Perfil',''+PWI.svg('user',{sm:true})+''],['clientes','Clientes',''+PWI.svg('users',{sm:true})+''],['sesiones','Sesiones',''+PWI.svg('calendar',{sm:true})+''],['rendimiento','Rendimiento',''+PWI.svg('barChart',{sm:true})+'']];
  if(!c.esOwner) tabs.push(['mensajes','Mensajes',''+PWI.svg('chat',{sm:true})+'']); // chat dueño↔coach (el dueño no se chatea a sí mismo)
+ if(!c.esOwner) tabs.push(['acceso','Acceso',''+PWI.svg('shield',{sm:true})+'']); // qué ve esta persona dentro de MultiCoach
  var menuV='<nav class="cp-cfg-nav">'+tabs.map(function(x){return '<button class="cp-cfg-nav-item'+(t===x[0]?' is-on':'')+'" data-tab="'+_mcEsc(x[0])+'" onclick="if(this.dataset.tab)_goCoachTab(this.dataset.tab)"><span class="cp-emo">'+x[2]+'</span><span>'+x[1]+'</span></button>';}).join('')+'</nav>';
  var rail='<aside class="cp-ficha-rail">'
   +'<div class="cp-card cp-card-pad" style="text-align:center"><div class="cp-eyebrow" style="margin-bottom:8px">Estado'+(apiData&&apiData.metrics?' (datos reales)':' (local)')+'</div><span class="cp-coach-health '+h[0]+'" style="display:inline-block;margin-bottom:10px">'+h[1]+'</span>'

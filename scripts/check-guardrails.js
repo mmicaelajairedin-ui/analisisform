@@ -5838,6 +5838,44 @@ const RULES = [
       return null;
     },
   },
+  {
+    name: "multicoach: los permisos del colaborador tienen UNA sola fuente (mc_permisos)",
+    bug: "Habia TRES almacenes de permisos y ninguno funcionaba entero: los toggles de " +
+         "la ficha escribian configuracion.permisos (negocio/perfil_publico/marketplace, " +
+         "que son capacidades de Pathway y no deciden nada en MultiCoach); el menu del " +
+         "colaborador leia la tabla colaborador_permisos, que NINGUNA pantalla escribia " +
+         "—solo se podia poblar por SQL, asi que todo colaborador se quedaba sin acceso—; " +
+         "y configuracion.mc_permisos, el contrato disenado a proposito y validado por " +
+         "editar-coach-red, no lo usaba nadie. Ahora mc_permisos es la fuente unica: lo " +
+         "escribe la pestana Acceso de la ficha de coach y lo leen los tres frontends. " +
+         "Ver docs/multicoach-legacy.md.",
+    check() {
+      const mc = read("multicoach.html");
+      if (!mc) return null;
+      // El vocabulario y el lector viven en multicoach.html, una sola vez.
+      if (!/var MC_GRANT_DEFS\s*=/.test(mc)) return "multicoach.html: falta MC_GRANT_DEFS (vocabulario de permisos de MultiCoach).";
+      if (!/function _mcGrantsDe\(/.test(mc)) return "multicoach.html: falta _mcGrantsDe() (lector de configuracion.mc_permisos).";
+      // Tiene que existir la pantalla que los escribe, y escribir por la edge
+      // function que valida el contrato (no un PATCH directo a usuarios).
+      if (!/function _coachAcceso\(/.test(mc) || !/function _mcAccSave\(/.test(mc))
+        return "multicoach.html: falta la pestana Acceso de la ficha de coach (_coachAcceso/_mcAccSave). Sin ella los permisos solo se pueden dar por SQL.";
+      if (!/mc_permisos:\{v:1,org_id:/.test(mc.replace(/\s/g, "")))
+        return "multicoach.html: _mcAccSave ya no manda el contrato {v,org_id,grants} a editar-coach-red.";
+      // La edge function tiene que seguir validando el contrato.
+      const ecr = read("supabase/functions/editar-coach-red/index.ts");
+      if (!ecr) return "falta supabase/functions/editar-coach-red/index.ts.";
+      if (!/mc_permisos_invalido/.test(ecr) || !/cfg\.mc_permisos\s*=/.test(ecr))
+        return "editar-coach-red: ya no valida ni guarda mc_permisos (la pantalla de Acceso escribiria al vacio).";
+      // Y nadie puede volver a leer la tabla legacy como fuente de verdad.
+      const sinComentarios = (s) => s.replace(/^\s*\/\/.*$/gm, "").replace(/\/\*[\s\S]*?\*\//g, "");
+      for (const f of ["multicoach.html", "login.html", "login-en.html", "panel-v2.html"]) {
+        const s = read(f);
+        if (s && /colaborador_permisos\?/.test(sinComentarios(s)))
+          return f + ": vuelve a leer la tabla colaborador_permisos. Nadie la escribe (docs/multicoach-legacy.md): el colaborador se queda sin permisos.";
+      }
+      return null;
+    },
+  },
 ];
 
 
