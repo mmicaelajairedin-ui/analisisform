@@ -3018,25 +3018,33 @@ const RULES = [
       // Fallback a modo real vacío con aviso (no maqueta, no blanco).
       if (!/catch\(function\(\)\{[\s\S]{0,200}_apply\(null,\[\],\[\],null,\[\]\)/.test(mc))
         return "multicoach.html: mcLoadReal no queda en modo real vacío ante error (vuelve a caer a demo o blanco).";
-      // El login debe rutear al owner a su panel de red. OJO: MultiCoach se
-      // mudo a su propio dominio (pathwayplatforms.com) con handoff seguro
-      // (commit b8c3781: pathway-handoff emite un codigo de un solo uso, sin
-      // tokens en la URL). La regla vieja exigia `multicoach.html` y fallaba por
-      // una mudanza deliberada. Vale cualquiera de las dos salidas, pero UNA
-      // tiene que haber: el owner no puede quedar en el panel de coach.
-      const lg = read("login.html");
-      if (lg) {
-        const viejo = /rol\s*===\s*['"]owner['"][\s\S]{0,200}multicoach\.html/.test(lg);
-        const nuevo = /rol\s*===\s*['"]owner['"][\s\S]{0,900}pathwayplatforms\.com/.test(lg);
-        if (!viejo && !nuevo)
-          return "login.html: el owner ya no se rutea a su panel de red (ni multicoach.html ni el handoff a pathwayplatforms.com).";
-        if (nuevo) {
-          if (!/functions\/v1\/pathway-handoff/.test(lg))
-            return "login.html: el owner va a pathwayplatforms.com SIN pasar por pathway-handoff (la sesion no viaja: caeria en un login vacio).";
-          const hf = read("supabase/functions/pathway-handoff/index.ts");
-          if (!hf) return "falta supabase/functions/pathway-handoff/index.ts (sin ella el owner no puede entrar a su red).";
-        }
+      // ENTRADA UNICA (cierre MultiCoach, sept 2026). El owner tiene que llegar
+      // a multicoach.html por TODAS sus puertas. Historia: la regla original
+      // exigia multicoach.html; luego se acepto tambien el handoff a
+      // pathwayplatforms.com (commit b8c3781), y el resultado fue que el login
+      // por email mandaba al dueno a un dominio que nunca se activo mientras el
+      // de Google lo dejaba en el panel de coach: tres destinos, ninguno el
+      // producto. Ahora hay uno solo. Si algun dia se activa el dominio propio,
+      // esta regla se actualiza a la vez que el redirect — no antes.
+      // Se comparan las lineas SIN comentarios: una mencion a un dominio dentro
+      // de un comentario no es una redireccion (asi se colaba un falso verde).
+      const sinComentarios = (s) => s.replace(/^\s*\/\/.*$/gm, "").replace(/\/\*[\s\S]*?\*\//g, "");
+      for (const f of ["login.html", "login-en.html"]) {
+        const raw = read(f);
+        if (!raw) continue;
+        const lg = sinComentarios(raw);
+        if (!/rol\s*===\s*['"]owner['"][\s\S]{0,400}multicoach\.html/.test(lg))
+          return f + ": el owner ya no se rutea a multicoach.html (entrada unica de la red).";
+        if (/pathwayplatforms\.com/.test(lg))
+          return f + ": vuelve a redirigir a pathwayplatforms.com. Ese dominio no esta activado (docs/PATHWAYPLATFORMS_SETUP.md) y el dueno acaba fuera del producto.";
       }
+      // Y las otras dos puertas del dueno: tras pagar y desde el panel de coach.
+      const pl = read("pago-listo.html");
+      if (pl && /multicoach-v3\.html/.test(sinComentarios(pl)))
+        return "pago-listo.html: tras pagar se entra a multicoach-v3.html (carril retirado), no al MultiCoach oficial.";
+      const pv = read("panel-v2.html");
+      if (pv && /href='multicoach-v3\.html'/.test(sinComentarios(pv)))
+        return "panel-v2.html: 'Mi red' / demo siguen apuntando a multicoach-v3.html (carril retirado).";
       return null;
     },
   },
