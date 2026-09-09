@@ -5528,6 +5528,52 @@ const RULES = [
     },
   },
   {
+    name: "sesion: una lectura con RLS nunca sale con la anon key habiendo sesion",
+    bug: "ERR-FITSESS-001. tokenSync() descartaba el access_token vencido y " +
+         "devolvia null SIN refrescarlo, y _hdr() de los portales es SINCRONO: " +
+         "la request salia con la ANON KEY. Bajo RLS eso NO da 401 — PostgREST " +
+         "responde 200 con [] — asi que el self-healing de 401/403 nunca se " +
+         "disparaba: el portal concluia 'este cliente no tiene ficha' (y hacia un " +
+         "POST que la RLS niega siempre, 403 42501 en cada carga), y los PATCH " +
+         "afectaban 0 filas sin avisar. Evidencia: rosmandubon134 7 veces el " +
+         "2026-09-09 teniendo ficha (candidatos.id=213, 33 KB de rutina).",
+    check() {
+      const a = read("pw-auth.js");
+      if (!a) return "falta pw-auth.js";
+      if (!/function hasStoredSession\(/.test(a))
+        return "pw-auth.js: falta hasStoredSession() — no se puede distinguir anonimo de token vencido.";
+      if (!/function ready\(/.test(a))
+        return "pw-auth.js: falta ready() — vuelve a no haber forma de esperar la sesion.";
+      // El GATE: sin token valido pero CON sesion guardada, hay que esperar.
+      if (!/_rls\s*&&\s*!tokenSync\(\)\s*&&\s*hasStoredSession\(\)/.test(a))
+        return "pw-auth.js: desaparecio el gate de sesion — las lecturas con RLS vuelven a salir con la anon key.";
+      // ready() DEBE tener timeout: sin el, un CDN caido cuelga el arranque.
+      const ri = a.indexOf("function ready(");
+      if (ri < 0 || !/setTimeout/.test(a.slice(ri, ri + 600)))
+        return "pw-auth.js: ready() perdio su timeout — un CDN caido colgaria el portal entero.";
+      // El token vencido tiene que disparar refresh, no morir en silencio.
+      if (!/_sawExpired/.test(a) || !/_sawExpired\)\s*\{\s*try\s*\{\s*refreshOnce\(\)/.test(a))
+        return "pw-auth.js: un token vencido ya no dispara refreshOnce() — la sesion queda muerta.";
+
+      const f = read("pathway-fit-cliente.html");
+      if (f) {
+        // _ensureFicha no puede volver a leer con la anon key hardcodeada...
+        const i = f.indexOf("function _ensureFicha(");
+        if (i < 0) return "pathway-fit-cliente.html: desaparecio _ensureFicha.";
+        const fn = f.slice(i, i + 2200);
+        if (/headers:\s*\{\s*apikey:\s*KEY/.test(fn))
+          return "pathway-fit-cliente.html: _ensureFicha volvio a leer con la anon key hardcodeada.";
+        // ...ni volver a hacer el INSERT que la RLS niega SIEMPRE (403 por carga).
+        if (/rest\/v1\/candidatos'\s*,\s*\{\s*method:\s*'POST'/.test(fn))
+          return "pathway-fit-cliente.html: volvio el POST a candidatos desde el cliente (la RLS lo niega: 403 en cada carga).";
+        // Los guardados del gym tienen que MIRAR r.ok, no solo .catch().
+        if (!/fit_ejercicios_real:j\}\)[\s\S]{0,200}r&&r\.ok/.test(f))
+          return "pathway-fit-cliente.html: el guardado de 'lo que hice' volvio a ignorar r.ok (se pierde en silencio).";
+      }
+      return null;
+    },
+  },
+  {
     name: "i18n: los textos que el panel ARMA concatenando tambien se traducen",
     bug: "Con el panel en ingles convivian en la MISMA pantalla 'Buenas noches, " +
          "Micaela', '1/3 completados' y 'Medalla oro · 10 clientes' con 'Start " +
