@@ -5778,16 +5778,26 @@ function viewClienteDetalle(c){
           var thumb="<div style='position:relative;width:38px;height:38px;border-radius:8px;background:var(--pw-bg);display:flex;align-items:center;justify-content:center;font-size:16px;overflow:hidden'>"+PWI.svg('dumbbell',{sm:true})+""+((_own||_auto)?"<img src='"+esc(_own||_auto)+"' onerror=\"this.remove()\" style='position:absolute;inset:0;width:100%;height:100%;object-fit:cover'>":"")+"</div>";
           // ¿El cliente hizo algo distinto? plan tachado + real (nombre y/o series×reps·peso).
           var _rl=FREAL[_exKeyP(e)]||null;
-          var _chg=_rl && ((_rl.n&&_rl.n!==(e.nombre||"")) || (_rl.m&&_rl.m!==(e.meta||"")));
+          // El dato que se ve es el del CLIENTE (ya actualizado, SIN tachar); la chapita
+          // avisa que hubo cambio y, al tocarla, despliega el plan original tachado.
+          // Antes salia "plan tachado -> real" de primeras y las coaches lo leian como
+          // que el dato del cliente no se habia actualizado.
+          var _chgN=!!(_rl&&_rl.n&&!_nombreEq(_rl.n,e.nombre||""));
+          var _chgM=!!(_rl&&_rl.m&&!_metaEq(_rl.m,e.meta||""));
+          var _chg=_chgN||_chgM;
           var _sWas="text-decoration:line-through;color:var(--pw-text-soft)", _sNow="color:var(--pw-bosque);font-weight:700";
-          var _nameHtml=(_rl&&_rl.n&&_rl.n!==(e.nombre||""))
-            ? "<span style='"+_sWas+"'>"+esc(e.nombre||"")+"</span> <span style='"+_sNow+"'>→ "+esc(_rl.n)+"</span>"
-            : esc(e.nombre||"");
-          var _metaBase=esc(e.meta||"")+(e.rir?(" · "+(/rir/i.test(e.rir)?esc(e.rir):("RIR "+esc(e.rir)))):"")+(e.descanso?(" · ⏱ "+esc(e.descanso)):"")+(_own?"":(_auto?" · foto automática":" · sin foto"));
-          var _metaHtml=(_rl&&_rl.m&&_rl.m!==(e.meta||""))
-            ? "<span style='"+_sWas+"'>"+esc(e.meta||"")+"</span> <span style='"+_sNow+"'>→ "+esc(_rl.m)+"</span>"
-            : _metaBase;
-          var _chgBadge=_chg?" <span style='display:inline-block;margin-left:4px;padding:1px 7px;border-radius:6px;background:rgba(45,106,79,.12);color:var(--pw-bosque);font-size:10px;font-weight:700;vertical-align:middle'>✎ lo cambió</span>":"";
+          var _nameHtml=_chgN?("<span style='"+_sNow+"'>"+esc(_rl.n)+"</span>"):esc(e.nombre||"");
+          var _metaExtra=(e.rir?(" · "+(/rir/i.test(e.rir)?esc(e.rir):("RIR "+esc(e.rir)))):"")+(e.descanso?(" · ⏱ "+esc(e.descanso)):"")+(_own?"":(_auto?" · foto automática":" · sin foto"));
+          var _metaBase=esc(e.meta||"")+_metaExtra;
+          var _metaHtml=_chgM?("<span style='"+_sNow+"'>"+esc(_rl.m)+"</span>"+_metaExtra):_metaBase;
+          // Detalle plegado: lo que el coach habia programado, tachado.
+          var _wasBits=[];
+          if(_chgN) _wasBits.push("<span style='"+_sWas+"'>"+esc(e.nombre||"")+"</span>");
+          if(_chgM) _wasBits.push("<span style='"+_sWas+"'>"+esc(e.meta||"")+"</span>");
+          var _chgBadge=_chg?(" <span style='position:relative;display:inline-block;vertical-align:middle'>"+
+            "<button type='button' onclick='_fitChgToggle(this)' aria-expanded='false' title='Ver lo que habias programado' style='margin-left:4px;padding:1px 7px;border-radius:6px;background:rgba(45,106,79,.12);color:var(--pw-bosque);font-size:10px;font-weight:700;border:none;font-family:inherit;cursor:pointer'>✎ lo cambió</button>"+
+            "<span class='fit-chg-det' hidden style='margin-left:6px;font-size:11px;color:var(--pw-text-soft)'>plan: "+_wasBits.join(" · ")+"</span>"+
+          "</span>"):"";
           var _superBadge=(e.super&&(""+e.super).trim())?" <span style='display:inline-block;margin-left:4px;padding:1px 7px;border-radius:6px;background:rgba(140,123,128,.16);color:var(--pw-carbon);font-size:10px;font-weight:700;vertical-align:middle'>⛓ Superserie "+esc((""+e.super).trim())+"</span>":"";
           // Se MANTIENE el texto completo de la meta (no se pierde info); solo se
           // ORDENAN las acciones en un menú ⋮ (tres puntos) por fila.
@@ -15828,6 +15838,31 @@ function esColaborador(){ return !!(REAL && RCFG && RCFG.member_role==="colabora
 function _memberPerm(key){ var p=(RCFG&&RCFG.permisos&&typeof RCFG.permisos==="object")?RCFG.permisos:null; if(p&&typeof p[key]==="boolean") return p[key]; return !esColaborador(); }
 // Rutina fitness → array de ejercicios [{dia,nombre,meta,foto}]. Acepta el JSON
 // nuevo o texto plano viejo (back-compat) separado por línea en blanco.
+// ── "Lo que hizo el cliente" vs el plan del coach ─────────────────────────
+// El cliente escribe en texto libre ("4x15 con 60lbs") lo que el coach cargó
+// como "4x15 · 60 lb". Comparar los strings CRUDOS marcaba "lo cambió" aunque
+// fuera EXACTAMENTE el mismo dato escrito distinto (caso real en produccion:
+// Chest flyes en maquina, plan "4x15 · 60 lb" vs cliente "4x15 con 60lbs").
+// Comparamos solo los NUMEROS (y la serie NxM), ignorando separadores y las
+// palabras de relleno. La unidad se compara solo si AMBOS lados la declaran:
+// asi "60 lb" vs "60 kg" SI es un cambio, pero "60 lb" vs "60" no inventa uno.
+function _metaNum(s){ return (""+(s==null?"":s)).toLowerCase().replace(/×/g,"x").replace(/[^0-9x]/g,""); }
+function _metaUnit(s){ s=(""+(s==null?"":s)).toLowerCase(); if(/kgs?\b|kilo/.test(s)) return "kg"; if(/lbs?\b|libra/.test(s)) return "lb"; return ""; }
+function _metaEq(a,b){
+  if(_metaNum(a)!==_metaNum(b)) return false;
+  var ua=_metaUnit(a), ub=_metaUnit(b);
+  return (!ua||!ub||ua===ub);
+}
+function _nombreEq(a,b){ return (""+(a==null?"":a)).trim().toLowerCase()===(""+(b==null?"":b)).trim().toLowerCase(); }
+// Despliega/oculta el valor ORIGINAL del coach (tachado) al tocar "lo cambió".
+// Por pedido de las coaches: de primeras se ve el dato del CLIENTE (actualizado,
+// sin tachar) y la chapita avisa que hubo cambio; el plan viejo queda a un clic.
+function _fitChgToggle(btn){
+  try{
+    var d=btn.parentNode&&btn.parentNode.querySelector(".fit-chg-det");
+    if(d){ d.hidden=!d.hidden; btn.setAttribute("aria-expanded", d.hidden?"false":"true"); }
+  }catch(e){}
+}
 function _rutToArr(raw){
   raw=raw||"";
   if(typeof raw==="string" && raw.trim().charAt(0)==="["){ try{ var a=JSON.parse(raw); if(Object.prototype.toString.call(a)==="[object Array]") return a; }catch(e){} }

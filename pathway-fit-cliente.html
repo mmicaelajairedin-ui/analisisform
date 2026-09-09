@@ -565,6 +565,7 @@ var T={
     exAdjPhM:'Lo que hiciste (ej. 4×12 · 35 kg)', exAdjPhN:'¿Otro ejercicio? (opcional, ej. Press inclinado)',
     guardar:'Guardar', volverPlan:'Volver al plan', cancelar:'Cancelar', borrar:'Borrar',
     superserie:'Superserie', toastVolvistePlan:'Volviste al plan ✓', toastGuardadoCoach:'Guardado ✓ — tu coach lo ve',
+    exChgBadge:'✎ lo cambié', exChgPlan:'plan:', exChgVerPlan:'Ver lo que puso tu coach',
     diaCompletoToast:'💪 ¡Día completo! Gran trabajo.', diaEntrenoTitle:'¡Día de entreno completo! 💪',
     diaEntrenoSub:'Gran trabajo — sumaste tu entreno de hoy', seguir:'¡Seguir!',
     objsCompletados:'🏅 ¡Objetivos de la semana completados!',
@@ -716,6 +717,7 @@ var T={
     exAdjPhM:'What you did (e.g. 4×12 · 35 kg)', exAdjPhN:'Different exercise? (optional, e.g. Incline press)',
     guardar:'Save', volverPlan:'Back to plan', cancelar:'Cancel', borrar:'Delete',
     superserie:'Superset', toastVolvistePlan:'Back to the plan ✓', toastGuardadoCoach:'Saved ✓ — your coach sees it',
+    exChgBadge:'✎ I changed it', exChgPlan:'plan:', exChgVerPlan:"See what your coach set",
     diaCompletoToast:'💪 Day complete! Great work.', diaEntrenoTitle:'Training day complete! 💪',
     diaEntrenoSub:"Great work — you logged today's workout", seguir:'Keep going!',
     objsCompletados:'🏅 Weekly goals complete!',
@@ -1429,6 +1431,33 @@ function applyAntro(antro){
 // La rutina la carga el coach por ejercicio (nombre + series×reps + foto opcional).
 // Acepta el JSON nuevo [{dia,nombre,meta,foto}] o texto plano viejo (back-compat).
 var EXMETA={};
+// ── "Lo que hizo el cliente" vs el plan del coach ─────────────────────────
+// El cliente escribe en texto libre ("4x15 con 60lbs") lo que el coach cargo
+// como "4x15 · 60 lb". Comparar los strings CRUDOS marcaba "lo cambio" aunque
+// fuera EXACTAMENTE el mismo dato escrito distinto (caso real de produccion:
+// Chest flyes en maquina, plan "4x15 · 60 lb" vs cliente "4x15 con 60lbs").
+// Comparamos solo los NUMEROS (y la serie NxM), ignorando separadores y palabras
+// de relleno. La unidad se compara solo si AMBOS lados la declaran: asi
+// "60 lb" vs "60 kg" SI es un cambio, pero "60 lb" vs "60" no inventa uno.
+// MISMA LOGICA que en panel-v2.html (_metaNum/_metaUnit/_metaEq/_nombreEq):
+// un concepto = un comportamiento en las dos pantallas.
+function _metaNum(s){ return (''+(s==null?'':s)).toLowerCase().replace(/×/g,'x').replace(/[^0-9x]/g,''); }
+function _metaUnit(s){ s=(''+(s==null?'':s)).toLowerCase(); if(/kgs?\b|kilo/.test(s)) return 'kg'; if(/lbs?\b|libra/.test(s)) return 'lb'; return ''; }
+function _metaEq(a,b){
+  if(_metaNum(a)!==_metaNum(b)) return false;
+  var ua=_metaUnit(a), ub=_metaUnit(b);
+  return (!ua||!ub||ua===ub);
+}
+function _nombreEq(a,b){ return (''+(a==null?'':a)).trim().toLowerCase()===(''+(b==null?'':b)).trim().toLowerCase(); }
+// Despliega/oculta el valor ORIGINAL del coach (tachado) al tocar "lo cambie".
+// De primeras se ve el dato ACTUALIZADO (sin tachar) y la chapita avisa que
+// hubo cambio; el plan viejo queda a un clic.
+function _fitChgToggle(btn){
+  try{
+    var d=btn.parentNode&&btn.parentNode.querySelector('.fit-chg-det');
+    if(d){ d.hidden=!d.hidden; btn.setAttribute('aria-expanded', d.hidden?'false':'true'); }
+  }catch(e){}
+}
 function _rutToArr(raw){
   raw=raw||'';
   if(typeof raw==='string' && raw.trim().charAt(0)==='['){ try{ var a=JSON.parse(raw); if(Array.isArray(a)) return a; }catch(e){} }
@@ -1619,12 +1648,20 @@ function _exHtml(e){
   var _ek=_exKey(e), _edone=EXDONE[_ek]?' done':'';   // restaura lo marcado hoy
   // ¿El cliente registró que hizo algo distinto al plan? → plan tachado + real.
   var _rl=FREAL[_ek]||null;
+  // El dato que se ve es el REGISTRADO (sin tachar); la chapita avisa que hay un
+  // cambio respecto del plan y, al tocarla, muestra lo que puso el coach tachado.
+  var _chgN=!!(_rl&&_rl.n&&!_nombreEq(_rl.n,e.nombre||''));
+  var _chgM=!!(_rl&&_rl.m&&!_metaEq(_rl.m,e.meta||''));
   var _metaHtml;
-  if(_rl && ((_rl.m && _rl.m!==(e.meta||'')) || (_rl.n && _rl.n!==(e.nombre||'')))){
-    var _parts=[];
-    if(_rl.n && _rl.n!==(e.nombre||'')) _parts.push(''+PWI.svg('repeat',{sm:true})+' <s class="ex-was">'+esc(e.nombre||'')+'</s> <span class="ex-now">'+esc(_rl.n)+'</span>');
-    if(_rl.m && _rl.m!==(e.meta||'')) _parts.push((e.meta?'<s class="ex-was">'+esc(e.meta||'')+'</s> ':'')+'<span class="ex-now">'+esc(_rl.m)+'</span>');
-    _metaHtml=_parts.join(' · ')+_tags;
+  if(_chgN||_chgM){
+    var _parts=[], _was=[];
+    if(_chgN){ _parts.push(''+PWI.svg('repeat',{sm:true})+' <span class="ex-now">'+esc(_rl.n)+'</span>'); _was.push('<s class="ex-was">'+esc(e.nombre||'')+'</s>'); }
+    if(_chgM){ _parts.push('<span class="ex-now">'+esc(_rl.m)+'</span>'); if(e.meta) _was.push('<s class="ex-was">'+esc(e.meta||'')+'</s>'); }
+    var _chgTag='<span style="position:relative;display:inline-block;vertical-align:middle">'
+      +'<button type="button" onclick="event.stopPropagation();_fitChgToggle(this)" aria-expanded="false" title="'+esc(t('exChgVerPlan'))+'" style="margin-left:4px;padding:1px 7px;border-radius:6px;background:rgba(45,106,79,.12);color:var(--brand,#2D6A4F);font-size:10px;font-weight:700;border:none;font-family:inherit;cursor:pointer">'+t('exChgBadge')+'</button>'
+      +'<span class="fit-chg-det" hidden style="margin-left:6px;font-size:11px;color:var(--muted,#6b7a70)">'+t('exChgPlan')+' '+_was.join(' · ')+'</span>'
+      +'</span>';
+    _metaHtml=_parts.join(' · ')+' '+_chgTag+_tags;
   } else {
     _metaHtml=esc(e.meta||'')+_tags;
   }
