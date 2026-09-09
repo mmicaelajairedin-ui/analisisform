@@ -1,6 +1,9 @@
 // ===================================================================
 // admin-coach-op — operaciones de admin sobre coaches (extender trial /
-// marcar pagado) SIN chocar con RLS.
+// marcar pagado) SIN chocar con RLS. Tambien LEE el ledger de cobros
+// (op `billing_ledger`): la tabla `eventos` no tiene policy de SELECT a
+// proposito (ver eventos.sql — "la lectura se hara con service role desde una
+// edge function"), asi que esta es esa funcion. Solo lee; no modifica nada.
 //
 // Problema que resuelve: desde el panel, "Extender trial" y "Marcar pagado"
 // hacían un PATCH directo a usuarios. Bajo RLS estricto eso exige que el admin
@@ -78,6 +81,34 @@ async function isAdmin(email: string | null, uid: string | null): Promise<boolea
   }
 }
 
+// ── billing_ledger — los cobros de suscripcion, uno por factura ──────
+// Lee de `eventos` los InvoicePaid / InvoicePaymentFailed que escribe el
+// stripe-webhook. Es SOLO LECTURA y ya paso el gate de admin de arriba.
+// Devuelve como mucho `limite` filas desde `desde` (por defecto 3 meses).
+async function billingLedger(body: { desde?: string; limite?: number }): Promise<Response> {
+  const n = parseInt(String(body.limite ?? 200), 10);
+  const limite = Math.min(Math.max(Number.isFinite(n) ? n : 200, 1), 500);
+  let desde = String(body.desde || "").trim();
+  // Solo aceptamos YYYY-MM-DD: no se interpola nada crudo en la query.
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(desde)) {
+    const d = new Date();
+    d.setUTCMonth(d.getUTCMonth() - 3);
+    desde = d.toISOString().slice(0, 10);
+  }
+  try {
+    const r = await fetch(
+      `${SB_URL}/rest/v1/eventos?tipo=in.(InvoicePaid,InvoicePaymentFailed)` +
+      `&ts=gte.${encodeURIComponent(desde)}` +
+      `&select=ts,tipo,actor_email,payload&order=ts.desc&limit=${limite}`,
+      { headers: svc },
+    );
+    if (!r.ok) return json({ error: "db_error", status: r.status }, 502);
+    return json({ ok: true, desde, eventos: await r.json() });
+  } catch {
+    return json({ error: "db_unreachable" }, 502);
+  }
+}
+
 Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: CORS });
   if (req.method !== "POST") return json({ error: "post_only" }, 405);
@@ -90,13 +121,17 @@ Deno.serve(async (req: Request) => {
   if ((!who.email && !who.uid) || !(await isAdmin(who.email, who.uid))) return json({ error: "not_admin" }, 403);
 
   // ── Input ─────────────────────────────────────────────────────────
-  let body: { op?: string; coach_id?: string; dias?: number | string; plan?: string; wipe?: boolean; activo?: boolean };
+  let body: { op?: string; coach_id?: string; dias?: number | string; plan?: string; wipe?: boolean; activo?: boolean; desde?: string; limite?: number };
   try {
     body = await req.json();
   } catch {
     return json({ error: "bad_json" }, 400);
   }
   const op = (body.op || "").toString();
+
+  // ── Lectura: ledger de cobros (no lleva coach_id, va antes del check) ──
+  if (op === "billing_ledger") return await billingLedger(body);
+
   const coachId = (body.coach_id || "").toString().trim();
   if (!isUuid(coachId)) return json({ error: "coach_id_invalid" }, 400);
   if (op !== "extend_trial" && op !== "mark_paid" && op !== "set_plan" && op !== "delete_coach" && op !== "set_active" && op !== "set_logo") return json({ error: "op_invalid" }, 400);

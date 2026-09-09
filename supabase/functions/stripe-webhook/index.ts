@@ -26,6 +26,12 @@
 //   customer.subscription.created
 //   customer.subscription.updated
 //   customer.subscription.deleted
+//   invoice.paid                  ← historial de cobros mes a mes
+//   invoice.payment_failed        ← avisa que un cobro mensual NO entró
+//
+// ⚠️ Los dos `invoice.*` hay que HABILITARLOS a mano en el endpoint de Stripe
+// (destino "Tu cuenta"). Sin eso, el ledger mensual queda vacío: el resto del
+// webhook sigue funcionando igual, simplemente no se registra cada cobro.
 
 interface StripeSession {
   id: string;
@@ -48,7 +54,11 @@ interface StripeSubscriptionItem {
     id: string;
     recurring?: { interval?: "month" | "year" };
     unit_amount?: number;
+    currency?: string;
   };
+  // Desde la API 2025-03-31 (basil) el período de facturación vive en el ITEM,
+  // no en la suscripción. Ver subPeriodEnd().
+  current_period_end?: number;
 }
 
 interface StripeSubscription {
@@ -66,6 +76,27 @@ interface StripeCustomer {
   email?: string;
 }
 
+interface StripeInvoice {
+  id: string;
+  customer?: string;
+  customer_email?: string;
+  // Suscripción que generó la factura. API vieja: `subscription` en la raíz.
+  // API 2025-03-31+: parent.subscription_details.subscription.
+  subscription?: string;
+  parent?: { subscription_details?: { subscription?: string } };
+  // subscription_create (1er cobro) | subscription_cycle (renovación mensual)
+  // | subscription_update | manual
+  billing_reason?: string;
+  amount_paid?: number;
+  amount_due?: number;
+  currency?: string;
+  attempt_count?: number;
+  next_payment_attempt?: number | null;
+  hosted_invoice_url?: string;
+  period_end?: number;
+  lines?: { data?: Array<{ period?: { end?: number } }> };
+}
+
 interface StripeEvent {
   id: string;
   type: string;
@@ -73,7 +104,25 @@ interface StripeEvent {
   // la cuenta del coach. Los eventos de la plataforma (suscripción del coach a
   // Pathway) NO lo traen. Así distinguimos suscripción de CLIENTE vs de COACH.
   account?: string;
-  data: { object: StripeSession | StripeSubscription | StripeCustomer };
+  data: { object: StripeSession | StripeSubscription | StripeCustomer | StripeInvoice };
+}
+
+// ── Fin del período facturado ────────────────────────────────
+// BUG (sep-2026): leíamos sólo `sub.current_period_end`. Stripe lo movió al
+// ITEM en la API 2025-03-31 (basil), así que en las suscripciones nuevas venía
+// `undefined` y `fecha_fin_periodo` quedaba en null para siempre — el panel
+// nunca podía mostrar "pagado hasta". Ahora probamos ambos sitios: primero la
+// suscripción (API vieja), después el máximo de los items (API nueva).
+function subPeriodEnd(sub: StripeSubscription): number | undefined {
+  if (typeof sub.current_period_end === "number" && sub.current_period_end > 0) {
+    return sub.current_period_end;
+  }
+  let max = 0;
+  for (const it of (sub.items?.data || [])) {
+    const end = it.current_period_end;
+    if (typeof end === "number" && end > max) max = end;
+  }
+  return max > 0 ? max : undefined;
 }
 
 // ── Signature helpers ─────────────────────────────────────────
@@ -544,7 +593,8 @@ async function handleClientSubEvent(sub: StripeSubscription) {
     sub_estado: estado,
     sub_intervalo: "4w",
   };
-  if (sub.current_period_end) fields.sub_vigente_hasta = new Date(sub.current_period_end * 1000).toISOString();
+  const clientPeriodEnd = subPeriodEnd(sub);
+  if (clientPeriodEnd) fields.sub_vigente_hasta = new Date(clientPeriodEnd * 1000).toISOString();
   if (estado === "active") fields.pago_recibido = true;
   if (md.coach_id) fields.coach_id = md.coach_id;
   if (email) {
@@ -595,7 +645,8 @@ async function handleRedSubscription(
   const item = sub.items?.data?.[0];
   const unitAmount = item?.price?.unit_amount || 0;
   const trialEndISO = sub.trial_end ? new Date(sub.trial_end * 1000).toISOString() : null;
-  const periodEndISO = sub.current_period_end ? new Date(sub.current_period_end * 1000).toISOString() : null;
+  const redPeriodEnd = subPeriodEnd(sub);
+  const periodEndISO = redPeriodEnd ? new Date(redPeriodEnd * 1000).toISOString() : null;
   const limits = RED_LIMITS[redPlan];
   const activeStatuses = ["trialing", "active", "past_due", "incomplete"];
   const shouldBeActive = activeStatuses.includes(sub.status);
@@ -707,8 +758,9 @@ async function handleCoachSubscription(
   const trialEndISO = sub.trial_end
     ? new Date(sub.trial_end * 1000).toISOString()
     : null;
-  const periodEndISO = sub.current_period_end
-    ? new Date(sub.current_period_end * 1000).toISOString()
+  const coachPeriodEnd = subPeriodEnd(sub);
+  const periodEndISO = coachPeriodEnd
+    ? new Date(coachPeriodEnd * 1000).toISOString()
     : null;
 
   // Fetch usuario para mergear con configuracion existente
@@ -1067,6 +1119,141 @@ async function markEventProcessed(eventId: string, eventType: string): Promise<v
   }
 }
 
+// ── Handler: FACTURAS de la suscripción del coach a Pathway ──
+// BUG (sep-2026): el webhook sólo escuchaba `customer.subscription.*`, y el
+// evento PaymentSucceeded se emitía únicamente en la TRANSICIÓN a activa
+// (becameActive). Resultado: quedaba registrado el primer pago del coach y
+// ningún otro — para saber si pagó el mes 2, 3, 4... había que entrar a Stripe.
+//
+// Acá registramos UNA fila por factura, que es lo que Stripe realmente cobra:
+//   invoice.paid            → InvoicePaid          (ledger mes a mes)
+//   invoice.payment_failed  → InvoicePaymentFailed (el cobro NO entró)
+//
+// Ojo con los estados: el statusMap de handleCoachSubscription mapea `past_due`
+// a "activa", así que `estado_sub` NO distingue "pagó" de "el cobro falló y
+// está en reintento". Estos eventos sí: son la única fuente fiable del ledger.
+//
+// NO tocamos el PaymentSucceeded existente (embudo: "el coach convirtió", una
+// sola vez). Son cosas distintas y separarlas evita contar dos veces el 1er mes.
+function invoiceSubId(inv: StripeInvoice): string {
+  return String(inv.subscription || inv.parent?.subscription_details?.subscription || "");
+}
+
+function invoicePeriodEnd(inv: StripeInvoice): number | undefined {
+  const fromLine = inv.lines?.data?.[0]?.period?.end;
+  if (typeof fromLine === "number" && fromLine > 0) return fromLine;
+  if (typeof inv.period_end === "number" && inv.period_end > 0) return inv.period_end;
+  return undefined;
+}
+
+async function handleCoachInvoice(inv: StripeInvoice, paid: boolean) {
+  // Sólo facturas de suscripción. Un pago suelto (Pack Express, mentoría) no
+  // es la cuota de Pathway y ya lo maneja checkout.session.completed.
+  if (!invoiceSubId(inv)) return { result: "invoice-sin-suscripcion", invoice_id: inv.id };
+
+  let email = String(inv.customer_email || "").trim().toLowerCase();
+  if (!email && inv.customer) {
+    email = String((await getCustomerEmail(String(inv.customer))) || "").trim().toLowerCase();
+  }
+  if (!email) return { result: "invoice-sin-email", invoice_id: inv.id };
+
+  const { url: SB_URL, headers } = getSupabaseAuth();
+  const sel = "select=id,configuracion";
+  let res = await fetch(
+    `${SB_URL}/rest/v1/usuarios?email=eq.${encodeURIComponent(email)}&${sel}`,
+    { headers: { apikey: headers.apikey, Authorization: headers.Authorization } },
+  );
+  let rows = res.ok ? await res.json() : null;
+  // Mismo fallback case-insensitive que handleCoachSubscription (emails viejos).
+  if (!res.ok || (Array.isArray(rows) && rows.length === 0)) {
+    res = await fetch(
+      `${SB_URL}/rest/v1/usuarios?email=ilike.${encodeURIComponent(email)}&${sel}`,
+      { headers: { apikey: headers.apikey, Authorization: headers.Authorization } },
+    );
+    rows = res.ok ? await res.json() : null;
+  }
+  // Sin coach que coincida no alertamos: handleCoachSubscription ya manda el
+  // aviso de "pago sin cuenta" y duplicarlo sólo spammearía a la admin.
+  if (!Array.isArray(rows) || rows.length === 0) {
+    return { result: "invoice-coach-no-encontrado", email, invoice_id: inv.id };
+  }
+
+  const cfg = (rows[0].configuracion || {}) as Record<string, unknown>;
+  const periodEnd = invoicePeriodEnd(inv);
+  const periodEndISO = periodEnd ? new Date(periodEnd * 1000).toISOString() : null;
+  const moneda = inv.currency || "usd";
+  const motivo = inv.billing_reason || "";
+  const ahora = new Date().toISOString();
+
+  const base = {
+    dominio: "Billing",
+    actor_email: email,
+    actor_rol: "coach",
+    entidad_tipo: "coach",
+    entidad_id: email,
+    page: "stripe-webhook",
+  };
+  const newCfg: Record<string, unknown> = { ...cfg };
+
+  if (paid) {
+    await emitEvento({
+      ...base,
+      tipo: "InvoicePaid",
+      payload: {
+        invoice_id: inv.id,
+        monto: inv.amount_paid || 0,
+        moneda,
+        motivo,
+        ciclo: motivo === "subscription_cycle" ? "renovacion" : "inicial",
+        plan: cfg.plan || null,
+        periodo_fin: periodEndISO,
+      },
+    });
+    newCfg.ultimo_pago_at = ahora;
+    newCfg.ultimo_pago_falla_at = null;
+    // La factura trae el período REAL cobrado: es la fuente más fiable de
+    // "pagado hasta", más aún que la suscripción (ver subPeriodEnd).
+    if (periodEndISO) newCfg.fecha_fin_periodo = periodEndISO;
+  } else {
+    await emitEvento({
+      ...base,
+      tipo: "InvoicePaymentFailed",
+      payload: {
+        invoice_id: inv.id,
+        monto: inv.amount_due || 0,
+        moneda,
+        motivo,
+        intento: inv.attempt_count || 0,
+        proximo_intento: inv.next_payment_attempt
+          ? new Date(inv.next_payment_attempt * 1000).toISOString()
+          : null,
+        url: inv.hosted_invoice_url || "",
+      },
+    });
+    newCfg.ultimo_pago_falla_at = ahora;
+  }
+
+  // Sello en la ficha del coach. NO tocamos `activo`, `plan` ni `estado_sub`:
+  // el paywall lo sigue gobernando customer.subscription.* como hasta ahora.
+  const patchRes = await fetch(
+    `${SB_URL}/rest/v1/usuarios?id=eq.${encodeURIComponent(String(rows[0].id))}`,
+    {
+      method: "PATCH",
+      headers: { ...headers, Prefer: "return=minimal" },
+      body: JSON.stringify({ configuracion: newCfg }),
+    },
+  );
+
+  return {
+    result: paid ? "invoice-paid" : "invoice-failed",
+    email,
+    invoice_id: inv.id,
+    motivo,
+    periodo_fin: periodEndISO,
+    ok: patchRes.ok,
+  };
+}
+
 // ── Lookup email de customer si Stripe no lo manda ──────────
 async function getCustomerEmail(customerId: string): Promise<string | undefined> {
   const key = Deno.env.get("STRIPE_SECRET_KEY");
@@ -1180,6 +1367,18 @@ Deno.serve(async (req: Request) => {
       // Suscripción del COACH a Pathway (plataforma).
       const email = await getCustomerEmail(sub.customer);
       result = await handleCoachSubscription(sub, email);
+    }
+  }
+
+  // ── Facturas de la suscripción del coach (ledger mes a mes) ──
+  if (ev.type === "invoice.paid" || ev.type === "invoice.payment_failed") {
+    const inv = ev.data.object as StripeInvoice;
+    if (ev.account) {
+      // Cuenta conectada = factura del CLIENTE a su coach. Ese flujo ya lo
+      // sigue handleClientSubEvent; acá sólo nos interesa la cuota a Pathway.
+      result = { received: true, type: ev.type, skipped: "connected-account" };
+    } else {
+      result = await handleCoachInvoice(inv, ev.type === "invoice.paid");
     }
   }
 
