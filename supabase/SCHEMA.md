@@ -72,8 +72,9 @@ migraciones `ALTER TABLE` de la carpeta.
 **Finanzas**
 | Tabla | Migración | Para qué |
 |---|---|---|
-| `fin_cierres`, `fin_deudas`, `fin_metas` | `coaches_mvp.sql` | Cierres / deudas / metas |
-| (columnas `fin_*` en `candidatos`) | `fin_previsibles` | Gastos previsibles |
+| ~~`fin_cierres`, `fin_deudas`, `fin_metas`~~ | `coaches_mvp.sql` | **LEGACY** — modelo MVP del viejo nicho Finanzas, nunca cableado al frontend. Sin uso desde la reconversión a Life (sep-2026). |
+| `proc_objetivos`, `proc_seguimiento` (en `candidatos`) | `life_fields.sql` | **Nicho Life**: objetivos + próximos pasos (compartidos coach↔cliente) y seguimiento del coach |
+| ~~columnas `fin_*` en `candidatos`~~ | `fin_previsibles`, `nicho_extra_fields`, `career_nicho_fields` | **LEGACY** — campos del viejo nicho Finanzas. Verificadas VACÍAS en producción (0 filas) el 2026-09-09 y sin referencias en código. NO usar. DROP propuesto (sin aplicar) al final de `life_fields.sql`. |
 
 **Gamificación**
 | Tabla | Migración | Para qué |

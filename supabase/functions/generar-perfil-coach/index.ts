@@ -63,7 +63,7 @@ function extractJson(text: string): Record<string, unknown> | null {
   try { return JSON.parse(c.slice(a, b + 1)); } catch { return null; }
 }
 
-const SYSTEM = `Sos un copywriter experto en marcas personales de coaches (carrera, fitness y finanzas). Escribís perfiles públicos que generan confianza y convierten, en español neutro (sin voseo), cálidos pero profesionales. NUNCA inventás datos, títulos, cifras ni resultados que el coach no haya dado: si falta info, escribís algo genérico pero honesto. Prohibido prometer resultados garantizados.
+const SYSTEM = `Sos un copywriter experto en marcas personales de coaches (carrera, fitness y life). Escribís perfiles públicos que generan confianza y convierten, en español neutro (sin voseo), cálidos pero profesionales. NUNCA inventás datos, títulos, cifras ni resultados que el coach no haya dado: si falta info, escribís algo genérico pero honesto. Prohibido prometer resultados garantizados.
 
 Devolvés SOLO un objeto JSON válido (sin texto extra, sin markdown) con esta forma exacta:
 {

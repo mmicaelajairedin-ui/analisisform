@@ -135,7 +135,7 @@ async function verificarRender(page) {
 
 // Recorre las secciones clickeando el sidebar. Cubre el panel del COACH
 // (.cp-side-nav-item) Y los portales del CLIENTE de los 3 nichos —carrera,
-// fitness y finanzas— que usan .ni. Best-effort: cada click puede fallar sin
+// fitness y life— que usan .ni. Best-effort: cada click puede fallar sin
 // romper; lo que importa es que ninguna sección dispare un error de JS (queda
 // registrado en el listener de pageerror).
 async function navegarPanel(page) {
@@ -162,7 +162,7 @@ async function entrar(page, email, password, urlPat) {
     // waitUntil:'commit' → resuelve apenas navega a la URL nueva, sin esperar a
     // que la página PESADA (multicoach carga datos + imágenes) termine de cargar
     // entera. El contenido lo espera después verificarRender (poll).
-    page.waitForURL(urlPat || /panel-v2|empleado|cliente|pathway-(fit|fin)-cliente|multicoach|empresa/i, { timeout: 25000, waitUntil: 'commit' }),
+    page.waitForURL(urlPat || /panel-v2|empleado|cliente|pathway-(fit|life)-cliente|multicoach|empresa/i, { timeout: 25000, waitUntil: 'commit' }),
     page.locator('#password').press('Enter'),
   ]);
 }

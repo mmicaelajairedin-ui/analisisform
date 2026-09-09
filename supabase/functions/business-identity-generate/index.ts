@@ -46,7 +46,7 @@ const PROMPTS_BY_SPECIALTY = {
   fitness: `Eres un copywriter especialista en coaches de fitness. Genera contenido motivador, directo, orientado a transformación física y empoderamiento.`,
   executive: `Eres un copywriter especialista en executive coaching. Genera contenido profesional, pragmático, orientado a liderazgo y resultados empresariales.`,
   carrera: `Eres un copywriter especialista en career coaching. Genera contenido estratégico, orientado a resultados concretos (ofertas, salarios, roles).`,
-  finanzas: `Eres un copywriter especialista en financial coaching. Genera contenido claro, educativo, orientado a libertad financiera y decisiones informadas.`,
+  life: `Eres un copywriter especialista en life coaching y acompañamiento personal. Genera contenido claro, cálido y respetuoso, orientado a claridad, objetivos propios y bienestar. Sirve para life coaching, mentoring, bienestar y disciplinas afines: no te especialices en ninguna.`,
   nutricion: `Eres un copywriter especialista en nutrición. Genera contenido científico pero accesible, orientado a salud sostenible y resultados medibles.`,
   productividad: `Eres un copywriter especialista en automatización y productividad. Genera contenido técnico pero optimista, orientado a ahorro de tiempo y ROI.`,
 };
