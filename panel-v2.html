@@ -16835,10 +16835,18 @@ function _paywallCheck(u){
   // EmailJS retirado: los emails salen por la Edge Function send-email (Brevo),
   // así no se expone su key pública en el panel.
   var u=null; try{ u=JSON.parse(localStorage.getItem("mj_user")||"null"); }catch(e){}
-  var prod=/pathwaycareercoach\.com$|\.pages\.dev$/i.test(location.hostname);
-  if(prod && (!u || !u.id || (u.rol!=="coach" && u.rol!=="admin"))){
-    // En producción exige sesión válida (igual que panel.html)
-    window.location.href="https://pathwaycareercoach.com/login.html";
+  // La sesión se exige SIEMPRE, salvo en desarrollo local. Antes el gate
+  // dependía del HOSTNAME (prod = pathwaycareercoach.com | *.pages.dev): en
+  // cualquier otro origen —los previews públicos de Netlify, o un dominio
+  // nuevo— `prod` daba false y el panel arrancaba SIN pedir login. Un control
+  // de autenticación no puede depender del dominio desde el que se sirve.
+  // Mismo patrón que empleado.html, que ya lo hacía bien.
+  var _local=/^(localhost|127\.0\.0\.1|\[::1\]|0\.0\.0\.0)$/i.test(location.hostname) || location.protocol==="file:";
+  if(!_local && (!u || !u.id || (u.rol!=="coach" && u.rol!=="admin"))){
+    // Relativo, no absoluto: bajo cualquier dominio manda al login DE ESE
+    // dominio. En pathwaycareercoach.com resuelve exactamente a la misma URL
+    // que antes, así que el comportamiento allí no cambia.
+    window.location.href="/login.html";
     return;
   }
   if(u && u.id && _paywallCheck(u)){ return; }
