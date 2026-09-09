@@ -5734,6 +5734,50 @@ const RULES = [
   },
 
   {
+    name: "admin: los cobros reales se ven en la ficha y en la pestana Pagos",
+    bug: "El panel de admin no mostraba NADA de los cobros de suscripcion: ni " +
+         "hasta cuando estaba pago un coach (fecha_fin_periodo no se leia en " +
+         "ningun lado) ni el historial mes a mes. La tabla `eventos` NO tiene " +
+         "policy de SELECT a proposito (ver eventos.sql: 'la lectura se hara " +
+         "con service role desde una edge function'), asi que leerla directo " +
+         "con la anon key devuelve vacio EN SILENCIO — parece que no hay " +
+         "cobros cuando en realidad no hay permiso. Fix: op `billing_ledger` " +
+         "en admin-coach-op (service role + gate de admin) y reloadLedger().",
+    check() {
+      const p = read("panel-v2.html");
+      const a = read("supabase/functions/admin-coach-op/index.ts");
+      if (!p || !a) return null;
+      // 1) El ledger se lee por la edge function, nunca directo a `eventos`.
+      if (/_sb\(\s*["'`]eventos\?/.test(p) || /rest\/v1\/eventos\?[^"'`]*select/.test(p))
+        return "panel-v2.html: se volvio a leer `eventos` con la anon key — esa tabla no tiene policy de SELECT, asi que devuelve vacio en silencio. Va por admin-coach-op (op billing_ledger).";
+      if (!/function reloadLedger\(/.test(p))
+        return "panel-v2.html: desaparecio reloadLedger() — la pestana Pagos vuelve a no mostrar los cobros.";
+      if (!/op\s*:\s*["']billing_ledger["']/.test(p))
+        return "panel-v2.html: reloadLedger() dejo de pedir la op billing_ledger a admin-coach-op.";
+      // 2) La op existe y es SOLO LECTURA (nada de PATCH/POST/DELETE ahi).
+      const bl = a.match(/async function billingLedger\([\s\S]{0,1600}?\n\}/);
+      if (!bl) return "admin-coach-op: desaparecio billingLedger() — el panel no puede leer el ledger (eventos no es legible con anon key).";
+      if (/method:\s*["'](POST|PATCH|DELETE|PUT)["']/.test(bl[0]))
+        return "admin-coach-op: billingLedger() dejo de ser solo lectura — no debe escribir nada.";
+      // 3) El dispatch va ANTES del check de coach_id: la op no lleva coach, y
+      //    si queda despues el panel recibe coach_id_invalid (400) siempre.
+      const iOp = a.indexOf('op === "billing_ledger"');
+      const iUuid = a.indexOf("isUuid(coachId)");
+      if (iOp === -1 || iUuid === -1 || iOp > iUuid)
+        return "admin-coach-op: la op billing_ledger quedo DESPUES del check de coach_id — como no lleva coach, siempre respondera coach_id_invalid.";
+      // 4) La ficha del coach muestra hasta cuando esta pago.
+      if (!/rowD\("Pagado hasta"/.test(p))
+        return "panel-v2.html: la ficha del coach dejo de mostrar 'Pagado hasta' (fecha_fin_periodo).";
+      // 5) Cobros y payouts son flujos OPUESTOS: no se fusionan en una tarjeta.
+      if (!/function ledgerCard\(/.test(p))
+        return "panel-v2.html: desaparecio ledgerCard() — la pestana Pagos vuelve a no listar los cobros.";
+      if (!/Payouts a coaches/.test(p))
+        return "panel-v2.html: desaparecio la tarjeta de Payouts — son plata que Pathway TRANSFIERE al coach, no las cuotas que el coach PAGA: no se fusionan.";
+      return null;
+    },
+  },
+
+  {
     name: "usuarios_publicos: la vista publica es SOLO LECTURA para anon/authenticated",
     bug: "La vista `usuarios_publicos` no es security_invoker, asi que toca `usuarios` " +
          "con la identidad de su dueno (postgres), que tiene BYPASSRLS y no esta sujeto " +

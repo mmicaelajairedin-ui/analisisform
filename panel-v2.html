@@ -8938,6 +8938,26 @@ function _sendEmpleadoEmail(email, nombre){
 var REMPLE=null;     // lista de empleados (rol=empleado)
 var REMPLEADS=null;  // métricas por empleado_id, calculadas desde la tabla `leads`
 var COMISION_POR_PAGO_EMP=10; // € por coach que PAGA tras la prueba — MISMO valor que empleado.html
+// Ledger de cobros de suscripcion (InvoicePaid / InvoicePaymentFailed).
+// NO se puede leer `eventos` con la anon key: esa tabla no tiene policy de
+// SELECT a proposito (ver eventos.sql), asi que la lectura va por la edge
+// function admin-coach-op, que corre con service role y valida que seas admin.
+// RLEDGER: null = sin cargar · {ok,eventos} = cargado · {error} = fallo.
+function reloadLedger(){
+  if(_ledgerBusy) return Promise.resolve();
+  _ledgerBusy=true;
+  return _hdr({"Content-Type":"application/json"}).then(function(h){
+    return fetch(SB+"/functions/v1/admin-coach-op",{method:"POST",headers:h,body:JSON.stringify({op:"billing_ledger"})});
+  }).then(function(r){
+    return r.json().catch(function(){ return {error:"respuesta_invalida"}; });
+  }).then(function(j){
+    RLEDGER=(j&&j.ok)?j:{error:(j&&j.error)||"desconocido"};
+  }).catch(function(){
+    RLEDGER={error:"sin_conexion"};
+  }).then(function(){
+    _ledgerBusy=false; render();
+  });
+}
 function reloadEmpleados(){
   return Promise.all([
     _sb("usuarios?rol=eq.empleado&select=id,nombre,email,rol,activo,configuracion,created_at&order=created_at.desc"),
@@ -9147,9 +9167,14 @@ function _coachDetailCard(){
   var plan=cg.plan==="pro"?"Pro":(cg.plan==="basic"?"Basic":"—");
   var es=(cg.estado_sub||"prueba").toString();
   var estLbl={prueba:"Prueba",activa:"Activa",cancelada:"Cancelada",vencida:"Vencida"}[es]||"Prueba";
+  // Coherencia con el badge de la lista: si el ultimo cobro rebotó, la ficha NO
+  // puede seguir diciendo "Activa" (estado_sub dice activa porque el webhook
+  // mapea past_due asi). Vitalicios y admin no pasan por Stripe.
+  var estFallo = _pagoFallado(cg) && c.rol!=="admin" && cg.es_pro_vitalicio!==true;
+  if(estFallo) estLbl="Cobro falló";
   function fdate(s){ if(!s) return "—"; try{ return new Date(s).toLocaleDateString("es-ES"); }catch(e){ return "—"; } }
   var trialTxt = cg.fecha_fin_prueba ? fdate(cg.fecha_fin_prueba) : (es==="activa"?"— (pagado)":"—");
-  var rowD=function(l,v){ return "<div style='display:flex;justify-content:space-between;gap:14px;padding:9px 0;border-bottom:1px solid var(--pw-border)'><span style='font-size:13px;color:var(--pw-text-soft)'>"+esc(l)+"</span><span style='font-size:13px;color:var(--pw-carbon);font-weight:600;text-align:right'>"+esc(v)+"</span></div>"; };
+  var rowD=function(l,v,neg){ return "<div style='display:flex;justify-content:space-between;gap:14px;padding:9px 0;border-bottom:1px solid var(--pw-border)'><span style='font-size:13px;color:var(--pw-text-soft)'>"+esc(l)+"</span><span style='font-size:13px;color:"+(neg?"var(--pw-danger)":"var(--pw-carbon)")+";font-weight:600;text-align:right'>"+esc(v)+"</span></div>"; };
   var selfRow=(RME&&String(c.id)===String(RME.id));
   return "<div class='cp-card'>"+
     "<div class='cp-card-hd'><h3 class='cp-card-title'>"+esc(c.nombre||c.email||"Coach")+(c.rol==="admin"?" · admin":"")+"<span class='dot'>.</span></h3>"+
@@ -9158,8 +9183,18 @@ function _coachDetailCard(){
       rowD("Email", c.email||"—")+
       rowD("Rol", c.rol||"coach")+
       rowD("Plan", plan)+
-      rowD("Estado", c.activo===false?"Inactiva":estLbl)+
+      rowD("Estado", c.activo===false?"Inactiva":estLbl, c.activo!==false && estFallo)+
       rowD("Fin de prueba", trialTxt)+
+      // Cobros (lo escribe stripe-webhook: fecha_fin_periodo desde la factura,
+      // ultimo_pago_at / ultimo_pago_falla_at por cada invoice.*). Mientras el
+      // webhook nuevo no este desplegado estos tres salen "—", no rompen nada.
+      rowD("Pagado hasta", cg.fecha_fin_periodo?fdate(cg.fecha_fin_periodo):"—")+
+      (cg.ultimo_pago_at
+        ? rowD("Último cobro", fdate(cg.ultimo_pago_at))
+        : (cg.marcado_pagado_at
+            ? rowD("Marcado pagado a mano", fdate(cg.marcado_pagado_at))
+            : rowD("Último cobro", "—")))+
+      (_pagoFallado(cg) ? rowD("Cobro falló", fdate(cg.ultimo_pago_falla_at), true) : "")+
       rowD("Alta", fdate(c.created_at))+
       rowD("Activo", c.activo===false?"No":"Sí")+
       (cg.creado_por_admin?rowD("Creado por admin", cg.creado_por||"—"):"")+
@@ -9725,6 +9760,46 @@ function viewAdmin(){
       "<td>"+stars+"</td>"+
       "<td style='text-align:right;white-space:nowrap'>"+askRev+"<button class='cp-btn cp-btn-ghost' style='height:28px;padding:0 10px;font-size:11px;margin-right:6px' data-act='cvx-resend' data-em='"+esc(c.em||"")+"' data-n='"+esc(c.n||"")+"'>Reenviar acceso</button>"+verCv+"</td></tr>";
   }).join("") || "<tr><td colspan='6' style='padding:18px;color:var(--pw-text-soft);font-size:13px'>Sin registros de CV Express todavía.</td></tr>";
+  // ── Cobros de suscripcion, uno por factura ────────────────────────
+  // OJO: esto NO son los payouts. Payouts = plata que Pathway le TRANSFIERE al
+  // coach por Stripe Connect. Esto son las cuotas que el coach le PAGA a
+  // Pathway. Son dos flujos opuestos, por eso van en tarjetas separadas.
+  function ledgerCard(){
+    if(!REAL) return "";
+    var hd = "<div class='cp-card'><div class='cp-card-hd'><h3 class='cp-card-title'>Cobros de coaches<span class='dot'>.</span></h3>"+
+      "<span class='cp-eyebrow'>"+_mesActual()+"</span></div>";
+    var pad = function(txt,color){ return "<div class='cp-card-pad' style='padding:14px 22px;font-size:13px;line-height:1.6;color:"+(color||"var(--pw-text-soft)")+"'>"+txt+"</div></div>"; };
+    if(RLEDGER===null) return hd+pad("Cargando cobros…");
+    if(RLEDGER && RLEDGER.error) return hd+pad("No se pudieron cargar los cobros ("+esc(String(RLEDGER.error))+"). Si dice not_admin, cerrá sesión y volvé a entrar.","var(--pw-danger)");
+    var evs = (RLEDGER && RLEDGER.eventos) || [];
+    if(!evs.length) return hd+pad("Todavía no hay cobros registrados. El registro arranca cuando el webhook de Stripe tenga habilitados <strong>invoice.paid</strong> e <strong>invoice.payment_failed</strong>: desde ahí queda una fila por cada cobro mensual. <a href='"+esc(STRIPE_PORTAL)+"' target='_blank' rel='noopener' style='color:var(--pw-bosque);font-weight:600'>Ver en Stripe →</a>");
+    var d0=new Date(), ini=Date.UTC(d0.getUTCFullYear(), d0.getUTCMonth(), 1);
+    var mesUsd=0, mesEur=0, mesN=0, fallos=0;
+    var rows = evs.map(function(e){
+      var pay=(e&&e.payload)||{}, ok=(e.tipo==="InvoicePaid");
+      var t=+new Date(e.ts)||0;
+      var monto=(Number(pay.monto)||0)/100;
+      var esEur=((pay.moneda||"usd")+"").toLowerCase()==="eur";
+      if(t>=ini){ if(ok){ mesN++; if(esEur) mesEur+=monto; else mesUsd+=monto; } else { fallos++; } }
+      var fecha="—"; try{ fecha=new Date(e.ts).toLocaleDateString("es-ES",{day:"numeric",month:"short"}); }catch(_e){}
+      var ciclo = pay.ciclo==="renovacion" ? "Renovación" : (pay.ciclo==="inicial" ? "Primer cobro" : "—");
+      return "<tr><td style='font-weight:600;color:var(--pw-carbon)'>"+esc(e.actor_email||"—")+"</td>"+
+        "<td style='color:var(--pw-text-soft)'>"+esc(fecha)+"</td>"+
+        "<td><span class='cp-bill-amount'>"+(esEur?eur(monto):usd(monto))+"</span></td>"+
+        "<td style='color:var(--pw-text-soft)'>"+esc(ciclo)+"</td>"+
+        "<td>"+pill(ok?"Cobrado":"Falló", ok?"ok":"danger")+"</td></tr>";
+    }).join("");
+    var tot = mesN
+      ? ("Cobrado este mes: <strong>"+(mesUsd?usd(mesUsd):"")+(mesUsd&&mesEur?" + ":"")+(mesEur?eur(mesEur):"")+"</strong> en "+mesN+" cobro"+(mesN===1?"":"s"))
+      : "Este mes todavía no entró ningún cobro";
+    return hd+
+      "<p class='cp-reassurance' style='margin:0 22px 12px;border-radius:12px'>"+tot+
+        (fallos?" · <strong style='color:var(--pw-danger)'>"+fallos+" rebotado"+(fallos===1?"":"s")+"</strong>":"")+
+        "</p>"+
+      "<div style='overflow-x:auto'><table class='cp-bill-table' style='min-width:640px'><thead><tr>"+
+        "<th>Coach</th><th>Fecha</th><th>Monto</th><th>Ciclo</th><th>Estado</th>"+
+      "</tr></thead><tbody>"+rows+"</tbody></table></div></div>";
+  }
   var payouts = [
     { n:"Micaela Jairedin", bruto:"€3.100", com:"−€620", neto:"€2.480", est:["En tránsito · 24 h","warn"], f:"17 may" },
     { n:"Lucas Romano",     bruto:"€2.050", com:"−€410", neto:"€1.640", est:["Programado","ok"],          f:"19 may" },
@@ -10473,6 +10548,7 @@ function viewAdmin(){
           row("CV Express (acumulado)", A?eur(A.cvxRev):"€1.073",{muted:true,top:true})+
         "</div>"+
         "<p class='cp-reassurance' style='margin:0 22px 20px;border-radius:12px'>"+(A?"Solo coaches que <strong>pagaron</strong> ("+A.proPaid+" Pro · "+A.basicPaid+" Basic, USD $59 y $29 al mes). No cuentan los de prueba, los Pro vitalicios ni los coaches dentro de una red (paga el dueño). Comisión/payouts en Stripe.":"Los <strong>€14.880</strong> de payouts (80% de lo referido) no son ingreso — se transfieren tras las 24 h.")+"</p></div>"+
+      ledgerCard()+
       "<div class='cp-card'><div class='cp-card-hd'><h3 class='cp-card-title'>Payouts a coaches — pendientes<span class='dot'>.</span></h3>"+
         "<span class='cp-eyebrow' style='color:var(--pw-sendero)'>● vía Stripe</span></div>"+
         (REAL
@@ -12366,7 +12442,7 @@ document.addEventListener("click", function(ev){
   if(act==="psel-bill"){ _planSel().billing=(el.getAttribute("data-b")==="anual")?"anual":"mensual"; render(); return; }
   if(act==="psel-plan"){ _planSel().plan=(el.getAttribute("data-p")==="pro")?"pro":"basic"; render(); return; }
   if(act==="plan-refresh"){ _planRefresh(); return; }
-  if(act.indexOf("adtab:")===0){ state.adminTab=act.slice(6); state.coachSel=null; state.coachMsg=""; state.coachLink=""; state.mcMsg=""; state.mcLink=""; state.mccMsg=""; state.mctMsg=""; state.empleSel=null; state.personaSearch=""; state.transferSearch=""; state.transferMsg=""; if(state.adminTab==="empleados" && REAL && REMPLE===null){ reloadEmpleados(); } if(state.adminTab==="novedades"){ RFEED=null; } render(); return; }
+  if(act.indexOf("adtab:")===0){ state.adminTab=act.slice(6); state.coachSel=null; state.coachMsg=""; state.coachLink=""; state.mcMsg=""; state.mcLink=""; state.mccMsg=""; state.mctMsg=""; state.empleSel=null; state.personaSearch=""; state.transferSearch=""; state.transferMsg=""; if(state.adminTab==="empleados" && REAL && REMPLE===null){ reloadEmpleados(); } if(state.adminTab==="pagos" && REAL && RLEDGER===null){ reloadLedger(); } if(state.adminTab==="novedades"){ RFEED=null; } render(); return; }
   if(act==="persona-new"){ alert("Crear nuevo coach: esta funcionalidad se linkea a la sección 'Coaches' (tab Agregar). Por ahora usá esa."); return; }
   if(act==="persona-view"){ var pid=el.getAttribute("data-id"); if(pid){ state.coachSel=pid; state.coachView="lista"; render(); window.scrollTo(0,0); } return; }
   if(act==="coach-move"){
@@ -15901,7 +15977,7 @@ function demoGenerateExample(){
     }
   },620);
 }
-var REAL=false, RCFG={}, RCFG_READY=false, RPROF={slug:"",titulo_profesional:"",bio:"",tagline:"",mi_enfoque:"",especialidades:[],perfil_publico_activo:false}, RME=null, RCOACHES=null, RCONTACTS=null, RADMIN=false, RADM=null, RSOL=[], RMSG=[], RCITAS=[], RORGS=null;
+var REAL=false, RCFG={}, RCFG_READY=false, RPROF={slug:"",titulo_profesional:"",bio:"",tagline:"",mi_enfoque:"",especialidades:[],perfil_publico_activo:false}, RME=null, RCOACHES=null, RCONTACTS=null, RADMIN=false, RADM=null, RSOL=[], RMSG=[], RCITAS=[], RORGS=null, RLEDGER=null, _ledgerBusy=false;
 // RED (multicoach): si el coach pertenece a una org, RRED guarda el nombre de la
 // red / dueño y RREDMSG el hilo de chat con el dueño (via edge function mensaje-red).
 // RCANALMSG es el CANAL DE EQUIPO (grupo dueño+coaches, via canal-red).
