@@ -66,9 +66,17 @@ Deno.serve(async (req: Request) => {
 
   // order estable → el color por coach en la agenda del panel no baila entre recargas.
   const coaches = await q(`usuarios?org_id=eq.${encodeURIComponent(orgId)}&rol=eq.coach&order=created_at.asc&select=id,nombre,email,activo,foto_url,configuracion`);
-  // `notas` viaja para que la nota interna del cliente vuelva al recargar: la
-  // escribe editar-cliente-red y esta es la unica lectura que hace el panel.
-  const clientes = await q(`candidatos?org_id=eq.${encodeURIComponent(orgId)}&select=id,nombre,email,activo,coach_id,semana_activa,foto_perfil,notas,created_at,updated_at&order=created_at.desc`);
+  // ⚠️ CADA COLUMNA DE ESTE SELECT TIENE QUE EXISTIR EN `candidatos`.
+  // PostgREST responde 400 ante una columna desconocida y `q()` convierte
+  // cualquier !ok en [], asi que un solo nombre mal escrito deja al dueño con
+  // la red VACIA y sin un solo mensaje. Paso exactamente eso: el SELECT pedia
+  // `updated_at`, que en esta base no existe, y los owners llevaban tiempo
+  // viendo cero clientes. Antes de tocar esta linea, comprobar contra la base.
+  //
+  // `notas_privadas` es la nota interna del coach sobre el cliente — la misma
+  // que escribe y lee panel-v2. NO es `notas` (no existe) ni `notas_coach`
+  // (esa guarda el chat serializado).
+  const clientes = await q(`candidatos?org_id=eq.${encodeURIComponent(orgId)}&select=id,nombre,email,activo,coach_id,semana_activa,foto_perfil,notas_privadas,created_at&order=created_at.desc`);
 
   // Citas de TODA la red (agenda del owner + historial de sesiones por cliente).
   // La RLS de citas es por coach → el owner no las lee directo; acá con service

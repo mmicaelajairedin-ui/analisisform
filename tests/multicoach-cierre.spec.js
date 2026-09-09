@@ -109,28 +109,28 @@ test.describe('MultiCoach · Programas', () => {
     await page.evaluate(() => window._progNuevo());
     await page.waitForTimeout(250);
     await page.fill('#pg-n', 'Programa de prueba');
-    await page.fill('#pg-d', '6 semanas');
-    await page.evaluate(() => { document.getElementById('pg-p').value = '55'; });
+    await page.fill('#pg-d', '6');
     await page.click('#__mo');
     await page.waitForTimeout(350);
     expect(await page.evaluate(() => (window.MC_PROGS || []).length)).toBe(n0 + 1);
     await expect(page.locator('#plist')).toContainText('Programa de prueba');
 
-    await page.evaluate(() => window._progAbrir((window.MC_PROGS || []).find(p => p.name === 'Programa de prueba').id));
+    await page.evaluate(() => window._progAbrir((window.MC_PROGS || []).find(p => p.nombre === 'Programa de prueba').id));
     await page.waitForTimeout(300);
     const ficha = page.locator('#vscroll');
     await expect(ficha, '"Ver detalles" tiene que abrir la ficha, no un aviso').toContainText('Datos del programa');
-    await expect(ficha).toContainText('55%');
+    await expect(ficha, 'la duracion se guarda en semanas (entero), no como texto libre').toContainText('6 semanas');
+    await expect(ficha, 'la ficha lista los coaches del programa').toContainText('Coaches del programa');
     await expect(ficha).toContainText('Volver a Programas');
 
-    await page.evaluate(() => window._progEditar((window.MC_PROGS || []).find(p => p.name === 'Programa de prueba').id));
+    await page.evaluate(() => window._progEditar((window.MC_PROGS || []).find(p => p.nombre === 'Programa de prueba').id));
     await page.waitForTimeout(250);
     await page.fill('#pg-n', 'Programa editado');
     await page.click('#__mo');
     await page.waitForTimeout(350);
     await expect(ficha).toContainText('Programa editado');
 
-    await page.evaluate(() => window._progBorrar((window.MC_PROGS || []).find(p => p.name === 'Programa editado').id));
+    await page.evaluate(() => window._progBorrar((window.MC_PROGS || []).find(p => p.nombre === 'Programa editado').id));
     await page.waitForTimeout(250);
     await page.click('#__mo');
     await page.waitForTimeout(350);
@@ -140,10 +140,38 @@ test.describe('MultiCoach · Programas', () => {
   test('las escrituras van acotadas por org_id ademas de por la RLS', async ({ page }) => {
     await page.goto(MC(), { waitUntil: 'load' });
     await page.waitForTimeout(600);
-    for (const fn of ['_progEditar', '_progBorrar']) {
+    for (const fn of ['_progEditar', '_progBorrar', '_progQuitarCoach']) {
       const src = await page.evaluate((f) => window[f].toString().replace(/\s/g, ''), fn);
       expect(src, `${fn} perdio el filtro por org_id`).toContain("org_id=eq.'+encodeURIComponent(MC_ORG.id)");
     }
+  });
+
+  // E · F · G — el esquema real, y solo ese.
+  test('Programas habla con mc_programas y mc_programa_coaches, nunca con `programs`', async ({ page }) => {
+    await page.goto(MC(), { waitUntil: 'load' });
+    await page.waitForTimeout(600);
+    const fuentes = await page.evaluate(() => ({
+      url: window._progUrl(''),
+      urlCoach: window._progCoachUrl(''),
+      cargar: window.loadPrograms.toString(),
+      sumar: window._progSumarCoach.toString(),
+      form: window._progLeerForm.toString(),
+    }));
+    // E
+    expect(fuentes.url, 'Programas tiene que leer/escribir en mc_programas').toContain('/rest/v1/mc_programas');
+    // F
+    expect(fuentes.urlCoach, 'la asignacion de coaches vive en mc_programa_coaches').toContain('/rest/v1/mc_programa_coaches');
+    expect(fuentes.sumar).toContain('programa_id');
+    expect(fuentes.sumar).toContain('usuario_id');
+    // G — el diseno muerto no vuelve
+    for (const [k, v] of Object.entries(fuentes)) {
+      expect(v, `${k} vuelve a apuntar a la tabla \`programs\`, que no existe en produccion`).not.toMatch(/rest\/v1\/programs\b/);
+    }
+    // Nombres reales de columna, sin inventos
+    expect(fuentes.form, 'el alta usa `nombre`, no `name`').toContain('nombre:');
+    expect(fuentes.form, 'la duracion es duracion_semanas (entero)').toContain('duracion_semanas');
+    expect(fuentes.form, 'mc_programas no tiene `completion`').not.toContain('completion');
+    expect(fuentes.form, 'mc_programas no tiene `clients`').not.toContain('clients:');
   });
 });
 

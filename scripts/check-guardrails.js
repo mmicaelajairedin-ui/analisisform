@@ -5877,46 +5877,105 @@ const RULES = [
     },
   },
   {
-    name: "multicoach: Programas es real (alcanzable, CRUD y sin datos inventados)",
-    bug: "Programas estaba en el menu pero __go() no lo listaba como implementado: al " +
-         "tocarlo salia el toast 'Etapa proxima' y renderPrograms() era codigo muerto. " +
-         "Y si se desbloqueaba, servia MOCK_PROGRAMS —seis programas ficticios con " +
-         "coaches inventados (Maria Garcia, Alex Chen)— como fallback SILENCIOSO cuando " +
-         "la tabla venia vacia, sin CRUD y con 'Ver Detalles' abriendo un toast de " +
-         "'proximamente'. La tabla venia vacia siempre porque las policies de la " +
-         "migracion 0102 comparaban usuarios.id contra auth.uid() y no matcheaban nunca " +
-         "(arreglado en la 0112).",
+    name: "multicoach: Programas usa el esquema REAL (mc_programas), no el diseno muerto",
+    bug: "Dos bugs encadenados. (1) Programas estaba en el menu pero __go() no lo listaba " +
+         "como implementado: salia el toast 'Etapa proxima' y renderPrograms() era codigo " +
+         "muerto; si se desbloqueaba, servia MOCK_PROGRAMS —programas ficticios con coaches " +
+         "inventados— como fallback SILENCIOSO. (2) El arreglo apuntaba a una tabla " +
+         "`programs` de las migraciones 0102/0110/0112 que NUNCA se aplico y que no existe " +
+         "en produccion. El esquema real es `mc_programas` + `mc_programa_coaches`, creado " +
+         "por el flujo mc_*, con RLS FORZADA y sus helpers mc_pw_*. Esta regla impide " +
+         "volver a cualquiera de los dos agujeros. Ver docs/multicoach-legacy.md.",
     check() {
-      const mc = read("multicoach.html");
-      if (!mc) return null;
+      const mcRaw = read("multicoach.html");
+      if (!mcRaw) return null;
+      // Se mira lo que se EJECUTA: un nombre de columna citado en un comentario
+      // para explicar que NO se usa no puede poner la regla en rojo.
+      const mc = mcRaw.replace(/^\s*\/\/.*$/gm, "").replace(/\/\*[\s\S]*?\*\//g, "");
       const plano = mc.replace(/\s/g, "");
       // 1) Alcanzable: el router tiene que aceptarlo.
       if (!/s==='programas'/.test(plano.replace(/"/g, "'")))
         return "multicoach.html: __go() ya no acepta 'programas' (el menu lo ofrece y el router lo rechaza con un toast).";
-      // 2) Sin datos inventados: nunca mas un fallback a programas ficticios.
+      // 2) Sin datos inventados en modo real.
       if (/MOCK_PROGRAMS/.test(mc))
         return "multicoach.html: volvio MOCK_PROGRAMS. Una red sin programas es una lista vacia, no una lista de ejemplo.";
-      // 3) CRUD real contra la tabla, y borrado/edicion acotados por org_id.
-      for (const fn of ["_progNuevo", "_progEditar", "_progBorrar", "_renderProgFicha"]) {
-        if (!new RegExp("function " + fn + "\\(").test(mc))
-          return "multicoach.html: falta " + fn + "() (Programas sin alta, edicion, borrado o ficha).";
+      // 3) El esquema REAL, y solo ese.
+      if (!/rest\/v1\/mc_programas/.test(mc))
+        return "multicoach.html: Programas ya no habla con mc_programas (el esquema real de produccion).";
+      if (!/rest\/v1\/mc_programa_coaches/.test(mc))
+        return "multicoach.html: falta mc_programa_coaches — la asignacion de coaches a un programa vive en esa tabla puente.";
+      if (/rest\/v1\/programs\b/.test(mc))
+        return "multicoach.html: vuelve a apuntar a la tabla `programs`. Ese diseno (migraciones 0102/0110/0112) NUNCA se aplico y no existe en produccion.";
+      // 4) Columnas inventadas que la tabla real no tiene.
+      for (const inventada of ["completion", "\\bp\\.clients\\b"]) {
+        if (new RegExp(inventada).test(mc))
+          return "multicoach.html: Programas usa un campo que mc_programas NO tiene (" + inventada + "). Sus columnas son nombre, descripcion, estado, duracion_semanas, owner_coach_id, creado_por.";
       }
-      if (!/rest\/v1\/programs/.test(mc))
-        return "multicoach.html: Programas ya no habla con la tabla programs.";
+      // 5) CRUD completo + ficha.
+      for (const fn of ["_progNuevo", "_progEditar", "_progBorrar", "_renderProgFicha", "_progSumarCoach", "_progQuitarCoach"]) {
+        if (!new RegExp("function " + fn + "\\(").test(mc))
+          return "multicoach.html: falta " + fn + "() (Programas sin alta, edicion, borrado, ficha o asignacion de coaches).";
+      }
       if (!/method:'PATCH'/.test(plano) || !/method:'DELETE'/.test(plano))
         return "multicoach.html: Programas ya no edita (PATCH) o no borra (DELETE).";
-      // El PATCH y el DELETE de un programa llevan SIEMPRE su org_id: segunda
-      // capa sobre la RLS, igual que cg() hace con candidatos. Son dos sitios.
-      const acotadas = (plano.match(/_progUrl\('\?id=eq\.'\+encodeURIComponent\(id\)\+'&org_id=eq\.'\+encodeURIComponent\(MC_ORG\.id\)\)/g) || []).length;
-      if (acotadas < 2)
-        return "multicoach.html: el PATCH/DELETE de programas perdio el filtro por org_id (la RLS ya acota, pero esto es la segunda capa). Encontrados: " + acotadas + " de 2.";
-      // 4) La RLS tiene que estar arreglada: la 0102 no matcheaba nunca.
-      const fix = read("supabase/migrations/0112_programs_rls_fix.sql");
-      if (!fix) return "falta supabase/migrations/0112_programs_rls_fix.sql (sin ella la tabla programs es invisible para el dueno).";
-      if (!/auth_id\s*=\s*auth\.uid\(\)/.test(fix))
-        return "0112_programs_rls_fix.sql: la policy debe resolver al usuario por usuarios.auth_id = auth.uid(), como el resto del esquema.";
-      if (!/WITH CHECK/.test(fix))
-        return "0112_programs_rls_fix.sql: sin WITH CHECK el INSERT/UPDATE se rechaza aunque el USING deje leer.";
+      // 6) Escrituras acotadas por org_id: segunda capa sobre la RLS forzada.
+      const acotadas = (plano.match(/'&org_id=eq\.'\+encodeURIComponent\(MC_ORG\.id\)/g) || []).length;
+      if (acotadas < 3)
+        return "multicoach.html: alguna escritura de Programas perdio el filtro por org_id (la RLS ya acota, pero esto es la segunda capa). Encontradas: " + acotadas + ", esperadas >=3 (PATCH, DELETE de programa y DELETE de coach).";
+      // 7) El diseno muerto no puede volver por la puerta de las migraciones.
+      if (read("supabase/migrations/0112_programs_rls_fix.sql"))
+        return "volvio supabase/migrations/0112_programs_rls_fix.sql. Esa migracion crea policies sobre `programs`, una tabla que no existe: el esquema real es mc_programas.";
+      return null;
+    },
+  },
+  {
+    name: "multicoach: los SELECT contra candidatos usan columnas que EXISTEN",
+    bug: "mi-red pedia `candidatos.updated_at`, que no existe en esta base. PostgREST " +
+         "responde 400 ante una columna desconocida y el helper q() convierte cualquier " +
+         "!ok en [], asi que los DUENOS VEIAN SU RED VACIA —cero clientes, KPIs a cero, " +
+         "Analytics vacio— sin un solo mensaje de error. Se descubrio comparando el " +
+         "esquema real contra el repositorio, no por un fallo visible. Despues se repitio " +
+         "el patron al anadir `notas`, que tampoco existe: la nota interna del cliente " +
+         "vive en `notas_privadas` (la misma que escribe panel-v2); `notas_coach` NO " +
+         "sirve, guarda el chat serializado. Ver docs/multicoach-legacy.md.",
+    check() {
+      // Columnas de `candidatos` que NO existen en produccion y que ya nos han
+      // mordido. Si alguien las vuelve a poner en un select o en un update, aqui
+      // se ve antes de que la red se quede muda.
+      const FANTASMA = ["updated_at", "notas", "plan", "estado"];
+      const sinComentarios = (x) => x.replace(/^\s*\/\/.*$/gm, "").replace(/\/\*[\s\S]*?\*\//g, "");
+
+      // A · B — mi-red: sin updated_at, con notas_privadas.
+      const mr = read("supabase/functions/mi-red/index.ts");
+      if (!mr) return "falta supabase/functions/mi-red/index.ts.";
+      const sel = sinComentarios(mr).match(/candidatos\?org_id=eq\.[^`]*`/);
+      if (!sel) return "mi-red: no se encuentra el SELECT de candidatos.";
+      const cols = (sel[0].match(/select=([^&`]*)/) || [])[1] || "";
+      for (const c of FANTASMA) {
+        if (new RegExp("(^|,)" + c + "(,|$)").test(cols))
+          return "mi-red: el SELECT de candidatos vuelve a pedir `" + c + "`, que NO existe. PostgREST devolvera 400 y q() lo convertira en [] — el dueno se queda sin clientes y en silencio.";
+      }
+      if (!/notas_privadas/.test(cols))
+        return "mi-red: el SELECT de candidatos ya no trae `notas_privadas`; la nota interna no volveria al recargar.";
+
+      // C · D — editar-cliente-red: persiste en notas_privadas, nunca en notas/notas_coach.
+      const ec = sinComentarios(read("supabase/functions/editar-cliente-red/index.ts") || "");
+      if (!ec) return "falta supabase/functions/editar-cliente-red/index.ts.";
+      if (!/update\.notas_privadas\s*=/.test(ec))
+        return "editar-cliente-red: la nota interna ya no se escribe en `notas_privadas`.";
+      if (/update\.notas\s*=/.test(ec))
+        return "editar-cliente-red: vuelve a escribir `candidatos.notas`, que no existe. El PATCH es uno solo: falla ENTERO y no se guarda tampoco el nombre ni el email.";
+      if (/notas_coach/.test(ec))
+        return "editar-cliente-red: usa `notas_coach`. Esa columna guarda el CHAT serializado — escribir la nota ahi lo pisaria.";
+      if (/update\.plan\s*=/.test(ec))
+        return "editar-cliente-red: vuelve a escribir `candidatos.plan`, que no existe (y ningun llamador la mandaba).";
+
+      // El frontend tiene que leer la nota del mismo sitio.
+      const mc = sinComentarios(read("multicoach.html") || "");
+      if (mc && !/notasInternas:\(c\.notas_privadas/.test(mc.replace(/\s/g, "")))
+        return "multicoach.html: mcMapCli ya no mapea la nota desde `notas_privadas`.";
+      if (mc && /select=[^'\`"]*(,|=)updated_at/.test(mc))
+        return "multicoach.html: algun SELECT directo a candidatos volvio a pedir `updated_at` (no existe).";
       return null;
     },
   },

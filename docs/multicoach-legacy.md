@@ -53,6 +53,63 @@ están y se siguen editando desde el carril lateral de la ficha.
 
 ---
 
+## 1-bis. Reconciliación con el esquema REAL de producción (septiembre 2026)
+
+Al ir a desplegar se comprobó el esquema contra la base y **el repositorio no
+era la fuente de verdad**. Las migraciones numeradas (`0102`, `0109`, `0110`,
+`0111`) nunca se aplicaron; producción se gestiona con un flujo `mc_*`
+timestamped que el repositorio no conoce.
+
+### Programas: el esquema real es `mc_programas`
+
+`programs` (inglés, migraciones 0102/0110) **no existe** y nunca existió.
+Tampoco `programas` (castellano, policy de `007`). El bueno es:
+
+| Tabla | Qué es |
+|---|---|
+| `mc_programas` | `id, org_id, nombre, descripcion, estado, duracion_semanas, owner_coach_id, creado_por, created_at, updated_at` |
+| `mc_programa_coaches` | puente `programa_id` ↔ `usuario_id`, con `UNIQUE(programa_id, usuario_id)` y FK en cascada |
+
+Límites que impone la base: `nombre` 1–120, `descripcion` ≤2000,
+`duracion_semanas` 1–104 o NULL, `estado` ∈ `draft|active|completed|archived`.
+**No hay `clients` ni `completion`.**
+
+RLS **forzada**, con helpers `mc_pw_es_owner()`, `mc_pw_es_miembro()`,
+`mc_pw_es_coach_de()`, `mc_pw_cliente_ve_programa()`. GRANT solo a
+`authenticated`. El frontend no añade permisos: filtra por `org_id` como
+segunda capa y deja decidir a la base.
+
+**`0112_programs_rls_fix.sql` se retiró de la rama.** Creaba policies sobre una
+tabla inexistente. Las migraciones `0102`, `0110` y `007` quedan como diseño
+muerto: **no aplicar ninguna.**
+
+### Columnas fantasma en `candidatos`
+
+| Columna | Estado | Qué se hizo |
+|---|---|---|
+| `updated_at` | **no existe** | Fuera del SELECT de `mi-red` y del de respaldo. Era la causa de que **los dueños vieran su red vacía**: PostgREST devuelve 400 y `q()` lo convierte en `[]`, en silencio |
+| `notas` | **no existe** | → `notas_privadas` en `mi-red` y en `editar-cliente-red` |
+| `plan` | **no existe** | Se retiró el update. Ningún llamador la mandaba |
+| `estado` | **no existe como columna** | No hacía falta tocar nada: `editar-cliente-red` ya recibía `estado` como *parámetro* y escribía la columna `activo` |
+
+**`notas_coach` NO es la nota interna**: guarda el chat serializado
+(`raw.notas_coach = JSON.stringify(arr)` en panel-v2). La nota del coach sobre
+el cliente es **`notas_privadas`**, que es la que panel-v2 escribe y lee.
+
+### Comportamiento que queda en la ficha de cliente
+
+- **Notas internas:** se guardan en `notas_privadas`, **compartidas con el panel
+  del coach**. Lo que escriba el dueño lo ve el coach y al revés.
+- **Estado activo/inactivo:** funciona igual que antes.
+- **Plan:** ya no se manda. **No había pantalla que lo editara**, así que no se
+  pierde nada visible.
+- **Pendiente ajeno a este cierre:** el formulario «Editar datos del cliente»
+  manda `telefono`, `empresa` y `nicho`, y `editar-cliente-red` **no acepta esos
+  tres campos** — los ignora en silencio. Es anterior a este trabajo y no se ha
+  tocado.
+
+---
+
 ## 2. Carriles retirados — todavía en el repositorio
 
 Ninguno se ha borrado ni redirigido en esta fase.
@@ -164,13 +221,14 @@ destino único.
 
 Nada de esto se ha desplegado. En orden:
 
-1. **SQL Editor de Supabase** — aplicar `supabase/migrations/0112_programs_rls_fix.sql`.
-   Es idempotente y solo toca policies. **Sin ella no hay Programas**: la tabla
-   sigue siendo invisible para el dueño y el listado sale vacío.
-2. **Edge functions** — redesplegar las dos que cambiaron:
+1. **Ninguna migración.** El esquema ya está en producción (`mc_programas`,
+   `mc_programa_coaches`). `0112` se retiró; `0102`, `0110` y `007` **no se
+   aplican**.
+2. **Edge functions** — redesplegar las que cambiaron:
    `supabase functions deploy mi-red --no-verify-jwt`
    `supabase functions deploy add-coach-to-org --no-verify-jwt`
-   (`mi-red` es la que hace que la nota del cliente vuelva al recargar.)
+   `supabase functions deploy editar-cliente-red --no-verify-jwt`
+   (**`mi-red` es la urgente**: hoy, desplegada, deja a los dueños sin clientes.)
 3. **Frontend** — el push a `main` lo publica solo (Cloudflare Pages).
 
 Comprobación después de desplegar, con sesión de dueño real:
