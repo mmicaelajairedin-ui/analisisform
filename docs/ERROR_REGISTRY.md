@@ -800,78 +800,6 @@ reales** — fuera del alcance autorizado de RC-14.
 
 ---
 
-## ERR-FITSESS-001: El portal del cliente cae a la anon key y ve su ficha vacía
-
-**Estado:** ROOT_CAUSE_CONFIRMED_RUNTIME
-**Fecha detectado:** 2026-09-09
-**Severity:** CRITICAL
-
-### Scope Metadata
-- **Module:** `portal-fitness`
-- **Scope Type:** `MODULE_SPECIFIC`
-- **Scope Belongs To:** `claude/fix-portal-session-rls`
-- **Blocking Scope:** `other`
-- **Blocks Current Branch:** No
-
-> **Nota deliberada:** NO se marca `CORE_INFRASTRUCTURE` aunque la severidad lo
-> justificaría. Ese tipo bloquea el deploy de TODAS las ramas (RULE 3 de
-> `check-error-scope.js`), incluido el deploy del propio arreglo. Si se quiere
-> frenar deploys hasta resolverlo, cambiar el Scope Type es una decisión del
-> Product Owner, no del que reporta.
-
-### Síntoma
-El cliente entra a su portal y no ve su rutina (o ve una vieja). Lo que guarda
-—"lo que hice", hábitos— desaparece al recargar, **sin ningún mensaje de error**.
-
-### Categoría
-`AUTH` · `RLS` · `SILENT_FAILURE`
-
-### Módulo
-`pathway-fit-cliente.html` + `pw-auth.js`
-
-### Root Cause
-`tokenSync()` (pw-auth.js:~80) descarta el access_token vencido y devuelve
-`null`; **no lo refresca**. `_hdr()` del portal es SÍNCRONO
-(`PWAUTH.headersSync`), así que cae a la anon key. El interceptor de fetch
-tampoco sube el JWT porque también depende de `tokenSync()`.
-
-Con RLS estricto, un SELECT con anon key **no da error**: devuelve `HTTP 200`
-con lista vacía. El self-healing de `pw-auth.js` sólo reintenta ante 401/403,
-así que **nunca se dispara**. Cadena completa:
-
-```
-token vencido -> anon key -> SELECT devuelve [] (200 OK)
--> pwInit cree que no hay ficha (pathway-fit-cliente.html:~2670)
--> _clienteSinFicha() -> _ensureFicha() -> POST /candidatos -> 403 (42501)
-```
-
-Del lado de la escritura es el mismo bug: el PATCH no matchea ninguna fila,
-PostgREST responde 200 con `[]`, `sbPatch` lo detecta (`ok:false`) pero los
-llamadores sólo escuchan `.catch()` y nunca miran `r.ok` — por eso el cambio
-queda en pantalla y se pierde al recargar.
-
-### Evidencia (producción)
-`client_errors`, recurrente y sólo en clientes que **SÍ tienen ficha**:
-
-| Fecha | Email | Veces |
-|-------|-------|-------|
-| 2026-09-09 | rosmandubon134@gmail.com | 7 |
-| 2026-09-08 | rosmandubon134@gmail.com | 3 |
-| 2026-09-02 | rosmandubon134@gmail.com | 5 |
-| 2026-08-26 | rosmandubon134@gmail.com | 5 |
-
-`POST /rest/v1/candidatos {code=42501; new row violates row-level security policy}`
-
-`candidatos.id=213` (Rosman Dubon) existe y tiene 33 KB de rutina cargada: el
-portal intentó **crear una ficha que ya existía**.
-
-### Cómo evitar la regresión
-Al arreglarlo, sumar regla en `check-guardrails.js`: `_hdr()` del portal no
-puede resolver a la anon key habiendo sesión, y toda lectura de ficha vacía
-debe distinguir "sin ficha" de "sin permiso".
-
----
-
 ## ERR-LANG-001: "Coach de Carrera" no se traduce en el chip del header
 
 **Estado:** DETECTED
@@ -984,7 +912,6 @@ antes de tocar la lógica del onboarding.
 | **ERR-CLIPROG-001** | **FIXED / TESTED** | **HIGH** | **cliente** | ✅ | ❌ |
 | **ERR-CLIPROG-002** | **FIXED / TESTED** | **MEDIUM** | **cliente** | ✅ | ❌ |
 | **ERR-CLIPROG-003** | **FIXED / TESTED** | **HIGH** | **cliente** | ✅ | ❌ |
-| **ERR-FITSESS-001** | **ROOT_CAUSE_CONFIRMED_RUNTIME** | **CRITICAL** | **portal-fitness** | ❌ | ❌ |
 | **ERR-LANG-001** | **DETECTED** | **LOW** | **i18n** | ❌ | ❌ |
 | **ERR-CURRENCY-001** | **DETECTED** | **MEDIUM** | **cobros** | ❌ | ❌ |
 | **ERR-ONBOARD-001** | **DETECTED** | **LOW** | **onboarding** | ❌ | ❌ |
