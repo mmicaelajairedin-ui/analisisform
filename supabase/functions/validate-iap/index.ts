@@ -171,20 +171,29 @@ Deno.serve(async (req: Request) => {
     }
 
     // 6. Verificar elegibilidad: ¿Tiene Stripe activo?
-    const { data: stripeSubscription, error: stripeError } = await supabase
-      .from("usuarios_suscripciones_stripe")
-      .select("id, status, current_period_end")
-      .eq("coach_id", coachId)
-      .eq("status", "active")
-      .gt("current_period_end", new Date().toISOString())
+    // Consultar usuarios.configuracion JSONB para ver si tiene Stripe activo
+    const { data: userStripeData, error: stripeError } = await supabase
+      .from("usuarios")
+      .select("configuracion")
+      .eq("id", coachId)
       .single();
 
-    // Si encuentra Stripe activo → rechazar
-    if (stripeSubscription && !stripeError) {
-      return errorResponse(
-        "Cannot purchase IAP while active Stripe subscription exists",
-        409
-      );
+    // Determinar si Stripe está activo basándose en JSONB
+    if (!stripeError && userStripeData?.configuracion) {
+      const cfg = userStripeData.configuracion;
+      const stripeActive =
+        cfg.stripe_customer_id &&
+        cfg.estado_sub &&
+        ["activa", "prueba"].includes(cfg.estado_sub) &&
+        cfg.fecha_fin_periodo &&
+        new Date(cfg.fecha_fin_periodo) > new Date();
+
+      if (stripeActive) {
+        return errorResponse(
+          "Cannot purchase IAP while active Stripe subscription exists",
+          409
+        );
+      }
     }
 
     // 7. Verificar si ya tiene IAP activo (upgrade/downgrade case)

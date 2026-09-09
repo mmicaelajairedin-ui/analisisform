@@ -152,29 +152,35 @@ Deno.serve(async (req: Request) => {
     let stripeResult: EntitlementCheckResult | null = null;
 
     if (checkType === "stripe_only" || checkType === "any") {
-      const { data: stripeSub, error: stripeError } = await supabase
-        .from("usuarios_suscripciones_stripe")
-        .select("id, status, plan, current_period_end")
-        .eq("coach_id", coachId)
-        .eq("status", "active")
+      const { data: userStripeData, error: stripeError } = await supabase
+        .from("usuarios")
+        .select("configuracion")
+        .eq("id", coachId)
         .single();
 
-      if (!stripeError && stripeSub) {
+      if (!stripeError && userStripeData?.configuracion) {
+        const cfg = userStripeData.configuracion;
         const now = new Date();
-        const currentPeriodEnd = new Date(stripeSub.current_period_end);
-        const hasAccess = currentPeriodEnd > now;
 
-        stripeResult = {
-          hasAccess: hasAccess,
-          coach_id: coachId,
-          plan: stripeSub.plan === "basic_monthly" ? "basic" : "pro",
-          paymentSource: "stripe",
-          status: stripeSub.status,
-          expiresAt: stripeSub.current_period_end,
-        };
+        // Verificar que tiene Stripe activo
+        if (cfg.stripe_customer_id && cfg.estado_sub && cfg.fecha_fin_periodo) {
+          const periodEnd = new Date(cfg.fecha_fin_periodo);
+          const stripeIsActive =
+            ["activa", "prueba"].includes(cfg.estado_sub) &&
+            periodEnd > now;
 
-        if (!hasAccess) {
-          stripeResult.reason = "Stripe subscription expired";
+          stripeResult = {
+            hasAccess: stripeIsActive,
+            coach_id: coachId,
+            plan: cfg.plan === "pro" ? "pro" : "basic",
+            paymentSource: "stripe",
+            status: cfg.estado_sub,
+            expiresAt: cfg.fecha_fin_periodo,
+          };
+
+          if (!stripeIsActive) {
+            stripeResult.reason = "Stripe subscription expired or inactive";
+          }
         }
       }
     }

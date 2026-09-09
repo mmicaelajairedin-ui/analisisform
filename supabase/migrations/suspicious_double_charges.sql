@@ -96,40 +96,48 @@ CREATE POLICY suspicious_double_charges_update ON suspicious_double_charges FOR 
 -- Corre diariamente (vía Supabase Cron o GitHub Actions).
 -- Query: coaches que simultáneamente tienen:
 --   - status='active' en usuarios_suscripciones_iap Y expires_date > NOW()
---   - status='active' en usuarios_suscripciones_stripe Y current_period_end > NOW()
+--   - Stripe activo en usuarios.configuracion JSONB (estado_sub='activa'|'prueba', fecha_fin_periodo > NOW)
 --
 -- Si encuentra: inserta en suspicious_double_charges con severity='review'.
 --
--- Pseudocódigo:
--- ```
--- SELECT u.id as coach_id,
---        iap.original_transaction_id,
---        stripe_sub.stripe_subscription_id,
---        iap.expires_date - stripe_sub.current_period_end as time_delta
--- FROM usuarios u
--- LEFT JOIN usuarios_suscripciones_iap iap ON iap.coach_id = u.id
--- LEFT JOIN usuarios_suscripciones_stripe stripe_sub ON stripe_sub.coach_id = u.id
--- WHERE iap.status = 'active' AND iap.expires_date > NOW()
---   AND stripe_sub.status = 'active' AND stripe_sub.current_period_end > NOW()
--- ```
---
--- Para cada fila, INSERT en suspicious_double_charges.
+-- Fuente de verdad Stripe:
+--   - usuarios.configuracion->>'stripe_customer_id' (indica presencia de Stripe)
+--   - usuarios.configuracion->>'estado_sub' (valores: 'activa', 'prueba', 'cancelada', etc.)
+--   - usuarios.configuracion->>'fecha_fin_periodo' (current_period_end del webhook Stripe)
 
 -- ============================================================================
 -- Helper: Función para detectar doble cobro (para queries manuales)
 -- ============================================================================
+-- Detecta coaches con suscripción Apple IAP activa Y Stripe activo simultáneamente.
+-- Datos Stripe vienen de usuarios.configuracion JSONB (actualizado por stripe-webhook).
+-- Datos IAP vienen de usuarios_suscripciones_iap table.
 CREATE OR REPLACE FUNCTION public.detect_double_charges()
-RETURNS TABLE (coach_id UUID, stripe_id TEXT, apple_id TEXT, time_delta_ms INTEGER) AS $$
+RETURNS TABLE (
+  coach_id UUID,
+  stripe_charge_id TEXT,
+  apple_transaction_id TEXT,
+  stripe_amount NUMERIC,
+  apple_amount NUMERIC,
+  time_delta_ms INTEGER,
+  currency TEXT
+) AS $$
   SELECT
     u.id,
-    stripe_sub.stripe_subscription_id,
+    (u.configuracion->>'stripe_subscription_id')::TEXT,
     iap.original_transaction_id,
-    EXTRACT(EPOCH FROM (iap.expires_date - stripe_sub.current_period_end))::INTEGER * 1000
+    NULL::NUMERIC, -- stripe_amount not tracked in usuarios.configuracion (edge function can extract)
+    NULL::NUMERIC, -- apple_amount not tracked in usuarios_suscripciones_iap (TODO: add to schema)
+    EXTRACT(EPOCH FROM (iap.expires_date - (u.configuracion->>'fecha_fin_periodo')::TIMESTAMPTZ))::INTEGER * 1000,
+    'USD'::TEXT
   FROM usuarios u
-  LEFT JOIN usuarios_suscripciones_iap iap ON iap.coach_id = u.id
-  LEFT JOIN usuarios_suscripciones_stripe stripe_sub ON stripe_sub.coach_id = u.id
-  WHERE iap.status = 'active' AND iap.expires_date > now()
-    AND stripe_sub.status = 'active' AND stripe_sub.current_period_end > now()
+  INNER JOIN usuarios_suscripciones_iap iap ON iap.coach_id = u.id
+  WHERE
+    -- Apple IAP is active
+    iap.status = 'active' AND iap.expires_date > now()
+    -- Stripe is active (from configuracion JSONB)
+    AND (u.configuracion->>'stripe_customer_id') IS NOT NULL
+    AND (u.configuracion->>'estado_sub') IN ('activa', 'prueba')
+    AND (u.configuracion->>'fecha_fin_periodo')::TIMESTAMPTZ > now()
 $$ LANGUAGE sql STABLE SECURITY DEFINER;
 
 GRANT EXECUTE ON FUNCTION public.detect_double_charges() TO authenticated, anon;
@@ -139,12 +147,12 @@ GRANT EXECUTE ON FUNCTION public.detect_double_charges() TO authenticated, anon;
 -- ============================================================================
 --
 -- 1. Prevención (Fase 1 Backend):
---    - Before inserting into usuarios_suscripciones_iap:
---      SELECT NOT EXISTS (
---        SELECT 1 FROM usuarios_suscripciones_stripe
---        WHERE coach_id = ? AND status = 'active' AND current_period_end > NOW()
---      )
---      If false → reject purchase with 403 "Ya tienes un plan activo"
+--    - Before inserting into usuarios_suscripciones_iap (validate-iap endpoint):
+--      Check usuarios.configuracion JSONB:
+--        IF stripe_customer_id IS NOT NULL
+--        AND estado_sub IN ('activa', 'prueba')
+--        AND fecha_fin_periodo > NOW()
+--      THEN reject purchase with 409 "Ya tienes un plan activo"
 --
 -- 2. Detección (Daily Job, Fase 1.5):
 --    - Cron job que cada 24h corre detect_double_charges()

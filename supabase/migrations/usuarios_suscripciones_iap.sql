@@ -170,10 +170,12 @@ CREATE TRIGGER sync_payment_source_on_iap_insert
 --
 -- Condiciones para eligibilidad:
 --   1. Coach puede comprar Apple IAP si NO tiene Stripe activo:
---      SELECT NOT EXISTS (
---        SELECT 1 FROM usuarios_suscripciones_stripe
---        WHERE coach_id = ? AND status = 'active' AND current_period_end > now()
+--      SELECT NOT (
+--        (configuracion->>'stripe_customer_id') IS NOT NULL
+--        AND (configuracion->>'estado_sub') IN ('activa', 'prueba')
+--        AND (configuracion->>'fecha_fin_periodo')::TIMESTAMPTZ > now()
 --      )
+--      (Datos de Stripe vienen de usuarios.configuracion, actualizado por stripe-webhook)
 --
 --   2. Coach puede comprar Stripe si NO tiene Apple IAP activo:
 --      SELECT NOT pw_has_apple_iap_entitlement(?)
