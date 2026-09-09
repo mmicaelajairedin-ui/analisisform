@@ -1,5 +1,5 @@
 // ── Biblioteca de recursos UNIFICADA de Pathway ──────────────────────────────
-// Un solo componente para los 3 nichos (carrera, fitness, finanzas). Toma la
+// Un solo componente para los 3 nichos (carrera, fitness, life). Toma la
 // lista de recursos del coach (o del owner de la red) y arma la biblioteca:
 // buscador, filtros por tipo, orden, tarjetas premium con portada + badge,
 // guardar (bookmark) y bloque de progreso ("X de N recursos completados").

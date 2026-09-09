@@ -28,7 +28,7 @@ const FAMILIAS = {
     members: {
       "cliente.html":              { linaje: "base" },   // carrera (async, gen. vieja)
       "pathway-fit-cliente.html":  { linaje: "pathway" },
-      "pathway-fin-cliente.html":  { linaje: "pathway" },
+      "pathway-life-cliente.html":  { linaje: "pathway" },
     },
     piezas: [
       { key: "chat",      label: "Chat coach↔cliente (notas_coach)",
@@ -74,7 +74,7 @@ const FAMILIAS = {
     members: {
       "formulario.html":        { linaje: "base" },
       "pathway-fit-form.html":  { linaje: "pathway" },
-      "pathway-fin-form.html":  { linaje: "pathway" },
+      "pathway-life-form.html":  { linaje: "pathway" },
     },
     piezas: [
       { key: "stepEngine", label: "Motor de pasos",

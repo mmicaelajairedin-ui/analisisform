@@ -349,7 +349,7 @@ RESALTADO = medicion/sesion (evento del coach). Datos REALES: `fit_habitos` por
 fecha (`WDATA[date].gym/.nutri/.agua/.sueno/.pasos`) + `sesiones_registro` +
 `fit_antro`. Funciones: `renderFitCal()`, `_calData()`, `_ymd()`, `fitCalNav()`.
 CSS `.pwcal-*` en `pathway-portal.css` (reusable para finanzas). Pendiente:
-reusar en `pathway-fin-cliente.html` y version simple en el panel del coach.
+reusar en `pathway-life-cliente.html` y version simple en el panel del coach.
 
 ## Archivos principales
 | Archivo | Que hace | Lineas |
@@ -695,6 +695,75 @@ ld+json: las 9 preguntas visibles tienen que estar en el schema.**
   ESPERADO: no pago, asi que su perfil publico esta apagado. La reseña queda
   guardada en `candidatos.review_rating` y saldria sola si algun dia paga. NO
   es una tarea pendiente.
+
+## Nicho LIFE — reconversión del viejo nicho Finanzas (septiembre 2026)
+
+El tercer vertical dejó de ser **Finanzas** y pasó a ser **Life**: una solución
+genérica para profesionales que acompañan personas (life coaches, mentores,
+coaches de bienestar, terapeutas holísticos, astrología, bio o combinaciones).
+**"Life" es el posicionamiento del vertical; los conceptos funcionales son
+Proceso, Objetivo, Próximo paso, Sesión y Seguimiento** — a propósito
+transversales, para que el producto NO quede atado a ninguna disciplina.
+
+### Por qué se pudo hacer sin riesgo
+Se verificó en producción (2026-09-09) que el nicho financiero **nunca se usó**:
+0 filas con dato en cualquier columna `fin_*`, y los únicos 3 coaches
+`coach_type='financiero'` eran 2 bots de test + 1 coach real con 0 clientes.
+Los 3 se migraron a `life` en la misma sesión.
+
+### Archivos y clave interna
+| Antes | Ahora |
+|---|---|
+| `pathway-fin-cliente.html` | `pathway-life-cliente.html` (301 en `_redirects`) |
+| `pathway-fin-form.html` | `pathway-life-form.html` (301 en `_redirects`) |
+| nicho `financiero` / "Finanzas" | nicho **`life`** / "Life" |
+| pestaña del panel `fin_pres` ("Finanzas") | pestaña `proceso` ("Proceso") |
+| `SYSTEM_FINANZAS` en `generar-informe` | `SYSTEM_LIFE` |
+
+**Al sumar cualquier cosa para este nicho, la clave interna es `life`.** Los
+valores viejos (`finanzas`/`financiero`) solo sobreviven en el `map` de
+`registro.html`/`registro-en.html`, que los resuelve a `life` para no romper
+links `?nicho=` ya compartidos en blog y emails.
+
+### Modelo de datos
+Dos columnas nuevas en `candidatos` (migración `life_fields.sql`, **ya aplicada
+en producción**):
+- **`proc_objetivos`** — compartido coach ↔ cliente, los dos escriben.
+  `[{nombre, porque, estado:'activo'|'pausado'|'logrado', pasos:[{txt,done}],
+  nota, hilo:[{from,text,ts}]}]`. **El avance sale de los `pasos` completados**,
+  nunca de importes. Guardado merge-safe en las dos puntas
+  (`_sbColSave`/`_mergeProcArr` en el portal, `_procArrSave`/`_hiloMerge` en el
+  panel): el coach no pisa los pasos que marcó el cliente ni su hilo.
+- **`proc_seguimiento`** — lo escribe el COACH, el cliente solo lo lee.
+  `[{fecha, texto, hecho}]`. Los `hecho:false` son los "seguimientos pendientes".
+
+⚠️ **Las columnas `fin_*` siguen físicamente en la base pero están LEGACY**:
+vacías, sin ninguna referencia en código y fuera del alcance de esta
+reconversión. El detalle y el DROP propuesto (sin aplicar) están comentados al
+final de `supabase/migrations/life_fields.sql`. **No volver a leerlas ni
+escribirlas** — hay un guardrail que lo bloquea.
+
+### Lo que se eliminó (no vuelve)
+Presupuesto, gastos con lectura de extracto por IA, gastos previsibles,
+patrimonio, deudas (bola de nieve), diagnóstico financiero 0-100, evolución del
+ahorro, jarro/chancho de ahorro, el intake financiero (`ingresos`, `gastos`,
+`deudas`, `objetivo_ahorro`, `ahorro_actual`, `plazo`) y la Edge Function
+`categorizar-gastos` (quedó sin consumidores). Blindado por la regla
+**"nicho Life: no vuelve la terminología ni los campos de Finanzas"** en
+`check-guardrails.js`.
+
+### Pendiente flagueado (NO se tocó)
+`multicoach.html` es **módulo CONGELADO** y su plantilla de demo sigue teniendo
+el nicho `finanzas` (marca "Finanzas Claras", recursos de presupuesto) y un link
+a `/pathway-fin-cliente.html` — que funciona por el 301. Como no se puede tocar
+sin autorización del Product Owner, en las páginas públicas `equipos.html` y
+`equipos-en.html` (que embeben ese demo en un iframe) **se retiró el tercer botón
+de nicho**, para que "Finanzas" no quede visible de cara al público. Al
+descongelar Equipo/multicoach, convertir esa plantilla a Life y devolver el botón.
+
+### V2 reservado
+`docs/v2-timeline-evolucion-cliente.md` — Ficha/Timeline de evolución del cliente
+con IA. **Documentado, sin implementar.**
 
 ## PENDIENTE — Proximas mejoras
 - ✅ ~~Cerrar gap de seguridad RLS en Supabase~~ — **HECHO** (Fase 4: Supabase Auth + RLS estricto; ver seccion "SECURITY MODEL · Capa 3").

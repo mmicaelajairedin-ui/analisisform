@@ -200,7 +200,7 @@ PWCoreProgram.renderCommunityCard = function(nicho, etapa, opts){
   opts = opts || {};
   if(!nicho) nicho = 'carrera';
 
-  var nichoLabel = {carrera:'Carrera',fitness:'Fitness',financiero:'Finanzas',nutrition:'Nutrición',wellness:'Bienestar',executive:'Executive',business:'Business'}[nicho]||'Comunidad';
+  var nichoLabel = {carrera:'Carrera',fitness:'Fitness',life:'Life',nutrition:'Nutrición',wellness:'Bienestar',executive:'Executive',business:'Business'}[nicho]||'Comunidad';
   var url = '/comunidad.html?nicho='+encodeURIComponent(nicho);
   if(etapa && opts.filterByEtapa) url += '&etapa='+encodeURIComponent(etapa);
 
