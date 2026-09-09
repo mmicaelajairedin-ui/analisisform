@@ -566,6 +566,7 @@ var T={
     guardar:'Guardar', volverPlan:'Volver al plan', cancelar:'Cancelar', borrar:'Borrar',
     superserie:'Superserie', toastVolvistePlan:'Volviste al plan ✓', toastGuardadoCoach:'Guardado ✓ — tu coach lo ve',
     exChgBadge:'✎ lo cambié', exChgPlan:'plan:', exChgVerPlan:'Ver lo que puso tu coach',
+    exAdjLbM:'Series × reps · peso', exAdjLbN:'Cambiaste de ejercicio (opcional)',
     diaCompletoToast:'💪 ¡Día completo! Gran trabajo.', diaEntrenoTitle:'¡Día de entreno completo! 💪',
     diaEntrenoSub:'Gran trabajo — sumaste tu entreno de hoy', seguir:'¡Seguir!',
     objsCompletados:'🏅 ¡Objetivos de la semana completados!',
@@ -718,6 +719,7 @@ var T={
     guardar:'Save', volverPlan:'Back to plan', cancelar:'Cancel', borrar:'Delete',
     superserie:'Superset', toastVolvistePlan:'Back to the plan ✓', toastGuardadoCoach:'Saved ✓ — your coach sees it',
     exChgBadge:'✎ I changed it', exChgPlan:'plan:', exChgVerPlan:"See what your coach set",
+    exAdjLbM:'Sets × reps · weight', exAdjLbN:'Swapped the exercise (optional)',
     diaCompletoToast:'💪 Day complete! Great work.', diaEntrenoTitle:'Training day complete! 💪',
     diaEntrenoSub:"Great work — you logged today's workout", seguir:'Keep going!',
     objsCompletados:'🏅 Weekly goals complete!',
@@ -1678,12 +1680,22 @@ function exAdj(btn){
   var nx=row.nextElementSibling;
   if(nx && nx.classList && nx.classList.contains('ex-adjbox')){ nx.remove(); return; }
   var rl=FREAL[ek]||{};
-  var vM=(rl.m!=null?rl.m:''), vN=(rl.n!=null?rl.n:'');
+  // PRECARGA con el plan del coach: el cliente EDITA el numero en vez de
+  // reescribir todo de cero. Abriendo vacio cada uno escribia a su manera
+  // ("aro 4x35", "la hice con 80 lbs") y el coach no podia comparar nada.
+  // Si no lo toca, exAdjSave ve m===pm y NO registra ningun cambio.
+  var vM=(rl.m!=null&&rl.m!=='')?rl.m:pm;
+  var vN=(rl.n!=null?rl.n:'');
+  // Etiquetas inline (NO tocamos .ex-adj-*: esas clases las comparte el editor
+  // de nutricion y cualquier cambio de CSS se le colaria a esa pantalla).
+  var _lb='display:block;font-size:11px;font-weight:600;color:var(--muted,#6b7a70);margin:2px 0 -3px';
   var box=document.createElement('div');
   box.className='ex-adjbox';
   box.innerHTML=
     '<div class="ex-adj-h">'+t('exAdjTitle')+'</div>'+
+    '<label style="'+_lb+'">'+t('exAdjLbM')+'</label>'+
     '<input class="ex-adj-in" data-f="m" type="text" placeholder="'+esc(t('exAdjPhM'))+'" value="'+esc(vM)+'">'+
+    '<label style="'+_lb+'">'+t('exAdjLbN')+'</label>'+
     '<input class="ex-adj-in" data-f="n" type="text" placeholder="'+esc(t('exAdjPhN'))+'" value="'+esc(vN)+'">'+
     '<div class="ex-adj-btns">'+
       '<button type="button" class="ex-adj-save" onclick="exAdjSave(this,\''+esc(ek).replace(/'/g,"\\'")+'\',\''+esc(pn).replace(/'/g,"\\'")+'\',\''+esc(pm).replace(/'/g,"\\'")+'\')">'+t('guardar')+'</button>'+
@@ -1691,16 +1703,20 @@ function exAdj(btn){
       '<button type="button" class="ex-adj-cancel" onclick="this.closest(\'.ex-adjbox\').remove()">'+t('cancelar')+'</button>'+
     '</div>';
   row.parentNode.insertBefore(box, row.nextSibling);
-  var f=box.querySelector('.ex-adj-in'); if(f) f.focus();
+  var f=box.querySelector('.ex-adj-in');
+  if(f){ f.focus(); try{ var _n=f.value.length; f.setSelectionRange(_n,_n); }catch(e){} }
 }
 function exAdjSave(btn,ek,pn,pm){
   var box=btn.closest('.ex-adjbox'); if(!box) return;
   var m=(box.querySelector('[data-f="m"]')||{}).value||''; m=m.trim();
   var n=(box.querySelector('[data-f="n"]')||{}).value||''; n=n.trim();
   // Solo guardamos lo que DIFIERE del plan. Si todo coincide (o está vacío), se borra.
-  var same=(!m || m===pm) && (!n || n===pn);
+  // Usamos el MISMO comparador que el render (_metaEq/_nombreEq), no `===`: con el
+  // campo precargado el cliente puede reescribir el mismo dato con otro formato
+  // ("4x15 con 60lbs" por "4x15 · 60 lb") y eso NO es un cambio que registrar.
+  var same=(!m || _metaEq(m,pm)) && (!n || _nombreEq(n,pn));
   if(same){ delete FREAL[ek]; }
-  else { FREAL[ek]={ m:(m&&m!==pm?m:''), n:(n&&n!==pn?n:''), ts:(typeof pwHoy==='function'?pwHoy():'') }; }
+  else { FREAL[ek]={ m:(m&&!_metaEq(m,pm)?m:''), n:(n&&!_nombreEq(n,pn)?n:''), ts:(typeof pwHoy==='function'?pwHoy():'') }; }
   _exRealSave();
   box.remove();
   var wk=window._rutCurWk||1; try{ renderRutinaWeek(wk); }catch(e){}
