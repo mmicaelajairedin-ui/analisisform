@@ -5528,6 +5528,34 @@ const RULES = [
     },
   },
   {
+    name: "i18n: los textos que el panel ARMA concatenando tambien se traducen",
+    bug: "Con el panel en ingles convivian en la MISMA pantalla 'Buenas noches, " +
+         "Micaela', '1/3 completados' y 'Medalla oro · 10 clientes' con 'Start " +
+         "here' y 'My business'. No era texto sin traducir: el diccionario de " +
+         "pw-i18n-panel.js es coincidencia EXACTA del nodo de texto completo, y " +
+         "esos strings se arman con un numero o un nombre en el medio, asi que " +
+         "nunca coinciden con una clave. Se cubren con RULES (regex anclada), que " +
+         "es el mecanismo previsto para eso. Auditoria en el DOM real: 17 textos " +
+         "en castellano -> 7, y los 7 son nombres de clientes menos uno.",
+    check() {
+      const s2 = read("pw-i18n-panel.js");
+      if (!s2) return null;
+      const i = s2.indexOf("var RULES = [");
+      if (i < 0) return "pw-i18n-panel.js: desaparecio RULES — vuelven los huecos en los textos con numeros.";
+      const blk = s2.slice(i, s2.indexOf("];", i));
+      const need = [
+        ["Buenas noches, ", "el saludo dinamico"],
+        ["completados", "el contador 'N/M completados'"],
+        ["Medalla oro", "la medalla con cantidad de clientes"],
+        ["Hoy tienes", "el resumen de seguimientos/informes"],
+      ];
+      for (const [frag, que] of need)
+        if (blk.indexOf(frag) < 0)
+          return "pw-i18n-panel.js: RULES ya no cubre " + que + " (" + frag + ") — vuelve el idioma mezclado.";
+      return null;
+    },
+  },
+  {
     name: "gym: el dato del cliente se muestra actualizado y sin falso 'lo cambio'",
     bug: "El cliente registra en texto libre lo que hizo ('4x15 con 60lbs') y el " +
          "coach lo habia cargado como '4x15 · 60 lb'. Se comparaban los strings " +
