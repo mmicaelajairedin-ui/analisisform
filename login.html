@@ -355,7 +355,7 @@ function _handleGoogleAuthSuccess(access_token, refresh_token, btn){
       if(usrStr){
         var usr = JSON.parse(usrStr);
         var _v = 'v=' + Date.now();
-        var dest = usr.rol === 'owner' ? '/panel-v2.html#multicoach&v=' :
+        var dest = usr.rol === 'owner' ? '/multicoach.html?' :
                    (usr.rol === 'coach' || usr.rol === 'admin') ? '/panel-v2.html?' :
                    (usr.rol === 'empleado') ? '/empleado.html?' :
                    '/cliente.html?';
@@ -926,24 +926,14 @@ async function entrar(){
     try{ sessionStorage.removeItem('pw_auth_retry'); }catch(e){}
     var _v='v='+Date.now();
     if(usuario.rol==='owner' || (usuario.rol==='colaborador' && multicoachAccess)) {
-      // Handoff seguro de sesión a MultiCoach
-      try {
-        var _handoffResp = await fetch(SB+'/functions/v1/pathway-handoff', {
-          method: 'POST',
-          headers: {'Content-Type': 'application/json', 'Authorization': 'Bearer '+_jwt},
-        });
-        if (_handoffResp.ok) {
-          var _handoffData = await _handoffResp.json();
-          if (_handoffData.code) {
-            window.location.href='https://pathwayplatforms.com/?handoff='+encodeURIComponent(_handoffData.code);
-            return;
-          }
-        }
-      } catch(e) {
-        console.error('[handoff] Error:', e);
-      }
-      // Fallback si handoff falla: redirect sin código (usuario tendrá que hacer login)
-      window.location.href='https://pathwayplatforms.com/?'+_v;
+      // ENTRADA UNICA (cierre MultiCoach): el dueno y el colaborador con acceso
+      // van SIEMPRE a multicoach.html, en este mismo dominio. Como es el mismo
+      // origen, la sesion de Supabase ya viaja con el: no hace falta el handoff.
+      // (Antes esto apuntaba a pathwayplatforms.com via pathway-handoff. Ese
+      // dominio no esta activado, asi que el dueno acababa fuera del producto.
+      // La edge function pathway-handoff sigue desplegada y sin tocar: si algun
+      // dia se activa el dominio propio, se vuelve a ella cambiando este bloque.)
+      window.location.href=BASE+'/multicoach.html?'+_v;
     }
     else if(usuario.rol==='coach'||usuario.rol==='admin'){
       window.location.href=BASE+'/panel-v2.html?'+_v;
