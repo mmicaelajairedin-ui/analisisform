@@ -1,0 +1,55 @@
+-- ===================================================================
+-- Nicho LIFE — campos del proceso en `candidatos`
+-- (base de career, ddxnrsnjdvtqhxunxnwj). Aplicar UNA vez en el SQL
+-- editor de Supabase. IF NOT EXISTS = seguro de re-correr.
+--
+-- Reemplazan a los campos del viejo nicho financiero (fin_*), que
+-- quedan LEGACY: sin uso, sin referencias en código y verificados
+-- VACÍOS en producción (0 filas con dato al 2026-09-09). Ver el
+-- bloque "Deuda de limpieza" al final.
+-- ===================================================================
+
+-- Objetivos del proceso, compartidos coach ↔ cliente (los dos escriben).
+-- JSON: [{nombre, porque, estado:'activo'|'pausado'|'logrado',
+--         pasos:[{txt, done}], nota, hilo:[{from,text,ts}]}]
+-- El avance del cliente sale de los `pasos` completados (no de importes).
+ALTER TABLE candidatos ADD COLUMN IF NOT EXISTS proc_objetivos TEXT;
+
+-- Seguimiento que deja el COACH y lee el cliente (solo lectura para él).
+-- JSON: [{fecha, texto, hecho}]  → los `hecho:false` son los pendientes
+-- que el panel muestra como "seguimientos pendientes".
+ALTER TABLE candidatos ADD COLUMN IF NOT EXISTS proc_seguimiento TEXT;
+
+-- ===================================================================
+-- Deuda de limpieza (fuera del alcance de esta reconversión)
+-- ===================================================================
+-- Las siguientes columnas quedan en la tabla pero YA NO SE USAN. Se
+-- verificó el 2026-09-09 que las 75 filas de `candidatos` las tienen
+-- todas en NULL, y no queda ninguna referencia activa en el código:
+--
+--   fin_pres, fin_objetivos, fin_patrimonio, fin_deudas,
+--   fin_diagnostico, fin_cierres, fin_previsibles,
+--   ingresos, gastos, deudas, objetivo_ahorro, ahorro_actual, plazo
+--
+-- NO se dropean ahora a propósito: el DROP es irreversible y primero
+-- hay que confirmar que ningún consumidor externo (export, backup,
+-- integración) las lea. Cuando eso esté confirmado, una migración de
+-- limpieza puede hacer:
+--
+--   ALTER TABLE candidatos
+--     DROP COLUMN IF EXISTS fin_pres,
+--     DROP COLUMN IF EXISTS fin_objetivos,
+--     DROP COLUMN IF EXISTS fin_patrimonio,
+--     DROP COLUMN IF EXISTS fin_deudas,
+--     DROP COLUMN IF EXISTS fin_diagnostico,
+--     DROP COLUMN IF EXISTS fin_cierres,
+--     DROP COLUMN IF EXISTS fin_previsibles,
+--     DROP COLUMN IF EXISTS ingresos,
+--     DROP COLUMN IF EXISTS gastos,
+--     DROP COLUMN IF EXISTS deudas,
+--     DROP COLUMN IF EXISTS objetivo_ahorro,
+--     DROP COLUMN IF EXISTS ahorro_actual,
+--     DROP COLUMN IF EXISTS plazo;
+--
+-- Ídem las tablas fin_cierres / fin_deudas / fin_metas de
+-- `coaches_mvp.sql` (modelo MVP de la red, nunca cableado al frontend).
