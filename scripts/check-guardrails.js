@@ -5876,6 +5876,50 @@ const RULES = [
       return null;
     },
   },
+  {
+    name: "multicoach: Programas es real (alcanzable, CRUD y sin datos inventados)",
+    bug: "Programas estaba en el menu pero __go() no lo listaba como implementado: al " +
+         "tocarlo salia el toast 'Etapa proxima' y renderPrograms() era codigo muerto. " +
+         "Y si se desbloqueaba, servia MOCK_PROGRAMS —seis programas ficticios con " +
+         "coaches inventados (Maria Garcia, Alex Chen)— como fallback SILENCIOSO cuando " +
+         "la tabla venia vacia, sin CRUD y con 'Ver Detalles' abriendo un toast de " +
+         "'proximamente'. La tabla venia vacia siempre porque las policies de la " +
+         "migracion 0102 comparaban usuarios.id contra auth.uid() y no matcheaban nunca " +
+         "(arreglado en la 0112).",
+    check() {
+      const mc = read("multicoach.html");
+      if (!mc) return null;
+      const plano = mc.replace(/\s/g, "");
+      // 1) Alcanzable: el router tiene que aceptarlo.
+      if (!/s==='programas'/.test(plano.replace(/"/g, "'")))
+        return "multicoach.html: __go() ya no acepta 'programas' (el menu lo ofrece y el router lo rechaza con un toast).";
+      // 2) Sin datos inventados: nunca mas un fallback a programas ficticios.
+      if (/MOCK_PROGRAMS/.test(mc))
+        return "multicoach.html: volvio MOCK_PROGRAMS. Una red sin programas es una lista vacia, no una lista de ejemplo.";
+      // 3) CRUD real contra la tabla, y borrado/edicion acotados por org_id.
+      for (const fn of ["_progNuevo", "_progEditar", "_progBorrar", "_renderProgFicha"]) {
+        if (!new RegExp("function " + fn + "\\(").test(mc))
+          return "multicoach.html: falta " + fn + "() (Programas sin alta, edicion, borrado o ficha).";
+      }
+      if (!/rest\/v1\/programs/.test(mc))
+        return "multicoach.html: Programas ya no habla con la tabla programs.";
+      if (!/method:'PATCH'/.test(plano) || !/method:'DELETE'/.test(plano))
+        return "multicoach.html: Programas ya no edita (PATCH) o no borra (DELETE).";
+      // El PATCH y el DELETE de un programa llevan SIEMPRE su org_id: segunda
+      // capa sobre la RLS, igual que cg() hace con candidatos. Son dos sitios.
+      const acotadas = (plano.match(/_progUrl\('\?id=eq\.'\+encodeURIComponent\(id\)\+'&org_id=eq\.'\+encodeURIComponent\(MC_ORG\.id\)\)/g) || []).length;
+      if (acotadas < 2)
+        return "multicoach.html: el PATCH/DELETE de programas perdio el filtro por org_id (la RLS ya acota, pero esto es la segunda capa). Encontrados: " + acotadas + " de 2.";
+      // 4) La RLS tiene que estar arreglada: la 0102 no matcheaba nunca.
+      const fix = read("supabase/migrations/0112_programs_rls_fix.sql");
+      if (!fix) return "falta supabase/migrations/0112_programs_rls_fix.sql (sin ella la tabla programs es invisible para el dueno).";
+      if (!/auth_id\s*=\s*auth\.uid\(\)/.test(fix))
+        return "0112_programs_rls_fix.sql: la policy debe resolver al usuario por usuarios.auth_id = auth.uid(), como el resto del esquema.";
+      if (!/WITH CHECK/.test(fix))
+        return "0112_programs_rls_fix.sql: sin WITH CHECK el INSERT/UPDATE se rechaza aunque el USING deje leer.";
+      return null;
+    },
+  },
 ];
 
 

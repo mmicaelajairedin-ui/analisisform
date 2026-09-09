@@ -956,7 +956,7 @@ document.addEventListener('keydown',function(e){
   if((e.metaKey||e.ctrlKey)&&(e.key==='k'||e.key==='K')){ e.preventDefault(); var s=document.getElementById('mc-topsearch'); if(s){ s.focus(); s.select(); } }
 });
 function __go(s){
-  var impl=(s==='dashboard'||s==='clientes'||s==='coaches'||s==='config'||s==='agenda'||s==='comunidad'||s==='canal'||s==='analytics'||s==='cobros');
+  var impl=(s==='dashboard'||s==='clientes'||s==='coaches'||s==='programas'||s==='config'||s==='agenda'||s==='comunidad'||s==='canal'||s==='analytics'||s==='cobros');
   if(!impl){__toast('Sección «'+s+'» — Etapa próxima');__hl(_sec);return;}
   // Comunidad, Canal y Analytics son de Studio+: se ven en el menú, pero al entrar
   // (si el plan no las incluye) se muestra el upsell y no se navega. "Muestra, no deja."
@@ -1994,6 +1994,7 @@ function mcLoadReal(owner){
     // La comunidad arranca en blanco para una red real (nada de posts/retos/
     // ranking inventados) — el dueño la va llenando. La demo sí trae ejemplos.
     try{ DBCOM={posts:[],avisos:[],clases:[],retos:[],ranking:[]}; }catch(e){}
+    try{ MC_PROGS=null; }catch(e){}   // los programas se releen para ESTA red (nunca los de otra ni los de la demo)
     mcApplyNiche();
     try{ _mcLoadCanales(function(){ _mcUpdHeaderDot(); }); }catch(e){} // punto de no-leídos del chat del equipo
     try{ setTimeout(_mcPaywallCheck,0); }catch(e){} // aviso/muro si la prueba de la red está por vencer o venció
@@ -4162,87 +4163,211 @@ var _MESL=['enero','febrero','marzo','abril','mayo','junio','julio','agosto','se
 function _agEvs(){return AGW.filter(function(e){return e.grupal||_agCoach==='todos'||e.coach===_agCoach;});}
 function _weekDates(){var t=new Date();var mon=new Date(t.getFullYear(),t.getMonth(),t.getDate()-((t.getDay()+6)%7)+(_agWeekOff*7));var a=[];for(var i=0;i<7;i++){var d=new Date(mon.getFullYear(),mon.getMonth(),mon.getDate()+i);a.push(d);}return a;}
 
-/* ===== PROGRAMAS (literal extraction from owner-programs.html) ===== */
-var MOCK_PROGRAMS=[
-  {id:'prog-001',name:'Programa Principal de Coaching',coach:'María García',coachInitials:'MG',clients:42,completion:87,duration:'4 semanas',status:'active'},
-  {id:'prog-002',name:'Programa Premium Ejecutivo',coach:'Alex Chen',coachInitials:'AC',clients:28,completion:78,duration:'6 semanas',status:'active'},
-  {id:'prog-003',name:'Programa de Liderazgo Equipos',coach:'Patricia Ruiz',coachInitials:'PR',clients:35,completion:92,duration:'5 semanas',status:'active'},
-  {id:'prog-004',name:'Programa Transformación Digital',coach:'David López',coachInitials:'DL',clients:24,completion:100,duration:'4 semanas',status:'completed'},
-  {id:'prog-005',name:'Programa Emprendimiento',coach:'Laura Sánchez',coachInitials:'LS',clients:18,completion:95,duration:'6 semanas',status:'completed'},
-  {id:'prog-006',name:'Programa Carrera Profesional',coach:'Carlos Martínez',coachInitials:'CM',clients:40,completion:75,duration:'4 semanas',status:'active'}
-];
-var _mcProgCurrentFilter='all',_mcProgCurrentData=(typeof MOCK_PROGRAMS==='object'&&MOCK_PROGRAMS?[...MOCK_PROGRAMS]:[]),_mcProgFilteredData=(typeof MOCK_PROGRAMS==='object'&&MOCK_PROGRAMS?[...MOCK_PROGRAMS]:[]);
-
+/* ═══════════ PROGRAMAS ═══════════════════════════════════════════════════════
+   Los programas de la red viven en la tabla `programs`, con RLS por org_id
+   (migracion 0112: la de la 0102 comparaba usuarios.id con auth.uid() y no
+   matcheaba nunca, por eso esto leia cero filas y caia a datos inventados).
+   El dueño escribe; cualquier miembro de la org lee. Todo por REST directo con
+   el JWT — no hace falta edge function porque la policy ya acota por org.
+   En modo DEMO (prospecto, ?demo=1) se usa un juego de ejemplo en memoria que
+   NUNCA se mezcla con una red real. */
+var MC_PROGS=null;        // null = sin cargar · [] = red sin programas
+var _progFiltro='todos', _progQ='', _curProg=null;
+var MC_PROG_ESTADOS=[['active','Activo'],['paused','En pausa'],['completed','Completado']];
+function _progEstadoLbl(s){ for(var i=0;i<MC_PROG_ESTADOS.length;i++) if(MC_PROG_ESTADOS[i][0]===s) return MC_PROG_ESTADOS[i][1]; return '—'; }
+// Ejemplo SOLO para la demo del prospecto. En MC_REAL no se toca jamas.
+function _progDemo(){
+  return [
+    {id:'demo-p1',name:'Programa de 8 semanas',coach_id:'demo-coach-1',status:'active',duration:'8 semanas',clients:6,completion:62,description:'Acompañamiento semanal con plan y seguimiento.'},
+    {id:'demo-p2',name:'Onboarding express',coach_id:'demo-coach-2',status:'active',duration:'2 semanas',clients:3,completion:80,description:'Primeras dos semanas para clientes nuevos.'},
+    {id:'demo-p3',name:'Programa intensivo',coach_id:'demo-coach-3',status:'completed',duration:'12 semanas',clients:4,completion:100,description:''}
+  ];
+}
+function _progUrl(q){ return SB+'/rest/v1/programs'+q; }
 function loadPrograms(cb){
-  if(!MC_REAL){ cb(MOCK_PROGRAMS); return; }
-  try{
-    _hdr({'Content-Type':'application/json'}).then(function(h){
-      return fetch(SB+'/rest/v1/programs?select=*',{method:'GET',headers:h});
-    }).then(function(r){ return r.json().catch(function(){return null;}); }).then(function(d){
-      if(d&&Array.isArray(d)&&d.length){ cb(d); }
-      else{ cb(MOCK_PROGRAMS); }
-    }).catch(function(){ cb(MOCK_PROGRAMS); });
-  }catch(e){ cb(MOCK_PROGRAMS); }
+  if(!MC_REAL||!MC_ORG||!MC_ORG.id){ MC_PROGS=_progDemo(); cb(MC_PROGS); return; }
+  _hdr().then(function(h){
+    return fetch(_progUrl('?org_id=eq.'+encodeURIComponent(MC_ORG.id)+'&select=*&order=created_at.desc'),{headers:h});
+  }).then(function(r){ return r.ok?r.json():null; }).then(function(d){
+    // Una red real SIN programas es una lista vacia, no una lista de ejemplo.
+    MC_PROGS=(d&&Object.prototype.toString.call(d)==='[object Array]')?d:[];
+    cb(MC_PROGS);
+  }).catch(function(){ MC_PROGS=[]; cb(MC_PROGS); });
 }
-
-function _mcProgRenderTable(data){
-  var tbody=document.getElementById('programsTableBody');
-  if(!tbody) return;
-  tbody.innerHTML='';
-  data.forEach(function(program){
-    var statusClass='status-'+program.status;
-    var statusLabel=program.status==='active'?'Activo':'Completado';
-    var row=document.createElement('tr');
-    row.innerHTML='<td><div class="cell-with-avatar"><div class="avatar">'+program.name.charAt(0)+'</div><div><div style="font-weight:600;">'+program.name+'</div></div></div></td><td><div class="cell-with-avatar"><div class="avatar avatar-sm">'+program.coachInitials+'</div><span>'+program.coach+'</span></div></td><td><div style="font-weight:600;">'+program.clients+'</div><div style="font-size:0.8rem;color:#9CA3AF;">clientes enrolados</div></td><td><div style="margin-bottom:var(--sp-sm);"><span style="font-weight:600;color:var(--pw-bosque);">'+program.completion+'%</span></div><div class="progress-bar"><div class="progress-fill" style="width:'+program.completion+'%"></div></div></td><td>'+program.duration+'</td><td><div class="status-badge '+statusClass+'">'+statusLabel+'</div></td><td><a class="action-link" onclick="__toast(\'Detalle de programa — próximamente\')">Ver Detalles</a></td>';
-    tbody.appendChild(row);
+function _progCoachNom(id){ var c=_coach(id); return c?c.n:'Sin asignar'; }
+function _progFiltrados(){
+  var q=(_progQ||'').toLowerCase();
+  return (MC_PROGS||[]).filter(function(p){
+    if(_progFiltro!=='todos'&&p.status!==_progFiltro) return false;
+    if(q){ var cn=_progCoachNom(p.coach_id).toLowerCase(); if((''+(p.name||'')).toLowerCase().indexOf(q)<0&&cn.indexOf(q)<0) return false; }
+    return true;
   });
 }
-
-function _mcProgFilterData(){
-  var searchTerm=document.getElementById('searchInput')?document.getElementById('searchInput').value.toLowerCase():'';
-  _mcProgFilteredData=(_mcProgCurrentData||MOCK_PROGRAMS).filter(function(program){
-    var matchesSearch=program.name.toLowerCase().includes(searchTerm)||program.coach.toLowerCase().includes(searchTerm);
-    var matchesFilter=_mcProgCurrentFilter==='all'||program.status===_mcProgCurrentFilter;
-    return matchesSearch&&matchesFilter;
-  });
-  _mcProgRenderTable(_mcProgFilteredData);
-}
-
+function _progSetFiltro(f){ _progFiltro=f; renderPrograms(); }
+function _progBuscar(v){ _progQ=v||''; _progLista(); }
 function renderPrograms(){
   var v=document.getElementById('vscroll');
-
-  loadPrograms(function(data){
-    _mcProgCurrentData=(data||[...MOCK_PROGRAMS]);
-
-    var activeCount=data.filter(function(p){return p.status==='active';}).length;
-    var totalClients=data.reduce(function(sum,p){return sum+(p.clients||0);},0);
-    var avgCompletion=data.length>0?Math.round(data.reduce(function(sum,p){return sum+(p.completion||0);},0)/data.length):0;
-
-    var html='<div><header class="cp-topbar" style="align-items:center"><div><h1 class="cp-h1">Programas<span class="dot">.</span></h1><div class="cp-sub">Gestiona todos los programas de coaching y supervisa su avance</div></div></header>';
-    html+='<div class="kpi-grid"><div class="kpi-card"><div class="kpi-label">Programas Activos</div><div class="kpi-value">'+activeCount+'</div><div class="kpi-detail">en ejecución</div></div><div class="kpi-card"><div class="kpi-label">Clientes Totales</div><div class="kpi-value">'+totalClients+'</div><div class="kpi-detail">enrolados</div></div><div class="kpi-card"><div class="kpi-label">Tasa Finalización</div><div class="kpi-value">'+avgCompletion+'%</div><div class="kpi-detail">promedio completado</div></div><div class="kpi-card"><div class="kpi-label">Programas en Total</div><div class="kpi-value">'+data.length+'</div><div class="kpi-detail">en tu red</div></div></div>';
-    html+='<div class="controls-bar"><input type="text" class="search-input" id="searchInput" placeholder="Buscar programa, coach, cliente..."><div class="filter-buttons"><button class="filter-btn active" data-filter="all">Todos</button><button class="filter-btn" data-filter="active">Activos</button><button class="filter-btn" data-filter="completed">Completados</button></div></div>';
-    html+='<div class="table-container"><table id="programsTable"><caption style="display:none;">Listado de programas</caption><thead><tr><th>Programa</th><th>Coach Asignado</th><th>Clientes</th><th>Tasa Finalización</th><th>Duración</th><th>Estado</th><th>Acción</th></tr></thead><tbody id="programsTableBody"></tbody></table></div>';
-    html+='</div>';
-    v.innerHTML=html;
-
-    _mcProgRenderTable(data);
-
-    var searchInput=document.getElementById('searchInput');
-    if(searchInput){ searchInput.addEventListener('input',_mcProgFilterData); }
-
-    document.querySelectorAll('.filter-btn').forEach(function(btn){
-      btn.addEventListener('click',function(e){
-        document.querySelectorAll('.filter-btn').forEach(function(b){b.classList.remove('active');});
-        e.target.classList.add('active');
-        _mcProgCurrentFilter=e.target.dataset.filter;
-        _mcProgFilterData();
-      });
-    });
-
-    if(typeof PWI!=='undefined'&&PWI.mount){ try{PWI.mount();}catch(e){} }
+  if(MC_PROGS===null){
+    v.innerHTML='<header class="cp-topbar"><div><h1 class="cp-h1">Programas<span class="dot">.</span></h1><div class="cp-sub">Cargando…</div></div></header>'+_mcSkelKpis();
+    loadPrograms(function(){ if(_sec==='programas') renderPrograms(); });
+    return;
+  }
+  var todos=MC_PROGS||[];
+  var act=todos.filter(function(p){return p.status==='active';}).length;
+  var cli=todos.reduce(function(a,p){return a+(+p.clients||0);},0);
+  var avg=todos.length?Math.round(todos.reduce(function(a,p){return a+(+p.completion||0);},0)/todos.length):0;
+  var chips=[['todos','Todos']].concat(MC_PROG_ESTADOS);
+  var kpis='<div class="kpis">'
+    +'<div class="kpi"><div class="h">Programas activos</div><div class="n">'+_mcNumSpan(''+act)+'</div><div class="d">en ejecución</div></div>'
+    +'<div class="kpi"><div class="h">Clientes inscritos</div><div class="n">'+_mcNumSpan(''+cli)+'</div><div class="d">en todos los programas</div></div>'
+    +'<div class="kpi"><div class="h">Avance medio</div><div class="n">'+_mcNumSpan(avg+'%')+'</div><div class="d">de los programas</div></div>'
+    +'<div class="kpi"><div class="h">Total</div><div class="n">'+_mcNumSpan(''+todos.length)+'</div><div class="d">en tu red</div></div></div>';
+  v.innerHTML='<header class="cp-topbar" style="align-items:center"><div><h1 class="cp-h1">Programas<span class="dot">.</span></h1><div class="cp-sub">Los programas de tu red, con su coach y su avance.</div></div>'
+   +'<div class="cp-topbar-actions"><button class="crear" onclick="_progNuevo()">'+PWI.svg('plus',{sm:true})+' Nuevo programa</button></div></header>'
+   +(todos.length?kpis:'')
+   +(todos.length?('<div class="searchbar"><input id="pq" class="inp" placeholder="Buscar por programa o coach…" oninput="_progBuscar(this.value)" value="'+_mcEsc(_progQ)+'"></div>'
+     +'<div class="cp-filters">'+chips.map(function(c){ var n=(c[0]==='todos')?todos.length:todos.filter(function(p){return p.status===c[0];}).length;
+        return '<button class="cp-chip'+(_progFiltro===c[0]?' is-on':'')+'" data-f="'+_mcEsc(c[0])+'" onclick="if(this.dataset.f)_progSetFiltro(this.dataset.f)">'+c[1]+'<span class="cp-chip-count">'+n+'</span></button>';}).join('')+'</div>'):'')
+   +'<div id="plist"></div>';
+  _progLista(); _focusEnd('pq');
+}
+function _progLista(){
+  var box=document.getElementById('plist'); if(!box) return;
+  var todos=MC_PROGS||[];
+  if(!todos.length){
+    box.innerHTML=_mcEmptyCard('Todavía sin programas','Un programa es el recorrido que sigue un cliente: nombre, coach a cargo y duración. Crea el primero y podrás asignarlo desde la ficha de cada cliente.')
+      +'<div style="text-align:center;margin-top:-6px"><button class="cp-btn cp-btn-primary" onclick="_progNuevo()">'+PWI.svg('plus',{sm:true})+' Crear el primer programa</button></div>';
+    return;
+  }
+  var lista=_progFiltrados();
+  if(!lista.length){ box.innerHTML='<div style="text-align:center;padding:40px 20px;color:var(--pw-text-soft)"><div style="font-size:15px;font-weight:600;margin-bottom:8px">Sin resultados</div><p style="font-size:13px;margin:0">Prueba con otro filtro o crea un programa nuevo.</p></div>'; return;
+  }
+  box.innerHTML=lista.map(function(p){
+    var pct=Math.max(0,Math.min(100,+p.completion||0));
+    var col=_coCol(p.coach_id);
+    var badge='<span class="cp-chip'+(p.status==='active'?' is-on':'')+'" style="pointer-events:none;font-size:11px">'+_progEstadoLbl(p.status)+'</span>';
+    return '<div class="cp-card cp-card-pad" style="margin-bottom:10px;cursor:pointer" data-p="'+_mcEsc(p.id)+'" onclick="if(this.dataset.p)_progAbrir(this.dataset.p)">'
+     +'<div style="display:flex;align-items:flex-start;gap:12px;flex-wrap:wrap">'
+      +'<span style="width:34px;height:34px;border-radius:9px;background:'+col+';color:#fff;display:grid;place-items:center;font-size:13px;font-weight:700;flex-shrink:0">'+_mcEsc((''+(p.name||'?')).charAt(0).toUpperCase())+'</span>'
+      +'<div style="flex:1;min-width:180px">'
+       +'<div style="font-size:14px;font-weight:600;color:var(--pw-carbon)">'+_mcEsc(p.name||'Sin nombre')+'</div>'
+       +'<div style="font-size:12px;color:var(--pw-text-soft);margin-top:2px">'+_mcEsc(_progCoachNom(p.coach_id))+(p.duration?(' · '+_mcEsc(p.duration)):'')+' · '+(+p.clients||0)+' cliente'+((+p.clients||0)===1?'':'s')+'</div>'
+       +'<div style="height:6px;border-radius:4px;background:var(--pw-niebla-3);overflow:hidden;margin-top:7px"><i style="display:block;height:100%;width:'+pct+'%;background:'+col+'"></i></div>'
+      +'</div>'
+      +'<div style="text-align:right;flex-shrink:0"><div style="font-size:13px;font-weight:700;color:var(--pw-carbon)">'+pct+'%</div>'+badge+'</div>'
+     +'</div></div>';
+  }).join('');
+}
+/* ── Ficha del programa ───────────────────────────────────────────────────── */
+function _prog(id){ var a=MC_PROGS||[]; for(var i=0;i<a.length;i++) if(String(a[i].id)===String(id)) return a[i]; return null; }
+function _progAbrir(id){ _curProg=id; _renderProgFicha(); }
+function _progVolver(){ _curProg=null; renderPrograms(); }
+function _renderProgFicha(){
+  var p=_prog(_curProg); if(!p){ _progVolver(); return; }
+  var v=document.getElementById('vscroll'); v.scrollTop=0;
+  var pct=Math.max(0,Math.min(100,+p.completion||0));
+  var col=_coCol(p.coach_id);
+  var c=_coach(p.coach_id);
+  var suyos=(DB.clientes||[]).filter(function(k){ return c&&k.coach===c.id; });
+  var fecha=function(x){ if(!x)return '—'; var d=new Date(x); return isNaN(d.getTime())?'—':(d.getDate()+' '+['ene','feb','mar','abr','may','jun','jul','ago','sep','oct','nov','dic'][d.getMonth()]+' '+d.getFullYear()); };
+  v.innerHTML='<button class="cp-btn cp-btn-ghost" onclick="_progVolver()" style="margin-bottom:12px">← Volver a Programas</button>'
+   +'<header class="cp-topbar" style="align-items:center"><div style="display:flex;align-items:center;gap:12px">'
+    +'<span style="width:42px;height:42px;border-radius:11px;background:'+col+';color:#fff;display:grid;place-items:center;font-size:16px;font-weight:700">'+_mcEsc((''+(p.name||'?')).charAt(0).toUpperCase())+'</span>'
+    +'<div><h1 class="cp-h1" style="margin:0">'+_mcEsc(p.name||'Sin nombre')+'<span class="dot">.</span></h1>'
+    +'<div class="cp-sub">'+_progEstadoLbl(p.status)+' · '+_mcEsc(_progCoachNom(p.coach_id))+'</div></div></div>'
+    +'<div class="cp-topbar-actions">'
+     +'<button class="cp-btn cp-btn-ghost" data-p="'+_mcEsc(p.id)+'" onclick="if(this.dataset.p)_progEditar(this.dataset.p)">'+PWI.svg('edit',{sm:true})+' Editar</button>'
+     +'<button class="cp-btn cp-btn-ghost" style="color:var(--pw-danger);border-color:rgba(192,117,110,.4)" data-p="'+_mcEsc(p.id)+'" onclick="if(this.dataset.p)_progBorrar(this.dataset.p)">Eliminar</button>'
+    +'</div></header>'
+   +'<div class="cp-card cp-card-pad"><h3 class="cp-card-title">Avance<span class="dot">.</span></h3>'
+    +'<div style="display:flex;align-items:center;gap:12px;margin-top:8px"><div style="flex:1;height:10px;border-radius:6px;background:var(--pw-niebla-3);overflow:hidden"><i style="display:block;height:100%;width:'+pct+'%;background:'+col+'"></i></div><b style="font-size:15px;color:var(--pw-carbon)">'+pct+'%</b></div></div>'
+   +'<div class="cp-card cp-card-pad"><h3 class="cp-card-title">Datos del programa<span class="dot">.</span></h3>'
+    +'<div class="cp-infogrid">'+_info('Coach a cargo',_progCoachNom(p.coach_id))+_info('Estado',_progEstadoLbl(p.status))+_info('Duración',p.duration||'—')+_info('Clientes inscritos',(+p.clients||0))+_info('Empieza',fecha(p.start_date))+_info('Termina',fecha(p.end_date))+'</div></div>'
+   +(p.description?('<div class="cp-card cp-card-pad"><h3 class="cp-card-title">Descripción<span class="dot">.</span></h3><p style="font-size:13px;color:var(--pw-text-soft);line-height:1.55;margin:8px 0 0">'+_mcEsc(p.description)+'</p></div>'):'')
+   +(c?('<div class="cp-card cp-card-pad"><h3 class="cp-card-title">Clientes de '+_mcEsc(c.n.split(' ')[0])+'<span class="dot">.</span></h3>'
+      +'<div style="font-size:12px;color:var(--pw-text-soft);margin:3px 0 10px">Las personas que hoy atiende el coach a cargo.</div>'
+      +(suyos.length?suyos.map(function(k){ return '<div class="cp-drow"><div class="dd"><span class="emo">'+PWI.svg('user',{sm:true})+'</span></div><div class="dg"><div class="dn">'+_mcEsc(k.n)+'</div><div class="ds">Semana '+(k.week||1)+'/4</div></div></div>'; }).join('')
+        :'<div style="font-size:12.5px;color:var(--pw-text-soft);padding:14px;text-align:center">Todavía sin clientes asignados a este coach.</div>')+'</div>')
+     :_mcEmptyCard('Sin coach a cargo','Asigna un coach al programa desde «Editar» para ver aquí a sus clientes.'));
+}
+/* ── Alta, edición y borrado ──────────────────────────────────────────────── */
+function _progForm(p){
+  p=p||{};
+  var cs=(DB.coaches||[]).filter(function(c){return c.est!=='inactivo';});
+  var opts='<option value="">Sin asignar</option>'+cs.map(function(c){ return '<option value="'+_mcEsc(c.id)+'"'+(String(p.coach_id||'')===String(c.id)?' selected':'')+'>'+_mcEsc(c.n)+(c.esOwner?' (tú)':'')+'</option>'; }).join('');
+  var est=MC_PROG_ESTADOS.map(function(e){ return '<option value="'+e[0]+'"'+((p.status||'active')===e[0]?' selected':'')+'>'+e[1]+'</option>'; }).join('');
+  var esc=function(x){ return (''+(x==null?'':x)).replace(/"/g,'&quot;').replace(/</g,'&lt;'); };
+  var d=function(x){ if(!x)return ''; var q=new Date(x); return isNaN(q.getTime())?'':q.toISOString().slice(0,10); };
+  return '<div class="cp-form-row"><label class="cp-form-label">Nombre</label><input id="pg-n" class="cp-form-input" value="'+esc(p.name)+'" placeholder="Ej. Programa de 8 semanas"></div>'
+   +'<div class="cp-form-row"><label class="cp-form-label">Coach a cargo</label><select id="pg-c" class="cp-form-input">'+opts+'</select></div>'
+   +'<div style="display:flex;gap:10px"><div class="cp-form-row" style="flex:1"><label class="cp-form-label">Duración</label><input id="pg-d" class="cp-form-input" value="'+esc(p.duration)+'" placeholder="8 semanas"></div>'
+   +'<div class="cp-form-row" style="flex:1"><label class="cp-form-label">Estado</label><select id="pg-s" class="cp-form-input">'+est+'</select></div></div>'
+   +'<div style="display:flex;gap:10px"><div class="cp-form-row" style="flex:1"><label class="cp-form-label">Clientes inscritos</label><input id="pg-k" type="number" min="0" class="cp-form-input" value="'+esc(p.clients!=null?p.clients:0)+'"></div>'
+   +'<div class="cp-form-row" style="flex:1"><label class="cp-form-label">Avance (%)</label><input id="pg-p" type="number" min="0" max="100" class="cp-form-input" value="'+esc(p.completion!=null?p.completion:0)+'"></div></div>'
+   +'<div style="display:flex;gap:10px"><div class="cp-form-row" style="flex:1"><label class="cp-form-label">Empieza</label><input id="pg-i" type="date" class="cp-form-input" value="'+d(p.start_date)+'"></div>'
+   +'<div class="cp-form-row" style="flex:1"><label class="cp-form-label">Termina</label><input id="pg-f" type="date" class="cp-form-input" value="'+d(p.end_date)+'"></div></div>'
+   +'<div class="cp-form-row"><label class="cp-form-label">Descripción</label><textarea id="pg-t" class="cp-form-textarea" placeholder="Qué incluye y cómo se recorre.">'+esc(p.description)+'</textarea></div>';
+}
+function _progLeerForm(){
+  var val=function(id){ var e=document.getElementById(id); return e?(''+e.value).trim():''; };
+  var num=function(id){ var n=parseInt(val(id),10); return isNaN(n)?0:n; };
+  var nom=val('pg-n');
+  if(!nom){ __toast('Ponle un nombre al programa'); return null; }
+  return { name:nom.slice(0,200), coach_id:val('pg-c')||null, duration:val('pg-d').slice(0,100)||null,
+    status:(val('pg-s')||'active'), clients:Math.max(0,num('pg-k')), completion:Math.max(0,Math.min(100,num('pg-p'))),
+    start_date:val('pg-i')||null, end_date:val('pg-f')||null, description:val('pg-t').slice(0,2000)||null };
+}
+function _progNuevo(){
+  __openModal('Nuevo programa', _progForm(null), 'Crear', function(){
+    var d=_progLeerForm(); if(!d) return;
+    // El nombre del coach se guarda tambien en texto: la columna `coach` existe
+    // desde la 0102 y asi la fila se lee sola sin resolver el id.
+    d.coach=d.coach_id?_progCoachNom(d.coach_id):null;
+    if(!MC_REAL||!MC_ORG||!MC_ORG.id){ d.id='demo-'+Date.now(); (MC_PROGS=MC_PROGS||[]).unshift(d); __mclose(); __toast('Programa creado ✓ (demo)'); renderPrograms(); return; }
+    d.org_id=MC_ORG.id;
+    var ok=document.getElementById('__mo'); if(ok){ok.disabled=true;ok.textContent='Creando…';}
+    _hdr({'Content-Type':'application/json','Prefer':'return=representation'}).then(function(h){
+      return fetch(_progUrl(''),{method:'POST',headers:h,body:JSON.stringify(d)});
+    }).then(function(r){ return r.json().catch(function(){return null;}).then(function(j){ return {ok:r.ok,j:j}; }); }).then(function(res){
+      if(ok){ok.disabled=false;ok.textContent='Crear';}
+      if(!res.ok||!res.j||!res.j.length){ __toast('No se pudo crear. Reintenta'); return; }
+      (MC_PROGS=MC_PROGS||[]).unshift(res.j[0]);
+      __mclose(); __toast('Programa creado ✓'); renderPrograms();
+    }).catch(function(){ if(ok){ok.disabled=false;ok.textContent='Crear';} __toast('Error de conexión. Reintenta'); });
   });
 }
-
+function _progEditar(id){
+  var p=_prog(id); if(!p) return;
+  __openModal('Editar programa', _progForm(p), 'Guardar', function(){
+    var d=_progLeerForm(); if(!d) return;
+    d.coach=d.coach_id?_progCoachNom(d.coach_id):null;
+    if(!MC_REAL||!MC_ORG||!MC_ORG.id){ for(var k in d) p[k]=d[k]; __mclose(); __toast('Programa guardado ✓ (demo)'); _renderProgFicha(); return; }
+    var ok=document.getElementById('__mo'); if(ok){ok.disabled=true;ok.textContent='Guardando…';}
+    _hdr({'Content-Type':'application/json','Prefer':'return=representation'}).then(function(h){
+      return fetch(_progUrl('?id=eq.'+encodeURIComponent(id)+'&org_id=eq.'+encodeURIComponent(MC_ORG.id)),{method:'PATCH',headers:h,body:JSON.stringify(d)});
+    }).then(function(r){ return r.json().catch(function(){return null;}).then(function(j){ return {ok:r.ok,j:j}; }); }).then(function(res){
+      if(ok){ok.disabled=false;ok.textContent='Guardar';}
+      if(!res.ok||!res.j||!res.j.length){ __toast('No se pudo guardar. Reintenta'); return; }
+      for(var k in res.j[0]) p[k]=res.j[0][k];
+      __mclose(); __toast('Programa guardado ✓'); _renderProgFicha();
+    }).catch(function(){ if(ok){ok.disabled=false;ok.textContent='Guardar';} __toast('Error de conexión. Reintenta'); });
+  });
+}
+function _progBorrar(id){
+  var p=_prog(id); if(!p) return;
+  __openModal('Eliminar programa','<p style="font-size:13.5px;color:var(--pw-text-soft);line-height:1.55;margin:0">Se elimina <b>'+_mcEsc(p.name||'este programa')+'</b> de tu red. Los clientes y sus fichas no se tocan.</p>','Eliminar',function(){
+    if(!MC_REAL||!MC_ORG||!MC_ORG.id){ MC_PROGS=(MC_PROGS||[]).filter(function(x){return String(x.id)!==String(id);}); __mclose(); __toast('Programa eliminado ✓ (demo)'); _progVolver(); return; }
+    var ok=document.getElementById('__mo'); if(ok){ok.disabled=true;ok.textContent='Eliminando…';}
+    _hdr({'Content-Type':'application/json'}).then(function(h){
+      return fetch(_progUrl('?id=eq.'+encodeURIComponent(id)+'&org_id=eq.'+encodeURIComponent(MC_ORG.id)),{method:'DELETE',headers:h});
+    }).then(function(r){
+      if(ok){ok.disabled=false;ok.textContent='Eliminar';}
+      if(!r.ok){ __toast('No se pudo eliminar. Reintenta'); return; }
+      MC_PROGS=(MC_PROGS||[]).filter(function(x){return String(x.id)!==String(id);});
+      __mclose(); __toast('Programa eliminado ✓'); _progVolver();
+    }).catch(function(){ if(ok){ok.disabled=false;ok.textContent='Eliminar';} __toast('Error de conexión. Reintenta'); });
+  });
+}
 function renderAgenda(){
  // Traer el Google Calendar del dueño la 1ª vez (después ya está en MC_GCAL).
  if(MC_REAL&&!_mcGcalDone){ _mcGcalDone=true; _mcGcalLoad(function(){ if(MC_GCAL&&MC_GCAL.length){ mcSetAgenda(); if(_sec==='agenda') renderAgenda(); } }); }
