@@ -5725,7 +5725,11 @@ const RULES = [
          "— `agregar-coach-red` los crea con estado_sub:'activa' por diseno, pero " +
          "paga el dueno de la red, no ellos; (2) usaba precios inventados 89/58 " +
          "en EUR cuando los planes reales son USD $59 (Pro) y $29 (Basic). Fix: " +
-         "helper _coachMRR() como unica fuente + PLAN_MRR_USD con el precio real.",
+         "helper _coachMRR() como unica fuente + PLAN_MRR_USD con el precio real. " +
+         "AMPLIADO (sep-2026): el stripe-webhook mapea `past_due` (tarjeta " +
+         "rebotada, Stripe reintentando) a estado_sub='activa', asi que un coach " +
+         "al que NO le entro la plata seguia sumando al MRR y salia 'Pago' en " +
+         "verde en la lista de Coaches. Fix: _pagoFallado() + badge 'Cobro fallo'.",
     check() {
       const p = read("panel-v2.html");
       if (!p) return null;
@@ -5739,13 +5743,104 @@ const RULES = [
         [/es_coach_red/, "no excluye a los coaches dentro de una red (paga el dueno, no ellos)"],
         [/plan\s*===?\s*["']red["']/, "no excluye el plan 'red' del MRR"],
         [/rol\s*===?\s*["']owner["']/, "no excluye las cuentas internas (owner/admin) del MRR"],
+        [/_pagoFallado\(/, "no descuenta los cobros REBOTADOS — `past_due` se mapea a 'activa', asi que sin esto un coach al que no le entro la plata vuelve a sumar al MRR"],
       ]) if (!re.test(body)) return "panel-v2.html: _coachMRR() " + msg + ".";
+      const fm = p.match(/function _pagoFallado\(cg\)\{[\s\S]{0,900}?\n\}/);
+      if (!fm) return "panel-v2.html: desaparecio _pagoFallado() — el MRR y el badge vuelven a dar por bueno un cobro que rebotó.";
+      for (const [re2, msg2] of [
+        [/ultimo_pago_falla_at/, "dejo de leer ultimo_pago_falla_at (lo escribe stripe-webhook en invoice.payment_failed)"],
+        [/ultimo_pago_at/, "dejo de comparar contra ultimo_pago_at — un coach que ya se puso al dia queda atascado en 'Cobro fallo' para siempre"],
+        [/marcado_pagado_at/, "dejo de comparar contra marcado_pagado_at — un coach que un admin marco pagado a mano queda atascado en 'Cobro fallo'"],
+      ]) if (!re2.test(fm[0])) return "panel-v2.html: _pagoFallado() " + msg2 + ".";
+      if (!/Cobro fall/.test(p))
+        return "panel-v2.html: la lista de Coaches dejo de mostrar el badge 'Cobro fallo' — un cobro rebotado vuelve a salir como 'Pago' en verde.";
       const pm = p.match(/var PLAN_MRR_USD\s*=\s*\{[^;]*\};/);
       if (!pm) return "panel-v2.html: desaparecio PLAN_MRR_USD — el precio del plan vuelve a estar suelto.";
       if (!/pro\s*:\s*\{\s*mensual\s*:\s*59\b/.test(pm[0]) || !/basic\s*:\s*\{\s*mensual\s*:\s*29\b/.test(pm[0]))
         return "panel-v2.html: PLAN_MRR_USD dejo de coincidir con el precio real de PLAN_PRICE (Pro $59 / Basic $29 al mes).";
       if (!/function _paidCoachEmails\(\)\{[\s\S]{0,400}?_coachMRR\(u\)/.test(p))
         return "panel-v2.html: _paidCoachEmails() dejo de usar _coachMRR() — las comisiones de empleados vuelven a contar asientos de red como venta.";
+      return null;
+    },
+  },
+
+  {
+    name: "stripe-webhook: periodo real + ledger de cobros mes a mes",
+    bug: "Dos bugs juntos. (1) `fecha_fin_periodo` quedaba SIEMPRE en null: se " +
+         "leia solo `sub.current_period_end`, pero Stripe movio ese campo al " +
+         "ITEM de la suscripcion en la API 2025-03-31 (basil), asi que en las " +
+         "suscripciones nuevas llegaba undefined y nunca se guardaba hasta " +
+         "cuando esta pago el coach. (2) No habia historial de cobros: el " +
+         "webhook solo escuchaba customer.subscription.*, y PaymentSucceeded se " +
+         "emitia unicamente en la transicion a activa, asi que quedaba el 1er " +
+         "pago y ningun otro — para saber si pago el mes 2, 3, 4 habia que " +
+         "entrar a Stripe. Fix: subPeriodEnd() mira los dos sitios, y " +
+         "invoice.paid / invoice.payment_failed registran una fila por factura.",
+    check() {
+      const w = read("supabase/functions/stripe-webhook/index.ts");
+      if (!w) return null;
+      if (!/function subPeriodEnd\(/.test(w))
+        return "stripe-webhook: desaparecio subPeriodEnd() — fecha_fin_periodo vuelve a quedar en null con la API nueva de Stripe.";
+      const sp = w.match(/function subPeriodEnd\([\s\S]{0,700}?\n\}/);
+      if (sp && !/items\s*\?\.\s*data/.test(sp[0]))
+        return "stripe-webhook: subPeriodEnd() dejo de mirar los items — desde la API 2025-03-31 el periodo vive ahi, no en la suscripcion.";
+      // Nadie debe volver a leer sub.current_period_end a pelo fuera del helper.
+      // Se quitan los comentarios: si no, la propia nota que explica el bug
+      // (que nombra el campo) dispara la regla contra si misma.
+      const fuera = w.split(/function subPeriodEnd\([\s\S]{0,700}?\n\}/).join("").replace(/^\s*\/\/.*$/gm, "");
+      if (/\bsub\.current_period_end\b/.test(fuera))
+        return "stripe-webhook: se volvio a leer `sub.current_period_end` directo en vez de subPeriodEnd() — en la API nueva eso es undefined.";
+      for (const [re, msg] of [
+        [/"invoice\.paid"/, "dejo de escuchar invoice.paid — se pierde el historial de cobros mes a mes"],
+        [/"invoice\.payment_failed"/, "dejo de escuchar invoice.payment_failed — un cobro rebotado vuelve a pasar en silencio"],
+        [/InvoicePaid/, "dejo de emitir el evento InvoicePaid (ledger)"],
+        [/InvoicePaymentFailed/, "dejo de emitir el evento InvoicePaymentFailed"],
+        [/ultimo_pago_falla_at/, "dejo de sellar ultimo_pago_falla_at — el panel no puede distinguir past_due de un cobro real (_pagoFallado depende de esto)"],
+      ]) if (!re.test(w)) return "stripe-webhook: " + msg + ".";
+      return null;
+    },
+  },
+
+  {
+    name: "admin: los cobros reales se ven en la ficha y en la pestana Pagos",
+    bug: "El panel de admin no mostraba NADA de los cobros de suscripcion: ni " +
+         "hasta cuando estaba pago un coach (fecha_fin_periodo no se leia en " +
+         "ningun lado) ni el historial mes a mes. La tabla `eventos` NO tiene " +
+         "policy de SELECT a proposito (ver eventos.sql: 'la lectura se hara " +
+         "con service role desde una edge function'), asi que leerla directo " +
+         "con la anon key devuelve vacio EN SILENCIO — parece que no hay " +
+         "cobros cuando en realidad no hay permiso. Fix: op `billing_ledger` " +
+         "en admin-coach-op (service role + gate de admin) y reloadLedger().",
+    check() {
+      const p = read("panel-v2.html");
+      const a = read("supabase/functions/admin-coach-op/index.ts");
+      if (!p || !a) return null;
+      // 1) El ledger se lee por la edge function, nunca directo a `eventos`.
+      if (/_sb\(\s*["'`]eventos\?/.test(p) || /rest\/v1\/eventos\?[^"'`]*select/.test(p))
+        return "panel-v2.html: se volvio a leer `eventos` con la anon key — esa tabla no tiene policy de SELECT, asi que devuelve vacio en silencio. Va por admin-coach-op (op billing_ledger).";
+      if (!/function reloadLedger\(/.test(p))
+        return "panel-v2.html: desaparecio reloadLedger() — la pestana Pagos vuelve a no mostrar los cobros.";
+      if (!/op\s*:\s*["']billing_ledger["']/.test(p))
+        return "panel-v2.html: reloadLedger() dejo de pedir la op billing_ledger a admin-coach-op.";
+      // 2) La op existe y es SOLO LECTURA (nada de PATCH/POST/DELETE ahi).
+      const bl = a.match(/async function billingLedger\([\s\S]{0,1600}?\n\}/);
+      if (!bl) return "admin-coach-op: desaparecio billingLedger() — el panel no puede leer el ledger (eventos no es legible con anon key).";
+      if (/method:\s*["'](POST|PATCH|DELETE|PUT)["']/.test(bl[0]))
+        return "admin-coach-op: billingLedger() dejo de ser solo lectura — no debe escribir nada.";
+      // 3) El dispatch va ANTES del check de coach_id: la op no lleva coach, y
+      //    si queda despues el panel recibe coach_id_invalid (400) siempre.
+      const iOp = a.indexOf('op === "billing_ledger"');
+      const iUuid = a.indexOf("isUuid(coachId)");
+      if (iOp === -1 || iUuid === -1 || iOp > iUuid)
+        return "admin-coach-op: la op billing_ledger quedo DESPUES del check de coach_id — como no lleva coach, siempre respondera coach_id_invalid.";
+      // 4) La ficha del coach muestra hasta cuando esta pago.
+      if (!/rowD\("Pagado hasta"/.test(p))
+        return "panel-v2.html: la ficha del coach dejo de mostrar 'Pagado hasta' (fecha_fin_periodo).";
+      // 5) Cobros y payouts son flujos OPUESTOS: no se fusionan en una tarjeta.
+      if (!/function ledgerCard\(/.test(p))
+        return "panel-v2.html: desaparecio ledgerCard() — la pestana Pagos vuelve a no listar los cobros.";
+      if (!/Payouts a coaches/.test(p))
+        return "panel-v2.html: desaparecio la tarjeta de Payouts — son plata que Pathway TRANSFIERE al coach, no las cuotas que el coach PAGA: no se fusionan.";
       return null;
     },
   },
