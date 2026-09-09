@@ -490,6 +490,9 @@
     "Cobrado a clientes de Pathway": "Charged to Pathway clients",
     "Cobro falló": "Charge failed",
     "Cobrado": "Charged",
+    "Coach": "Coach",
+    "Comisión Pathway (acumulada)": "Pathway commission (all time)",
+    "Comisión Pathway (este mes)": "Pathway commission (this month)",
     "Cobros de coaches": "Coach charges",
     "Cargando cobros…": "Loading charges…",
     "Cobro falló hoy": "Charge failed today",
@@ -1639,6 +1642,10 @@
     "Pagaron · esperan respuesta": "Paid · awaiting response",
     "pagaron, esperan": "they paid, they're waiting",
     "Pagado hasta": "Paid until",
+    "Redes multicoach": "Multicoach networks",
+    "Ingreso recurrente (MRR)": "Recurring revenue (MRR)",
+    "Suscripciones de coaches": "Coach subscriptions",
+    "Este mes todavía no entró ningún cobro": "No charges have come in this month yet",
     "Primer cobro": "First charge",
     "Renovación": "Renewal",
     "Ciclo": "Cycle",
@@ -2452,6 +2459,8 @@
     [/^en (\d+) día$/, 'in $1 day'],
     [/^quedan (\d+) días$/, '$1 days left'],
     [/^Cobro falló hace (\d+) d$/, 'Charge failed $1 d ago'],
+    [/^Prueba · quedan (\d+) d$/, 'Trial · $1 d left'],
+    [/^Vencida hace (\d+) d$/, 'Expired $1 d ago'],
     [/^faltan (\d+) para (.+)$/, '$1 left for $2']
   ];
 
