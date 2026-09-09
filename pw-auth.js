@@ -62,7 +62,9 @@
   // sesión, key "sb-<ref>-auth-token"). SÍNCRONO → sirve para reemplazar los
   // objetos de headers inline sin volver async cada fetch. El SDK (booteado en
   // ensure()) refresca ese token en background, así que se mantiene fresco.
+  var _sawExpired = false;
   function tokenSync() {
+    _sawExpired = false;
     try {
       // supabase-js persiste la sesión bajo una key "sb-<algo>-auth-token", donde
       // "<algo>" lo DERIVA del hostname de la URL del cliente. Con el dominio custom
@@ -82,14 +84,53 @@
           var exp = sess && sess.expires_at; // epoch en segundos
           if (!t) continue;
           // Vencido (o a < 10s de vencer) → seguir buscando otra key.
-          if (exp && exp * 1000 < now + 10000) continue;
+          // ANTES se devolvía null y nadie refrescaba: la sesión quedaba muerta
+          // hasta que algo diera 401. Con RLS eso no pasa nunca en una lectura
+          // (devuelve 200 + []), así que el token vencido no se recuperaba solo.
+          // Ahora disparamos el refresh en background (no bloquea a quien llama).
+          if (exp && exp * 1000 < now + 10000) { _sawExpired = true; continue; }
           return t;
         } catch (e) { /* key no parseable → probar la siguiente */ }
       }
+      // Había sesión pero vencida y no encontramos ninguna válida → refrescar
+      // en background para que la PRÓXIMA llamada ya tenga token bueno.
+      if (_sawExpired) { try { refreshOnce(); } catch (e) {} }
       return null;
     } catch (e) {
       return null;
     }
+  }
+
+  // ¿Hay una sesión PERSISTIDA, aunque su access_token esté vencido?
+  // Sin esto no se puede distinguir "visitante anónimo" (intake público, lecturas
+  // del directorio) de "usuario logueado cuyo token venció". El primero NO debe
+  // esperar nada; el segundo SÍ. Mirar solo el refresh_token alcanza: es lo que
+  // sobrevive al vencimiento del access_token.
+  function hasStoredSession() {
+    try {
+      for (var i = 0; i < localStorage.length; i++) {
+        var k = localStorage.key(i);
+        if (!k || k.indexOf("sb-") !== 0 || k.indexOf("-auth-token") < 0) continue;
+        try {
+          var o = JSON.parse(localStorage.getItem(k) || "null");
+          var sess = o && (o.currentSession || o.session || o);
+          if (sess && (sess.refresh_token || sess.access_token)) return true;
+        } catch (e) { /* key no parseable → probar la siguiente */ }
+      }
+    } catch (e) {}
+    return false;
+  }
+
+  // Espera a que la sesión esté restaurada/refrescada. Con timeout: si el SDK del
+  // CDN no carga, resolvemos con lo que haya en localStorage y NO colgamos la app.
+  function ready(ms) {
+    var lim = (typeof ms === "number") ? ms : 4000;
+    return new Promise(function (resolve) {
+      var done = false;
+      function finish(v) { if (done) return; done = true; resolve(v); }
+      setTimeout(function () { finish(!!tokenSync()); }, lim);
+      token().then(function (t) { finish(!!t); }, function () { finish(!!tokenSync()); });
+    });
   }
 
   // Devuelve un access_token fresco, o null si no hay sesión.
@@ -167,6 +208,9 @@
       if (extra) for (var k in extra) if (extra.hasOwnProperty(k)) h[k] = extra[k];
       return h;
     },
+    // Espera a que la sesión esté lista (restaurada o refrescada). Resuelve
+    // true/false y NUNCA cuelga (timeout interno). Útil para gatear un arranque.
+    ready: ready,
     // ¿Hay sesión autenticada activa? (para que el frontend pueda avisar
     // "iniciá sesión de nuevo" cuando RLS ya esté prendido y no haya token).
     hasSession: function () {
@@ -199,6 +243,26 @@
     ? window.fetch.bind(window) : null;
   if (_origFetch) {
     window.fetch = function (input, init) {
+      var _url = (typeof input === "string") ? input : (input && input.url) ? input.url : "";
+      var _rls = (_url.indexOf(SB_URL) === 0 && RLS_TABLES.test(_url));
+      // ── GATE de sesión (ERR-FITSESS-001) ───────────────────────────────────
+      // Request a una tabla con RLS, SIN token válido pero CON sesión persistida
+      // = el access_token venció (o el SDK aún no hidrató). Emitirla ahora saldría
+      // con la ANON KEY y, bajo RLS, el server responde 200 + [] — NO 401. Por eso
+      // el self-healing de abajo nunca se dispara y la página concluye "este
+      // usuario no tiene datos": portal vacío, y las escrituras afectan 0 filas
+      // sin avisar. Esperamos el refresh (con timeout) y recién ahí emitimos.
+      // Un visitante ANÓNIMO (intake público, directorio) no tiene sesión
+      // persistida → hasStoredSession() es false → no espera nada.
+      if (_rls && !tokenSync() && hasStoredSession()) {
+        return ready(4000).then(function () { return _send(input, init); });
+      }
+      return _send(input, init);
+    };
+
+    // Emisión real + self-healing de 401/403. Separado para que el gate de arriba
+    // pueda diferirlo sin duplicar la lógica.
+    function _send(input, init) {
       var _isStr = (typeof input === "string");
       var _url = _isStr ? input : (input && input.url) ? input.url : "";
       var _rls = (_url.indexOf(SB_URL) === 0 && RLS_TABLES.test(_url));
@@ -222,7 +286,6 @@
                 if (!init.headers.apikey) init.headers.apikey = ANON;
               }
             }
-            // Si no hay headers (o es un Request del SDK) no tocamos nada.
           }
         }
       } catch (e) { /* ante cualquier duda, fetch normal */ }
@@ -250,7 +313,7 @@
           return _origFetch(input, init2);
         }).catch(function () { return r; });
       });
-    };
+    }
   }
 
   // Gate de sesión para los portales de cliente: cuando (con RLS prendido) el
