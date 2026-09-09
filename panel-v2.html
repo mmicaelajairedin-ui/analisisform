@@ -8973,9 +8973,32 @@ function _buildEmpLeadStats(rows){
 // Precio real de la plataforma (PLAN_PRICE): Pro USD $59/mes · Basic USD $29/mes.
 // Anual se prorratea a mes ($531/12 y $261/12) para que el MRR no se dispare.
 var PLAN_MRR_USD={ pro:{mensual:59, anual:531/12}, basic:{mensual:29, anual:261/12} };
+// ¿El ULTIMO movimiento de cobro de este coach fue un fallo?
+// Existe porque `estado_sub` NO alcanza: el stripe-webhook mapea `past_due`
+// (tarjeta rebotada, Stripe reintentando) a "activa", asi que un coach al que
+// no le entro la plata salia "Pago" en verde y sumaba al MRR igual.
+// Se compara por FECHA en vez de mirar solo si ultimo_pago_falla_at existe:
+//   - si despues del fallo entro un cobro OK (ultimo_pago_at), la falla es vieja
+//   - si despues del fallo un admin lo marco pagado a mano (marcado_pagado_at,
+//     lo sellan tanto admin-coach-op como el fallback del panel), tambien manda
+// Asi la falla se "cura" sola por cualquiera de las dos vias, sin dejar coaches
+// atascados en rojo para siempre.
+function _pagoFallado(cg){
+  cg=cg||{};
+  var f=cg.ultimo_pago_falla_at?+new Date(cg.ultimo_pago_falla_at):0;
+  if(!f||isNaN(f)) return false;
+  var ok=0;
+  ["ultimo_pago_at","marcado_pagado_at"].forEach(function(k){
+    var t=cg[k]?+new Date(cg[k]):0; if(t&&!isNaN(t)&&t>ok) ok=t;
+  });
+  return f>ok;
+}
 function _coachMRR(u){
   var cg=(u&&u.configuracion)||{};
   if((""+(cg.estado_sub||"")).toLowerCase()!=="activa") return 0;
+  // El ultimo cobro rebotó: todavia no es ingreso. Vuelve a contar solo cuando
+  // entre el cobro (o cuando se lo marque pagado a mano).
+  if(_pagoFallado(cg)) return 0;
   if(u&&(u.rol==="admin"||u.rol==="owner")) return 0;
   if(cg.es_pro_vitalicio===true) return 0;
   if(cg.es_coach_red===true || cg.plan==="red") return 0;
@@ -9348,7 +9371,12 @@ function viewAdmin(){
       var _ffp = cg.fecha_fin_prueba ? new Date(cg.fecha_fin_prueba) : null;
       var _ffpMs = (_ffp && !isNaN(_ffp.getTime())) ? _ffp.getTime() : null;
       var _dLeft = (_ffpMs!=null) ? Math.ceil((_ffpMs - _now2)/_D2) : null;
+      // Cobro rebotado: gana sobre "Pagó" (si no, dice verde mintiendo). No
+      // aplica a vitalicios/admin, que no pasan por Stripe.
+      var _fallo = !_vitC && _pagoFallado(cg);
+      var _falloD = _fallo ? Math.floor((_now2 - (+new Date(cg.ultimo_pago_falla_at)))/_D2) : 0;
       var est = (u.activo===false)?["Inactiva","danger"]
+        : _fallo?["Cobro falló"+(_falloD>0?" hace "+_falloD+" d":" hoy"),"danger"]
         : (es==="activa"||_vitC)?["Pagó","ok"]
         : (es==="cancelada"||es==="vencida")?["Cancelada","danger"]
         : (_ffpMs==null)?["Prueba","warn"]

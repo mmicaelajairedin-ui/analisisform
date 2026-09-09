@@ -488,6 +488,7 @@
     "coaches, contactos, candidatos, CV Express y MRR por plan. Comisión y payouts se gestionan en Stripe (no cableados).": "coaches, contacts, candidates, CV Express and MRR by plan. Commission and payouts are managed in Stripe (not wired).",
     "Coaching de carrera con IA": "AI career coaching",
     "Cobrado a clientes de Pathway": "Charged to Pathway clients",
+    "Cobro falló hoy": "Charge failed today",
     "Cobraste tu primera sesión.": "You charged for your first session.",
     "Código QR": "QR code",
     "Colapsar": "Collapse",
@@ -2438,6 +2439,7 @@
     [/^en (\d+) días$/, 'in $1 days'],
     [/^en (\d+) día$/, 'in $1 day'],
     [/^quedan (\d+) días$/, '$1 days left'],
+    [/^Cobro falló hace (\d+) d$/, 'Charge failed $1 d ago'],
     [/^faltan (\d+) para (.+)$/, '$1 left for $2']
   ];
 
