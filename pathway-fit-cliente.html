@@ -1017,19 +1017,12 @@ function _exLoad(){
 function _exRealSave(){
   var j=JSON.stringify(FREAL); if(CRAW) CRAW.fit_ejercicios_real=j;
   if(!CID) return; // demo (cliente de ejemplo): solo en pantalla
-  // Mira r.ok, no solo .catch(): bajo RLS un PATCH que no matchea ninguna fila
-  // vuelve 200 con [] (sbPatch lo marca ok:false) y NO lanza excepción, así que
-  // el .catch nunca corría y el cambio se perdía sin aviso. (ERR-FITSESS-001)
-  sbPatch('candidatos','id=eq.'+encodeURIComponent(CID),{fit_ejercicios_real:j})
-    .then(function(r){ if(!(r&&r.ok) && typeof showToast==='function') showToast(t('noGuardoCambio')); })
-    .catch(function(){ if(typeof showToast==='function') showToast(t('noGuardoCambio')); });
+  sbPatch('candidatos','id=eq.'+encodeURIComponent(CID),{fit_ejercicios_real:j}).catch(function(){ if(typeof showToast==='function') showToast(t('noGuardoCambio')); });
 }
 function _exSave(){
   if(!CID) return;
   FED[_exToday()]=EXDONE; var j=JSON.stringify(FED); if(CRAW) CRAW.fit_ejercicios_done=j;
-  sbPatch('candidatos','id=eq.'+encodeURIComponent(CID),{fit_ejercicios_done:j})
-    .then(function(r){ if(!(r&&r.ok) && typeof showToast==='function') showToast(t('noGuardoEjercicio')); })
-    .catch(function(){ if(typeof showToast==='function') showToast(t('noGuardoEjercicio')); });
+  sbPatch('candidatos','id=eq.'+encodeURIComponent(CID),{fit_ejercicios_done:j}).catch(function(){ if(typeof showToast==='function') showToast(t('noGuardoEjercicio')); });
 }
 function toggleEx(el){
   el.classList.toggle('done');
@@ -2338,24 +2331,15 @@ function _ensureFicha(niche){
   // Chequear PRIMERO si la ficha ya existe (GET) y crearla (POST) SOLO si no existe.
   // Antes se hacía POST directo con ignore-duplicates; cuando la ficha ya estaba,
   // devolvía 409 y ensuciaba client_errors como falso positivo. El GET previo lo evita.
-  // El GET va con _hdr() (JWT del cliente), NO con la anon key hardcodeada: bajo
-  // RLS, leer con anon devuelve 200 + [] y hacía creer que la ficha no existía
-  // aunque estuviera ahí. (ERR-FITSESS-001)
-  fetch(SB+'/rest/v1/candidatos?email=eq.'+encodeURIComponent(EMAIL)+'&select=*&limit=1',{headers:_hdr()})
+  fetch(SB+'/rest/v1/candidatos?email=eq.'+encodeURIComponent(EMAIL)+'&select=*&limit=1',{headers:{apikey:KEY,Authorization:'Bearer '+KEY}})
     .then(function(r){ return r.ok?r.json():null; })
     .then(function(rows){
       if(rows&&rows.length){ _use(rows[0]); return; }
-      // Acá NO se intenta crear la ficha. El INSERT desde el cliente lo NIEGA la
-      // RLS por diseño: las policies de INSERT sobre `candidatos` exigen
-      // coach_id = pw_coach_id() (o ser owner de una organización), y este POST
-      // iba sin coach_id. Resultado: 403 (42501) en CADA carga, ensuciando
-      // client_errors y sin crear nada nunca. Se registra el caso para que el
-      // coach pueda darla de alta; si algún día se quiere auto-crear, tiene que
-      // ir por una edge function con service role (como `guardar-intake` para la
-      // foto), no por PostgREST con la clave del navegador.
-      // __pwReport(kind, detail) es la API de pw-observe.js (dedupea sola y ya
-      // adjunta page/email). Queda en client_errors como `ficha_faltante`.
-      try{ if(typeof window.__pwReport==='function') window.__pwReport('ficha_faltante','candidatos sin fila para este email'); }catch(e){}
+      var body={ email:EMAIL, activo:true }; if(niche) body.nicho=niche;
+      try{ var mu=JSON.parse(localStorage.getItem('mj_user')||'null'); if(mu&&mu.nombre) body.nombre=mu.nombre; }catch(e){}
+      return fetch(SB+'/rest/v1/candidatos',{method:'POST',headers:{'Content-Type':'application/json',apikey:KEY,Authorization:'Bearer '+KEY,Prefer:'return=representation,resolution=ignore-duplicates'},body:JSON.stringify(body)})
+        .then(function(r){ return (r&&r.ok)?r.json():null; })
+        .then(function(rows2){ if(rows2&&rows2.length) _use(rows2[0]); });
     })
     .catch(function(){});
 }

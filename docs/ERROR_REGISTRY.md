@@ -802,9 +802,8 @@ reales** — fuera del alcance autorizado de RC-14.
 
 ## ERR-FITSESS-001: El portal del cliente cae a la anon key y ve su ficha vacía
 
-**Estado:** FIXED
+**Estado:** ROOT_CAUSE_CONFIRMED_RUNTIME
 **Fecha detectado:** 2026-09-09
-**Fecha fixed:** 2026-09-09
 **Severity:** CRITICAL
 
 ### Scope Metadata
@@ -866,53 +865,10 @@ queda en pantalla y se pierde al recargar.
 `candidatos.id=213` (Rosman Dubon) existe y tiene 33 KB de rutina cargada: el
 portal intentó **crear una ficha que ya existía**.
 
-### Fix aplicado
-
-El arreglo de fondo vive en `pw-auth.js`, así sirve a las 14 páginas que lo
-cargan y no hay que parchear portal por portal:
-
-1. **`hasStoredSession()`** — distingue "visitante anónimo" de "usuario logueado
-   con token vencido" mirando el `refresh_token` persistido. Sin esto no se
-   puede decidir si vale la pena esperar.
-2. **`ready(ms)`** — espera a que la sesión esté restaurada/refrescada, **con
-   timeout**: si el SDK del CDN no carga, resuelve con lo que haya y NO cuelga.
-3. **Gate en el interceptor de `fetch`** — una request a una tabla con RLS, sin
-   token válido pero con sesión guardada, espera el refresh y recién ahí se
-   emite, ya con el JWT. Un anónimo no espera nada.
-4. **`tokenSync()`** — al encontrar un token vencido dispara `refreshOnce()` en
-   background, en vez de devolver `null` y dejar la sesión muerta para siempre.
-
-En el portal fitness:
-
-5. `_ensureFicha` lee con `_hdr()` (JWT), no con la anon key hardcodeada.
-6. Se **elimina el POST** a `candidatos` desde el cliente: la RLS lo niega
-   siempre (las policies de INSERT exigen `coach_id = pw_coach_id()`), así que
-   sólo producía un 403 por carga sin crear nada nunca. Ahora se registra
-   `ficha_faltante` en `client_errors` vía `__pwReport`.
-7. Los guardados del gym miran `r.ok`, no sólo `.catch()`.
-
-### Verificación
-A/B del gate con el SDK simulado, contra la versión anterior del archivo:
-
-| Escenario | Antes | Después |
-|-----------|-------|---------|
-| Anónimo (sin sesión) | sin JWT ✅ | sin JWT ✅, sin demora |
-| **Token vencido** | **sin JWT ❌ (el bug)** | **con JWT ✅** |
-| Token válido | con JWT ✅ | con JWT ✅ |
-
-Arranque de las 5 páginas clave (fit, panel, formulario, fin, cliente): 0
-errores JS y sin demora medible respecto de la versión anterior.
-
 ### Cómo evitar la regresión
-Regla en `check-guardrails.js`: el gate tiene que seguir existiendo, `ready()`
-conservar su timeout, un token vencido disparar `refreshOnce()`, `_ensureFicha`
-no volver a leer con la anon key ni a hacer el INSERT, y el guardado del gym
-seguir mirando `r.ok`.
-
-### Pendiente
-Los otros portales (`pathway-fin-cliente.html`, `cliente.html`) se benefician
-del arreglo de `pw-auth.js`, pero conservan sus propios `.catch()` mudos en los
-guardados. No se tocaron en este sprint.
+Al arreglarlo, sumar regla en `check-guardrails.js`: `_hdr()` del portal no
+puede resolver a la anon key habiendo sesión, y toda lectura de ficha vacía
+debe distinguir "sin ficha" de "sin permiso".
 
 ---
 
@@ -1028,7 +984,7 @@ antes de tocar la lógica del onboarding.
 | **ERR-CLIPROG-001** | **FIXED / TESTED** | **HIGH** | **cliente** | ✅ | ❌ |
 | **ERR-CLIPROG-002** | **FIXED / TESTED** | **MEDIUM** | **cliente** | ✅ | ❌ |
 | **ERR-CLIPROG-003** | **FIXED / TESTED** | **HIGH** | **cliente** | ✅ | ❌ |
-| **ERR-FITSESS-001** | **FIXED** | **CRITICAL** | **portal-fitness** | ✅ | ❌ |
+| **ERR-FITSESS-001** | **ROOT_CAUSE_CONFIRMED_RUNTIME** | **CRITICAL** | **portal-fitness** | ❌ | ❌ |
 | **ERR-LANG-001** | **DETECTED** | **LOW** | **i18n** | ❌ | ❌ |
 | **ERR-CURRENCY-001** | **DETECTED** | **MEDIUM** | **cobros** | ❌ | ❌ |
 | **ERR-ONBOARD-001** | **DETECTED** | **LOW** | **onboarding** | ❌ | ❌ |
