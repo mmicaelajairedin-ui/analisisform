@@ -941,11 +941,12 @@ nombres de clientes (datos). Ver commit del fix de RULES.
 
 ---
 
-## ERR-CURRENCY-001: Faltan monedas de Centroamérica y Caribe
+## ERR-CURRENCY-001: ~~Faltan monedas de Centroamérica y Caribe~~ — DESCARTADO
 
-**Estado:** DETECTED
+**Estado:** INVALID (no era un error)
 **Fecha detectado:** 2026-09-09
-**Severity:** MEDIUM
+**Fecha descartado:** 2026-09-10
+**Severity:** —
 
 ### Scope Metadata
 - **Module:** `cobros`
@@ -954,23 +955,90 @@ nombres de clientes (datos). Ver commit del fix de RULES.
 - **Blocking Scope:** `other`
 - **Blocks Current Branch:** No
 
+### Por qué se descarta
+Se reportó que `PW_MONEDAS` no ofrece lempira hondureño (HNL) y que por eso el
+coach de Honduras "no podía elegir su moneda". **Es falso.** Verificado contra
+producción: ese coach tiene `configuracion.moneda = "usd"` desde antes, y cobra
+en dólares. No le falta ninguna moneda.
+
+El hallazgo se dedujo de ver HNL ausente de la lista, **sin comprobar qué tenía
+configurado** — un dato que estaba a una consulta de distancia. Queda como
+recordatorio de verificar el dato antes de escribir el hallazgo.
+
+### Lo que SÍ era real (y ya está arreglado)
+El panel mostraba `€0` en "Ingresos del mes" ignorando la moneda elegida por el
+coach. Eso se arregló aparte (`_pwMoney()` usa `_monCode()`/`_monSym()`).
+
+### Lo que queda abierto de verdad
+El **default** cuando el coach no eligió moneda es `eur`, en 7 puntos de 4
+archivos — incluidas `connect-checkout` y `red-checkout`, que son el camino de
+cobro real. Hoy **47 coaches** están en ese default y sólo 1 eligió moneda.
+Ninguno tiene servicios con precio cargado, así que **hoy no hay dinero en
+riesgo**, pero el primero que cargue un precio sin mirar el selector cobrará en
+euros aunque esté en LatAm.
+
+Ver ERR-CURRENCY-002.
+
+---
+
+## ERR-CURRENCY-002: El default de moneda era EUR con la mayoría de coaches en LatAm
+
+**Estado:** FIXED
+**Fecha detectado:** 2026-09-10
+**Fecha fixed:** 2026-09-10
+**Severity:** MEDIUM
+
+### Scope Metadata
+- **Module:** `cobros`
+- **Scope Type:** `MODULE_SPECIFIC`
+- **Scope Belongs To:** `claude/moneda-default-usd`
+- **Blocking Scope:** `other`
+- **Blocks Current Branch:** No
+
 ### Síntoma
-`PW_MONEDAS` (panel-v2.html) ofrece 12 monedas y **ninguna** es lempira
-hondureño (HNL), quetzal (GTQ), colón costarricense (CRC) ni peso dominicano
-(DOP) — mercados con coaches y clientes reales hoy.
+Un coach que nunca tocó el selector de moneda cobraba en **euros**, aunque
+estuviera en LatAm y la plataforma le cobrara a él en dólares.
 
-### Categoría
-`GAP` · `COBROS`
+### Estado medido en producción (2026-09-10)
+| | |
+|---|---|
+| Coaches sin moneda elegida → caían en EUR | **47** |
+| Coaches con moneda elegida | 1 (`usd`) |
+| Servicios con precio cargado | **0** |
 
-### Por qué no se arregló en el mismo sprint
-Sumar una moneda la estampa en cada servicio (`_stampMoneda`) y por lo tanto
-**toca el checkout de Stripe**. Requiere confirmar antes qué monedas de
-presentación soporta la cuenta Connect; hacerlo a ciegas puede romper cobros.
+Cero servicios con precio = **no había dinero en riesgo**, lo que hizo de este
+el momento ideal para cambiar el default: cambiarlo después de que alguien
+empiece a cobrar habría sido una migración con dinero real de por medio.
 
-### Relacionado
-El formato de dinero del panel ya respeta `RCFG.moneda` (ver ERR/commit del
-arreglo de `_pwMoney`), así que al sumar monedas no hay nada más que tocar en
-la vista.
+### Root Cause
+El fallback `"eur"` estaba repetido en **12 puntos de 4 archivos**, incluidas
+las dos edge functions que arman el cobro (`connect-checkout`, `red-checkout`).
+No había ninguna fuente única ni nada que obligara a que coincidieran.
+
+### Fix
+Los 12 pasan a `"usd"`, front y backend a la vez, y USD queda primero en el
+selector. **El selector se mantiene**: el que quiera cobrar en otra moneda la
+sigue eligiendo, y su elección siempre gana sobre el default.
+
+**NO se tocó** `panel-v2.html:9846` (`esEur`): ya usaba `usd` y sirve para
+detectar si un cobro **ya hecho** fue en euros. Cambiarlo habría alterado la
+lectura de pagos pasados.
+
+### Verificación
+Front vs backend resuelven la misma moneda en los 6 casos probados: sin elegir,
+`usd`, `eur`, `mxn`, servicio con moneda propia, y valor basura.
+
+### Cómo evitar la regresión
+Regla **"cobros: el default de moneda es el MISMO en el panel y en el checkout"**.
+El riesgo real no es el valor sino la **deriva**: si alguien cambia el default
+del panel y no el de las edge functions, el coach ve un símbolo y Stripe cobra
+en otra moneda — y eso no lo detecta ningún test de UI. Probada con 2 tests
+negativos (front solo, backend solo).
+
+### Nota aparte (pre-existente, no introducido acá)
+Si un SERVICIO tiene moneda propia distinta de la del coach, el panel muestra el
+símbolo del coach mientras el checkout cobra en la del servicio. Ya pasaba antes
+del cambio. No se tocó.
 
 ---
 
@@ -1022,7 +1090,8 @@ antes de tocar la lógica del onboarding.
 | **ERR-CLIPROG-002** | **FIXED / TESTED** | **MEDIUM** | **cliente** | ✅ | ❌ |
 | **ERR-CLIPROG-003** | **FIXED / TESTED** | **HIGH** | **cliente** | ✅ | ❌ |
 | **ERR-LANG-001** | **DETECTED** | **LOW** | **i18n** | ❌ | ❌ |
-| **ERR-CURRENCY-001** | **DETECTED** | **MEDIUM** | **cobros** | ❌ | ❌ |
+| **ERR-CURRENCY-001** | **INVALID** (no era un error) | — | **cobros** | — | — |
+| **ERR-CURRENCY-002** | **FIXED** | **MEDIUM** | **cobros** | ✅ | ❌ |
 | **ERR-ONBOARD-001** | **DETECTED** | **LOW** | **onboarding** | ❌ | ❌ |
 | **ERR-CLIPROG-004** | **FIXED / TESTED** | **HIGH** | **cliente** | ✅ | ❌ |
 | **ERR-EMAIL-RECORDATORIO** | **DETECTED** | **LOW** | **email** | ❌ | ❌ |
