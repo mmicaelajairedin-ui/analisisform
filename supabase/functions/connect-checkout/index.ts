@@ -154,9 +154,11 @@ Deno.serve(async (req: Request) => {
     let recurrente = false;        // servicio de suscripción → cobro cada 4 semanas
     // Moneda del coach (los coaches son de todo el mundo → no todo es en euros).
     // Se toma del servicio (s.moneda) o de la config del coach (cfg.moneda), se
-    // valida contra una lista soportada por Stripe, y por defecto es 'eur'.
+    // valida contra una lista soportada por Stripe, y por defecto es 'usd'
+    // (ERR-CURRENCY-002: el default era 'eur' con 47 coaches sin elegir moneda,
+    // la mayoria de LatAm. El selector sigue: el que quiera otra, la elige).
     const MONEDAS_OK = new Set(["eur","usd","gbp","mxn","ars","cop","clp","pen","brl","uyu","cad","chf"]);
-    let moneda = "eur";
+    let moneda = "usd";
     if (hasIdx) {
       const idx = Math.floor(p.servicio_idx);
       const servicios = Array.isArray(cfg.servicios) ? cfg.servicios : [];
@@ -170,7 +172,7 @@ Deno.serve(async (req: Request) => {
       servicioIdx = idx;
       servicioTitulo = String(so.name ?? so.nombre ?? "Servicio");
       recurrente = so.recurrente === true || so.suscripcion === true;
-      const rawMon = String(so.moneda ?? cfg.moneda ?? "eur").toLowerCase();
+      const rawMon = String(so.moneda ?? cfg.moneda ?? "usd").toLowerCase();
       if (MONEDAS_OK.has(rawMon)) moneda = rawMon;
     } else {
       precio = Number(
@@ -180,7 +182,7 @@ Deno.serve(async (req: Request) => {
         " con " + (coach.nombre || "tu coach");
       servicioTag = servicioLegacy;
       servicioTitulo = servicioLegacy === "sesion" ? "Sesión única" : "Mentoría 4 semanas";
-      const rawMon = String(cfg.moneda ?? "eur").toLowerCase();
+      const rawMon = String(cfg.moneda ?? "usd").toLowerCase();
       if (MONEDAS_OK.has(rawMon)) moneda = rawMon;
     }
     // Stripe "zero-decimal": el importe NO se multiplica por 100 (p.ej. CLP). Si
