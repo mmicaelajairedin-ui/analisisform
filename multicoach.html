@@ -60,6 +60,26 @@
 .action-btn-title{font-size:13.5px;font-weight:600;color:var(--carbon);line-height:1.3}
 .action-btn-desc{font-size:11.5px;color:var(--muted);line-height:1.4}
 @media(max-width:520px){.actions-grid{grid-template-columns:1fr 1fr}.hero-status-title{font-size:20px}}
+/* ===== Comunidad — feed (fase 2) =========================================
+   Mismo sistema que el dashboard: tarjeta blanca, borde neutro, Fraunces en el
+   titulo, verde solo de acento. El titulo iba dentro del cuerpo en <b>, asi que
+   no habia jerarquia: todo se leia igual.                                    */
+.revista{display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:14px;align-items:start}
+.revista .post{position:relative;display:flex;flex-direction:column}
+.revista .post-ti{font-family:var(--ser);font-size:16px;font-weight:600;letter-spacing:-.3px;color:var(--carbon);margin:2px 0 6px;line-height:1.3}
+.revista .post-dest{position:absolute;top:12px;right:12px;display:inline-flex;align-items:center;gap:5px;font-size:10.5px;font-weight:700;letter-spacing:.3px;text-transform:uppercase;color:var(--pw-bosque);background:var(--pw-niebla-3,#EFE9DD);border-radius:100px;padding:4px 9px}
+.revista .post-dest svg{width:12px;height:12px}
+.revista .post.is-dest{grid-column:1/-1;border-color:var(--pw-bosque)}
+.revista .post.is-dest .img{height:260px}
+@media(max-width:820px){.revista{grid-template-columns:1fr}.revista .post.is-dest .img{height:200px}}
+
+/* Estados vacios: dejan de ser una frase suelta y dicen que hacer. */
+.mc-empty{background:var(--card);border:1px dashed var(--border-s,#DCD6C9);border-radius:var(--pw-radius-card);padding:34px 26px;text-align:center}
+.mc-empty-ic{width:42px;height:42px;border-radius:12px;background:var(--pw-niebla-3,#EFE9DD);color:var(--pw-bosque);display:grid;place-items:center;margin:0 auto 14px}
+.mc-empty-ic svg{width:20px;height:20px}
+.mc-empty-t{font-family:var(--ser);font-size:16px;font-weight:600;color:var(--carbon);margin:0 0 6px;letter-spacing:-.3px}
+.mc-empty-s{font-size:12.5px;color:var(--muted);line-height:1.6;max-width:42ch;margin:0 auto}
+.mc-empty .cp-btn{margin-top:16px}
 </style>
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <title>Pathway Multi-Coach</title>
@@ -2152,8 +2172,10 @@ function mcBoot(){
         // Convertido a dueño con sesión vieja: refrescamos mj_user y cargamos SU red.
         try{ var mu=JSON.parse(localStorage.getItem('mj_user')||'{}'); mu.rol='owner'; mu.org_id=f.org_id||mu.org_id||null; if(f.nombre)mu.nombre=f.nombre; if(f.foto_url)mu.foto_url=f.foto_url; if(f.configuracion)mu.configuracion=f.configuracion; localStorage.setItem('mj_user',JSON.stringify(mu)); u=mu; }catch(e){ u=f; }
         mcLoadReal(u);
-      } else if(f.rol==='coach'&&f.org_id){
-        // Un coach DE la red no gestiona acá: su mundo es su panel de siempre.
+      } else if(f.rol==='coach'){
+        // Un coach no gestiona acá: su mundo es su panel de siempre. Da igual si
+        // pertenece a una red o es un coach individual de Pathway que llego a
+        // esta URL — manda su cuenta, no la puerta por la que entro.
         window.location.href='panel-v2.html?v='+Date.now();
       } else if(f.rol==='colaborador'&&f.org_id){
         // Colaborador: entra a MultiCoach con los modulos que le dio el dueño.
@@ -2307,7 +2329,16 @@ function _bars(rows){return rows.map(function(r){return '<div style="display:fle
 // Empty-state honesto para las fichas (modo REAL): mismo look de tarjeta, sin
 // datos inventados. Igual criterio que el dashboard: mejor "sin datos aún" que
 // una maqueta que parece real.
-function _mcEmptyCard(t,s){return '<div class="cp-card cp-card-pad"><h3 class="cp-card-title">'+_mcEsc(t)+'<span class="dot">.</span></h3><div style="font-size:12.5px;color:var(--pw-text-soft);margin:8px 0 0;line-height:1.55">'+_mcEsc(s||'')+'</div></div>';}
+// Estado vacio del sistema visual: icono, que es, y —cuando hay algo que
+// hacer— el boton para hacerlo. Antes era un parrafo suelto en una tarjeta.
+function _mcEmptyCard(t,sub,cta){
+  return '<div class="mc-empty">'
+    +'<div class="mc-empty-ic">'+PWI.svg((cta&&cta.ic)||'sprout',{sm:true})+'</div>'
+    +'<h3 class="mc-empty-t">'+_mcEsc(t)+'</h3>'
+    +'<p class="mc-empty-s">'+_mcEsc(sub||'')+'</p>'
+    +((cta&&cta.txt&&cta.on)?('<button class="cp-btn cp-btn-primary" onclick="'+_mcEsc(cta.on)+'">'+_mcEsc(cta.txt)+'</button>'):'')
+    +'</div>';
+}
 // Indicador honesto: estas secciones (plan/progreso) las ve el cliente en su
 // portal por diseño. Antes había un toggle que solo mostraba un toast y no
 // persistía nada (parecía que podías ocultarlo, pero no) — se saca.
@@ -2798,7 +2829,7 @@ function _renderCoachFicha(){
    +'<button class="cp-btn cp-btn-ghost" data-coach-id="'+_mcEsc(c.id)+'" onclick="if(this.dataset.coachId)mcServiciosModal(this.dataset.coachId)">'+PWI.svg('creditCard',{sm:true})+' Servicios y precios ('+(c.servicios?c.servicios.length:0)+')</button>'
    +(c.esOwner?'':'<button class="cp-btn cp-btn-ghost" onclick="_goCoachTab(\'mensajes\')"><span class="cp-emo">'+PWI.svg('chat',{sm:true})+'</span> Enviar mensaje</button>')
    +(c.esOwner?'':_mcContactBtn(c.tel,c.email))
-   +(c.esOwner?('<a class="cp-btn cp-btn-primary" href="panel-v2.html" style="text-decoration:none">'+PWI.svg('user',{sm:true})+' Entrar a mi panel de coach</a>'
+   +(c.esOwner?('<a class="cp-btn cp-btn-primary" href="panel-v2.html?coach=1" style="text-decoration:none">'+PWI.svg('user',{sm:true})+' Entrar a mi panel de coach</a>'
    +'<div style="font-size:11.5px;color:var(--soft);line-height:1.4">Tu agenda, tu link de reserva y tus clientes como coach viven en tu panel de siempre. Eres el dueño de la red y puedes atender clientes como un coach más; para cambiar quién es el dueño, se hace desde el panel admin.</div>'):(''
    +'<div style="display:flex;align-items:center;gap:8px;font-size:12px;margin-bottom:2px"><span style="color:var(--soft)">Tipo</span><select class="inp" style="height:30px;flex:1;font-size:12.5px" data-coach-id="'+_mcEsc(c.id)+'" onchange="_setCoachRol(this.dataset.coachId,this.value)"><option value="coach"'+(c.tipo!=='colaborador'?' selected':'')+'>Coach (da clases)</option><option value="colaborador"'+(c.tipo==='colaborador'?' selected':'')+'>Colaborador</option></select></div>'
    +'<div style="margin-top:2px;padding-top:8px;border-top:1px solid rgba(45,106,79,.12)"><div style="font-size:11px;font-weight:700;letter-spacing:.3px;text-transform:uppercase;color:var(--soft);margin-bottom:5px">Capacidades en Pathway</div><div style="font-size:11px;color:var(--soft);margin:-2px 0 5px;line-height:1.45">Son de su panel de coach. El acceso a <b>MultiCoach</b> se marca en la pestaña <a href="#" onclick="_goCoachTab(\'acceso\');return false" style="color:var(--pw-bosque)">Acceso</a>.</div>'
@@ -3200,8 +3231,8 @@ function invitarCoach(){
 /* ===== ETAPA 3 — Comunidad / Revista + gaming (solo edita el responsable) ===== */
 var DBCOM={
  posts:[
-  {id:'p1',time:'hace 2 horas',txt:'¡Qué increíble fue el evento del sábado! 💪 Gracias a todos por participar.',emo:'🤸',foto:'https://images.unsplash.com/photo-1534438327276-14e5300c3a48?auto=format&fit=crop&w=600&q=65',r:{'❤️':23,'🔥':15,'💪':8}},
-  {id:'p2',time:'hace 1 día',txt:'Nueva clase de movilidad los martes 19h con Andrea 🧘 ¡Anótate!',emo:'🧘',foto:'https://images.unsplash.com/photo-1518611012118-696072aa579a?auto=format&fit=crop&w=600&q=65',r:{'❤️':12,'👏':9}}
+  {id:'p1',time:'hace 2 horas',ti:'El evento del sábado fue increíble',dest:true,txt:'Gracias a todos por participar 💪 Subimos las fotos y el resumen de la jornada. El próximo lo armamos entre todos.',emo:'🤸',foto:'https://images.unsplash.com/photo-1534438327276-14e5300c3a48?auto=format&fit=crop&w=600&q=65',r:{'❤️':23,'🔥':15,'💪':8}},
+  {id:'p2',time:'hace 1 día',ti:'Nueva clase de movilidad',txt:'Los martes a las 19h con Andrea 🧘 Cupo limitado — anótate desde tu portal.',emo:'🧘',foto:'https://images.unsplash.com/photo-1518611012118-696072aa579a?auto=format&fit=crop&w=600&q=65',r:{'❤️':12,'👏':9}}
  ],
  avisos:[
   {id:'a1',para:'clientes',txt:'Recuerda traer toalla y botella. El lunes cerramos a las 14h.'},
@@ -3504,11 +3535,20 @@ function _fillCom(){
  var _brandNm=(MC_REAL&&MC_ORG&&MC_ORG.nombre)?MC_ORG.nombre:(_mcBrand().nombre||'Gym Boutique');
  var _brandIni=_mcIni(_brandNm);
  if(t==='revista'){
-  if(!DBCOM.posts.length){ box.innerHTML=_mcEmptyCard('Tu revista está en blanco','Publica el primer aviso, foto o novedad para tu red — lo ven todos tus coaches y clientes.'); return; }
-  box.innerHTML='<div class="revista">'+DBCOM.posts.map(function(p){return '<div class="post"><div class="ph"><div class="a">'+_mcEsc(_brandIni)+'</div><div><b>'+_mcEsc(_brandNm)+'</b><small>'+p.time+'</small></div></div>'
-   +'<div class="msg">'+p.txt+'</div>'
-   +'<div class="feat"'+(p.real?(' data-pid="'+_mcEsc(p.id)+'"'):'')+'><div class="img"><span class="emo">'+p.emo+'</span>'+(p.foto?'<img src="'+p.foto+'" alt="" loading="lazy" onerror="this.style.display=\'none\'">':'')+'</div>'
-   +'<div class="react">'+Object.keys(p.r).map(function(e){return '<button class="rb" data-emoji="'+_mcEsc(e)+'" onclick="react(this,this.dataset.emoji)">'+e+' <b>'+p.r[e]+'</b></button>';}).join('')+'</div></div></div>';}).join('')+'</div>';
+  if(!DBCOM.posts.length){ box.innerHTML=_mcEmptyCard('Tu revista está en blanco','Publica la primera novedad, foto o aviso de tu red. Lo ven todos tus coaches y tus clientes.',{ic:'newspaper',txt:'Publicar la primera',on:'_comAdd()'}); return; }
+  var _card=function(p){
+   var dest=!!p.dest;
+   return '<article class="post'+(dest?' is-dest':'')+'">'
+    +(dest?'<span class="post-dest">'+PWI.svg('star',{sm:true})+' Destacado</span>':'')
+    +'<div class="ph"><div class="a">'+_mcEsc(_brandIni)+'</div><div><b>'+_mcEsc(_brandNm)+'</b><small>'+_mcEsc(p.time||'')+'</small></div></div>'
+    +(p.ti?('<h3 class="post-ti">'+_mcEsc(p.ti)+'</h3>'):'')
+    +(p.txt?('<div class="msg">'+p.txt+'</div>'):'')
+    +'<div class="feat"'+(p.real?(' data-pid="'+_mcEsc(p.id)+'"'):'')+'><div class="img"><span class="emo">'+p.emo+'</span>'+(p.foto?'<img src="'+p.foto+'" alt="" loading="lazy" onerror="this.style.display=\'none\'">':'')+'</div>'
+    +'<div class="react">'+Object.keys(p.r).map(function(e){return '<button class="rb" data-emoji="'+_mcEsc(e)+'" onclick="react(this,this.dataset.emoji)">'+e+' <b>'+p.r[e]+'</b></button>';}).join('')+'</div></div></article>';
+  };
+  // Lo destacado primero y a ancho completo; el resto en la rejilla.
+  var _ord=DBCOM.posts.slice().sort(function(a,b){ return (b.dest?1:0)-(a.dest?1:0); });
+  box.innerHTML='<div class="revista">'+_ord.map(_card).join('')+'</div>';
   return;
  }
  if(t==='avisos'){
@@ -3557,7 +3597,9 @@ function _postPrev(){
   var tx=((document.getElementById('np-t')||{}).value||'').trim();
   var url=((document.getElementById('np-f')||{}).value||'').trim();
   var msg=document.getElementById('pp-msg');
-  if(msg){ var h=''; if(ti)h+='<b>'+_mcEsc(ti)+'</b><br>'; h+=(tx?_mcEsc(tx).replace(/\n/g,'<br>'):(ti?'':'<span style="color:var(--muted)">Tu texto aparecerá acá…</span>')); msg.innerHTML=h; }
+  var tiEl=document.getElementById('pp-ti');
+  if(tiEl){ tiEl.textContent=ti||''; tiEl.style.display=ti?'':'none'; }
+  if(msg){ msg.innerHTML=(tx?_mcEsc(tx).replace(/\n/g,'<br>'):(ti?'':'<span style="color:var(--muted)">Tu texto aparecerá acá…</span>')); }
   var img=document.getElementById('pp-img'); var src=_dzData||url;
   if(img){ if(src){img.src=src;img.style.display='block';} else {img.style.display='none';} }
 }
@@ -3586,10 +3628,12 @@ function _nuevaPost(){
   // Vista previa compacta (imagen más baja para que no crezca de más).
   var prev='<div class="revista" style="grid-template-columns:1fr;margin-bottom:14px"><div class="post" style="margin:0">'
     +'<div class="ph"><div class="a">'+_mcEsc(_brandIni)+'</div><div><b>'+_mcEsc(_brandNm)+'</b><small>recién · vista previa</small></div></div>'
+    +'<h3 class="post-ti" id="pp-ti" style="display:none"></h3>'
     +'<div class="msg" id="pp-msg"><span style="color:var(--muted)">Tu texto aparecerá acá…</span></div>'
     +'<div class="feat"><div class="img" style="height:120px"><span class="emo" id="pp-emo">📸</span><img id="pp-img" alt="" loading="lazy" style="display:none"></div>'
     +'<div class="react"><button class="rb" type="button" onclick="return false">❤️ <b>0</b></button></div></div></div></div>';
   var fields='<div><span class="lbl">Título (opcional)</span><input id="np-title" class="inp" placeholder="Ej. ¡Nueva clase esta semana!" oninput="_postPrev()"></div>'
+    +'<label style="display:flex;align-items:center;gap:8px;margin-top:9px;font-size:12.5px;cursor:pointer"><input type="checkbox" id="np-dest" style="width:16px;height:16px;accent-color:var(--pw-bosque);cursor:pointer">Destacar en la revista <span style="color:var(--soft)">— sale primero y a ancho completo</span></label>'
     +'<div style="margin-top:9px"><span class="lbl">Texto</span><textarea id="np-t" class="inp" style="min-height:72px;resize:vertical" placeholder="Escribe tu publicación…" oninput="_postPrev()"></textarea></div>'
     +'<div style="margin-top:9px"><span class="lbl">Foto (opcional)</span>'
     +'<div id="np-drop" class="dropz" ondragover="_dzOver(event)" ondragleave="_dzLeave(event)" ondrop="_dzDrop(event)" onclick="document.getElementById(\'np-file\').click()"><input type="file" id="np-file" accept="image/*,.pdf,.doc,.docx" style="display:none" onchange="_dzFiles(this.files)"><span id="np-dztext">'+PWI.svg('paperclip',{sm:true})+' Arrastra una foto acá, o toca para elegir</span><br><img id="np-prev" alt="" style="display:none;max-height:110px;border-radius:10px;margin-top:8px"></div>'
@@ -3600,21 +3644,25 @@ function _nuevaPost(){
       var tx=document.getElementById('np-t').value.trim();
       if(!tx&&!ti){__toast('Escribe un título o texto');return;}
       var f=_dzData||document.getElementById('np-f').value.trim();
-      var body=''; if(ti)body+='<b>'+_mcEsc(ti)+'</b><br>'; body+=_mcEsc(tx).replace(/\n/g,'<br>');
+      var dest=!!(document.getElementById('np-dest')||{}).checked;
+      // El titulo se metia dentro del cuerpo como '<b>…</b><br>' y NUNCA se
+      // enviaba en su propio campo, aunque `comunidad-red` lo acepta y
+      // `posts_red.titulo` existe. Por eso el feed no podia darle jerarquia.
+      var body=_mcEsc(tx).replace(/\n/g,'<br>');
       if(_dzName&&!_dzData)body+=' 📎 '+_mcEsc(_dzName);
       // Red real → se guarda en Supabase (comunidad-red) y les llega a coaches y
       // clientes en su portal. Demo (prospecto) → queda local, nunca en blanco.
       if(MC_REAL&&MC_ORG&&MC_ORG.id){
         __mclose();__toast('Publicando…');
         _hdr({'Content-Type':'application/json'}).then(function(h){
-          return fetch(SB+'/functions/v1/comunidad-red',{method:'POST',headers:h,body:JSON.stringify({action:'publish',body:body,foto:f,emo:_postEmo||'📸',para:'todos'})});
+          return fetch(SB+'/functions/v1/comunidad-red',{method:'POST',headers:h,body:JSON.stringify({action:'publish',titulo:ti,body:body,foto:f,emo:_postEmo||'📸',para:'todos',data:{destacado:dest}})});
         }).then(function(r){return r.ok?r.json():null;}).then(function(d){
           if(d&&d.ok){ __toast('Publicado en la revista ✓'); _mcPostsLoaded=false; _comTab='revista'; renderComunidad(); }
           else { __toast('No se pudo publicar. Reintenta'); }
         }).catch(function(){ __toast('Error de conexión. Reintenta'); });
         return;
       }
-      DBCOM.posts.unshift({id:'p'+DBCOM.posts.length+'x',time:'recién',txt:body,emo:_postEmo||'📸',foto:f,r:{'❤️':0}});
+      DBCOM.posts.unshift({id:'p'+DBCOM.posts.length+'x',time:'recién',ti:ti,dest:dest,txt:body,emo:_postEmo||'📸',foto:f,r:{'❤️':0}});
       __mclose();__toast('Publicado en la revista ✓');_comTab='revista';renderComunidad();});
   _postLoad(); // arranca mostrando la 1ª plantilla en el carrusel
 }
@@ -3633,7 +3681,12 @@ function _mcLoadPosts(cb){
         if(tipo==='aviso'){ A.push({id:p.id,para:(p.para==='coaches'?'coaches':'clientes'),txt:p.body||''}); }
         else if(tipo==='clase'){ C.push({id:p.id,nombre:p.body||'',dia:data.dia||'—',hora:data.hora||'—',coach:data.coach||'',cupo:data.cupo||'0/12'}); }
         else if(tipo==='reto'){ R.push({id:p.id,nombre:p.body||'',emo:p.emo||'🎯',pts:+data.pts||50,parti:+data.parti||0,prog:+data.prog||0}); }
-        else { var txt=(p.titulo?('<b>'+_mcEsc(p.titulo)+'</b><br>'):'')+(p.body||''); var rc=(p.reacts&&typeof p.reacts==='object'&&Object.keys(p.reacts).length)?p.reacts:{'❤️':0}; P.push({id:p.id,time:_mcAgo(p.created_at),txt:txt,emo:p.emo||'📸',foto:p.foto||'',r:rc,real:true}); }
+        else { var rc=(p.reacts&&typeof p.reacts==='object'&&Object.keys(p.reacts).length)?p.reacts:{'❤️':0};
+          // El titulo venia pegado dentro del cuerpo como '<b>…</b><br>', asi que el
+          // feed no podia darle jerarquia propia y todo se leia como un bloque plano.
+          // Ahora viaja aparte. `destacado` vive en `data`, la columna jsonb que YA
+          // existe en posts_red: sin DDL y sin una segunda infraestructura.
+          P.push({id:p.id,time:_mcAgo(p.created_at),ti:(p.titulo||''),txt:(p.body||''),emo:p.emo||'📸',foto:p.foto||'',r:rc,real:true,dest:!!data.destacado}); }
       });
       DBCOM.posts=P; DBCOM.avisos=A; DBCOM.clases=C; DBCOM.retos=R;
     }

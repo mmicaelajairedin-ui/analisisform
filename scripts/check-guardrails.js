@@ -5043,8 +5043,19 @@ const RULES = [
       if (!s) return null;
       if (!/function mcBoot\(\)[\s\S]{0,3000}rest\/v1\/usuarios\?id=eq\./.test(s))
         return "multicoach.html: mcBoot ya no verifica el rol fresco contra el servidor (usuarios?id=eq.) → un dueño con mj_user viejo vuelve a ver la maqueta 'Alex'.";
-      if (!/rol==='coach'&&f\.org_id[\s\S]{0,200}panel-v2\.html/.test(s))
-        return "multicoach.html: mcBoot ya no manda al coach de una red a SU panel (panel-v2.html).";
+      // Se ampliO: antes solo se devolvia al coach CON org_id; ahora a cualquier
+      // coach, tenga red o no. Manda la cuenta, no la puerta por la que entro.
+      if (!/rol==='coach'[\s\S]{0,400}panel-v2\.html/.test(s))
+        return "multicoach.html: mcBoot ya no manda al coach a SU panel (panel-v2.html).";
+      // Y la vuelta: un dueno que abre el panel del coach vuelve a su red, salvo
+      // que lo haya pedido a proposito (?coach=1 desde MultiCoach).
+      const pan = read("panel-v2.html");
+      if (pan) {
+        if (!/rol==="owner"[\s\S]{0,160}location\.replace\("multicoach\.html/.test(pan))
+          return "panel-v2.html: un dueno logueado ya no vuelve a su red (multicoach.html).";
+        if (!/\[?\?&\]\(demo\|embed\|coach\)=1/.test(pan) && !/demo\|embed\|coach/.test(pan))
+          return "panel-v2.html: se perdio la excepcion ?coach=1 — el dueno no podria usar su propio panel de coach.";
+      }
       if (!/function _mcPaintOwner\(/.test(s) || !/_mcPaintOwner\(owner\)/.test(s))
         return "multicoach.html: mcLoadReal ya no pinta la identidad real del dueño al instante (_mcPaintOwner) → vuelve el flash de 'Alex Gómez'.";
       if (/MC_REAL=false;\s*mcApplyNiche\(\)/.test(s))

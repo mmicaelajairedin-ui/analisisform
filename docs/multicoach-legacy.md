@@ -295,3 +295,53 @@ Consecuencia: la suite de Playwright de este repositorio llevaba tiempo sin
 ejecutar nada, lo que explica que «los tests estén verdes» no significara nada.
 No se ha tocado el archivo — es de iOS, no de MultiCoach. Arreglarlo (moverlo a
 un runner de Jest o reescribirlo con la API de Playwright) es una tarea aparte.
+
+---
+
+## 9. P2 aparcado — página pública, slug, dominio y white-label (fase 2)
+
+Estado REAL a septiembre de 2026, sin implementar nada:
+
+| Pieza | Hoy | Falta |
+|---|---|---|
+| UI de página pública | Existe (`Configuración → Perfil`: activar, nombre, slug, título, descripción) | — |
+| Persistencia | Guarda en `organizaciones.marca` (jsonb) | — |
+| URL pública `/g/<slug>` | **La UI la promete y nadie la sirve** | Servir la ruta |
+| Columna `organizaciones.slug` | Existe, vacía | Rellenarla desde `marca.slug` |
+| Columna `organizaciones.dominio` | Existe, vacía y sin consumidores | Todo |
+| White-label de marca | **Funciona**: color, color2, tipografía, logo y recursos se aplican al cargar la red | — |
+| Dominio propio por organización | No existe | Todo |
+
+Decisión tomada: queda como **P2**. Cuando se retome, definir en este orden —
+página pública de la organización, slug, dominio, white-label y flujo del
+cliente. **No convertirlo en una landing comercial de Pathway**: la página
+pública de MultiCoach es la de la ORGANIZACIÓN cliente, no la de Pathway.
+
+⚠️ Mientras tanto la UI sigue enseñando `pathwaycareercoach.com/g/<slug>` como
+si funcionara. Es lo único deshonesto que queda en Configuración.
+
+## 10. Estados de suscripción de una organización (fase 2)
+
+Lo que el webhook de Stripe puede escribir en `organizaciones`:
+
+| Estado en Stripe | `estado_sub` | `activo` |
+|---|---|---|
+| `trialing`, `incomplete` | `prueba` | `true` |
+| `active`, **`past_due`** | `activa` | `true` |
+| `canceled` | `cancelada` | `false` |
+| `unpaid`, `incomplete_expired` | `vencida` | `false` |
+
+**El período de gracia ya existe y no hace falta DDL**: `past_due` (Stripe
+reintentando el cobro) se mapea a `activa`+`activo=true`. El estado terminal es
+`unpaid` → `vencida`+`activo=false`.
+
+Lo que **no** existe: nadie fuera de MultiCoach lee `organizaciones.activo` /
+`estado_sub`. El coach y el cliente siguen operando con la organización
+bloqueada. La policy `org_coach_select` YA permite que un coach lea la fila de
+SU organización por `auth.uid()`, así que el aviso y el corte del coach no
+necesitan tabla, columna ni policy nueva. Para el **cliente** sí hay hueco: lee
+`candidatos`, no `organizaciones`.
+
+⚠️ Dato real: **4 de 6 organizaciones no tienen `fecha_fin_prueba`**, y una está
+vencida desde el 12-08-2026 con `activo=true`. Sin esa fecha,
+`_mcPaywallCheck()` no avisa ni corta: hoy están en prueba indefinida.

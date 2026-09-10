@@ -401,3 +401,80 @@ test.describe('MultiCoach · rendimiento', () => {
     expect(tinte).not.toMatch(/82,\s*183,\s*136/);
   });
 });
+
+/**
+ * FASE 2 — Comunidad. El titulo del post existia en el formulario y en la base
+ * (`posts_red.titulo`), pero al publicar se metia dentro del cuerpo como
+ * '<b>…</b><br>' y nunca se enviaba en su campo: el feed no podia darle
+ * jerarquia y todo se leia como un bloque plano.
+ */
+test.describe('MultiCoach · Comunidad visual', () => {
+  test('el post publica titulo y destacado en sus propios campos', async ({ page }) => {
+    // OJO: aqui NO se quitan comentarios. Un `/*` de CSS emparejaba con un `*/`
+    // muy posterior y el filtro se llevaba por delante el 20% del fichero, este
+    // bloque incluido. Estos patrones son de codigo y no aparecen en prosa.
+    const src = await (await fetch(`${BASE}multicoach.html`)).text();
+    // Se envia `titulo` aparte y `destacado` dentro de `data` (jsonb que ya existe).
+    expect(src).toMatch(/action:'publish',titulo:ti/);
+    expect(src).toMatch(/data:\{destacado:dest\}/);
+    // Y ya no se incrusta en el cuerpo al publicar.
+    expect(src).not.toMatch(/body\+='<b>'\+_mcEsc\(ti\)/);
+    // Ninguna tabla nueva: sigue siendo posts_red via comunidad-red.
+    expect(src).not.toMatch(/rest\/v1\/posts_red/);
+    expect(src).toMatch(/functions\/v1\/comunidad-red/);
+  });
+
+  test('el feed da jerarquia al titulo y destaca a ancho completo', async ({ page }) => {
+    await page.goto(MC(), { waitUntil: 'load' });
+    await page.waitForTimeout(900);
+    await ir(page, 'comunidad');
+    await page.waitForTimeout(500);
+    const cards = await page.$$eval('.revista .post', els => els.map(e => ({
+      ti: (e.querySelector('.post-ti') || {}).textContent || '',
+      dest: e.classList.contains('is-dest'),
+      badge: !!e.querySelector('.post-dest'),
+    })));
+    expect(cards.length).toBeGreaterThan(0);
+    expect(cards.some(c => c.ti.trim().length > 0), 'ningun post muestra titulo').toBe(true);
+    const d = cards.filter(c => c.dest);
+    expect(d.length, 'no hay ningun destacado').toBeGreaterThan(0);
+    d.forEach(c => expect(c.badge).toBe(true));
+    // El destacado ocupa toda la fila.
+    const ancho = await page.evaluate(() => {
+      const g = document.querySelector('.revista'), d = document.querySelector('.revista .post.is-dest');
+      if (!g || !d) return null;
+      return Math.round(d.getBoundingClientRect().width) >= Math.round(g.getBoundingClientRect().width) - 2;
+    });
+    expect(ancho).toBe(true);
+    // El titulo se lee en la serif, no en el mismo cuerpo que el texto.
+    const fuente = await page.evaluate(() => {
+      const t = document.querySelector('.revista .post-ti');
+      return t ? getComputedStyle(t).fontFamily : '';
+    });
+    expect(fuente.toLowerCase()).toMatch(/fraunces|georgia|serif/);
+  });
+});
+
+/**
+ * FASE 2 — decision 8: `owner-settings.html` es del carril C retirado y ofrecia
+ * "Conectar" para Calendly, Stripe y Zapier sin ningun backend. Sale de
+ * circulacion sin borrar el fichero.
+ */
+test.describe('MultiCoach · integraciones honestas', () => {
+  test('owner-settings no es alcanzable y no ofrece conexiones falsas', async ({ page }) => {
+    const redirects = await (await fetch(`${BASE}_redirects`)).text();
+    expect(redirects).toMatch(/\/owner-settings\.html\s+\/multicoach\.html#config\s+301/);
+    const src = await (await fetch(`${BASE}owner-settings.html`)).text();
+    expect(src).toMatch(/CARRIL C RETIRADO/);
+    expect(src).toMatch(/location\.replace\('\/multicoach\.html#config'\)/);
+    expect(src).toMatch(/name="robots" content="noindex/);
+  });
+
+  test('MultiCoach no promete integraciones que no existen', async ({ page }) => {
+    const src = await (await fetch(`${BASE}multicoach.html`)).text();
+    const sinComentarios = src.replace(/^\s*\/\/.*$/gm, '').replace(/\/\*[\s\S]*?\*\//g, '');
+    for (const falsa of ['Zapier', 'Mailchimp', 'HubSpot']) {
+      expect(sinComentarios, `MultiCoach anuncia ${falsa}`).not.toContain(falsa);
+    }
+  });
+});
