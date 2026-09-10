@@ -16,6 +16,12 @@
 - **BLOCKED:** Depende de otro trabajo previo
 - **OUT_OF_SCOPE:** Pertenece a otra rama/módulo
 
+> ⚠️ **Al crear un ID nuevo:** `check-error-scope.js` parsea la cabecera con
+> `/^([A-Z]+-\d{3})/`. `[A-Z]+` **no admite dígitos**, así que un ID como
+> `ERR-I18N-001` se ignora EN SILENCIO y la entrada nunca aparece en el audit
+> de scope. Usar sólo letras en el segmento del medio (`ERR-LANG-001`) hasta
+> que se amplíe el regex.
+
 **Principio:** STATIC ≠ RUNTIME ≠ E2E ≠ VERIFIED (ver ERROR-STATES.md)
 
 ---
@@ -902,6 +908,99 @@ reales** — fuera del alcance autorizado de RC-14.
 
 ---
 
+## ERR-LANG-001: "Coach de Carrera" no se traduce en el chip del header
+
+**Estado:** DETECTED
+**Fecha detectado:** 2026-09-09
+**Severity:** LOW
+
+### Scope Metadata
+- **Module:** `i18n`
+- **Scope Type:** `MODULE_SPECIFIC`
+- **Scope Belongs To:** `claude/i18n-panel-chip`
+- **Blocking Scope:** `other`
+- **Blocks Current Branch:** No
+
+### Síntoma
+Con el panel en inglés, el chip de usuario (arriba a la derecha) muestra
+"COACH DE CARRERA" mientras el sidebar sí dice "Career Coach".
+
+### Categoría
+`I18N` · `COSMETIC`
+
+### Root Cause
+**Desconocida.** Se descartaron las cuatro causas obvias: la clave existe en el
+diccionario (`pw-i18n-panel.js:472`), el nodo no tiene `data-no-i18n` en ningún
+ancestro, su cadena (`small < span < button < div`) no toca `SKIP_TAGS`, y el
+MutationObserver observa `childList + subtree + characterData`. No se parchea a
+ciegas: requiere investigar el orden de render de ese chip.
+
+### Estado del resto
+Auditoría sobre el DOM real: 17 textos en castellano -> 7, y 6 de esos 7 son
+nombres de clientes (datos). Ver commit del fix de RULES.
+
+---
+
+## ERR-CURRENCY-001: Faltan monedas de Centroamérica y Caribe
+
+**Estado:** DETECTED
+**Fecha detectado:** 2026-09-09
+**Severity:** MEDIUM
+
+### Scope Metadata
+- **Module:** `cobros`
+- **Scope Type:** `MODULE_SPECIFIC`
+- **Scope Belongs To:** `claude/monedas-latam`
+- **Blocking Scope:** `other`
+- **Blocks Current Branch:** No
+
+### Síntoma
+`PW_MONEDAS` (panel-v2.html) ofrece 12 monedas y **ninguna** es lempira
+hondureño (HNL), quetzal (GTQ), colón costarricense (CRC) ni peso dominicano
+(DOP) — mercados con coaches y clientes reales hoy.
+
+### Categoría
+`GAP` · `COBROS`
+
+### Por qué no se arregló en el mismo sprint
+Sumar una moneda la estampa en cada servicio (`_stampMoneda`) y por lo tanto
+**toca el checkout de Stripe**. Requiere confirmar antes qué monedas de
+presentación soporta la cuenta Connect; hacerlo a ciegas puede romper cobros.
+
+### Relacionado
+El formato de dinero del panel ya respeta `RCFG.moneda` (ver ERR/commit del
+arreglo de `_pwMoney`), así que al sumar monedas no hay nada más que tocar en
+la vista.
+
+---
+
+## ERR-ONBOARD-001: "Añade tu primer cliente" con 10 clientes activos
+
+**Estado:** DETECTED
+**Fecha detectado:** 2026-09-09
+**Severity:** LOW
+
+### Scope Metadata
+- **Module:** `onboarding`
+- **Scope Type:** `MODULE_SPECIFIC`
+- **Scope Belongs To:** `claude/onboarding-next-step`
+- **Blocking Scope:** `other`
+- **Blocks Current Branch:** No
+
+### Síntoma
+En el Resumen, el bloque "Start here" muestra `NEXT STEP: First client` y `1/3`
+mientras el KPI de al lado dice `Active clients: 10` y el sidebar
+`Gold medal · 10 clients`. Contradicción en la misma pantalla.
+
+### Categoría
+`UX` · `DATA_CONSISTENCY`
+
+### Pendiente de confirmación
+Detectado en **modo demo**. Falta confirmar si se reproduce en la cuenta real
+antes de tocar la lógica del onboarding.
+
+---
+
 ---
 
 ## ESTADO RESUMEN
@@ -922,6 +1021,9 @@ reales** — fuera del alcance autorizado de RC-14.
 | **ERR-CLIPROG-001** | **FIXED / TESTED** | **HIGH** | **cliente** | ✅ | ❌ |
 | **ERR-CLIPROG-002** | **FIXED / TESTED** | **MEDIUM** | **cliente** | ✅ | ❌ |
 | **ERR-CLIPROG-003** | **FIXED / TESTED** | **HIGH** | **cliente** | ✅ | ❌ |
+| **ERR-LANG-001** | **DETECTED** | **LOW** | **i18n** | ❌ | ❌ |
+| **ERR-CURRENCY-001** | **DETECTED** | **MEDIUM** | **cobros** | ❌ | ❌ |
+| **ERR-ONBOARD-001** | **DETECTED** | **LOW** | **onboarding** | ❌ | ❌ |
 | **ERR-CLIPROG-004** | **FIXED / TESTED** | **HIGH** | **cliente** | ✅ | ❌ |
 | **ERR-EMAIL-RECORDATORIO** | **DETECTED** | **LOW** | **email** | ❌ | ❌ |
 | **INC-039** | **FIXED** | **MEDIUM** | **multicoach** | ✅ | ❌ |

@@ -5578,6 +5578,74 @@ const RULES = [
     },
   },
   {
+    name: "i18n: los textos que el panel ARMA concatenando tambien se traducen",
+    bug: "Con el panel en ingles convivian en la MISMA pantalla 'Buenas noches, " +
+         "Micaela', '1/3 completados' y 'Medalla oro · 10 clientes' con 'Start " +
+         "here' y 'My business'. No era texto sin traducir: el diccionario de " +
+         "pw-i18n-panel.js es coincidencia EXACTA del nodo de texto completo, y " +
+         "esos strings se arman con un numero o un nombre en el medio, asi que " +
+         "nunca coinciden con una clave. Se cubren con RULES (regex anclada), que " +
+         "es el mecanismo previsto para eso. Auditoria en el DOM real: 17 textos " +
+         "en castellano -> 7, y los 7 son nombres de clientes menos uno.",
+    check() {
+      const s2 = read("pw-i18n-panel.js");
+      if (!s2) return null;
+      const i = s2.indexOf("var RULES = [");
+      if (i < 0) return "pw-i18n-panel.js: desaparecio RULES — vuelven los huecos en los textos con numeros.";
+      const blk = s2.slice(i, s2.indexOf("];", i));
+      const need = [
+        ["Buenas noches, ", "el saludo dinamico"],
+        ["completados", "el contador 'N/M completados'"],
+        ["Medalla oro", "la medalla con cantidad de clientes"],
+        ["Hoy tienes", "el resumen de seguimientos/informes"],
+      ];
+      for (const [frag, que] of need)
+        if (blk.indexOf(frag) < 0)
+          return "pw-i18n-panel.js: RULES ya no cubre " + que + " (" + frag + ") — vuelve el idioma mezclado.";
+      return null;
+    },
+  },
+  {
+    name: "gym: el dato del cliente se muestra actualizado y sin falso 'lo cambio'",
+    bug: "El cliente registra en texto libre lo que hizo ('4x15 con 60lbs') y el " +
+         "coach lo habia cargado como '4x15 · 60 lb'. Se comparaban los strings " +
+         "CRUDOS (_rl.m !== e.meta), asi que el MISMO dato escrito distinto se " +
+         "marcaba '✎ lo cambio' y el panel mostraba el plan tachado -> el real: la " +
+         "coach veia dos veces el mismo numero y creia que el dato no se habia " +
+         "actualizado (caso real: Rosman Dubon, 'Chest flyes en maquina'). Fix: se " +
+         "compara normalizado (_metaEq: solo numeros/serie NxM, unidad solo si " +
+         "AMBOS lados la declaran) y se muestra el dato del CLIENTE al frente sin " +
+         "tachar, con la chapita '✎ lo cambio' que despliega el plan original.",
+    check() {
+      for (const f of ["panel-v2.html", "pathway-fit-cliente.html"]) {
+        const s2 = read(f);
+        if (!s2) continue;
+        if (!/function _metaEq\(/.test(s2) || !/function _metaNum\(/.test(s2))
+          return f + ": falta _metaEq/_metaNum — vuelve la comparacion cruda de strings.";
+        if (!/function _fitChgToggle\(/.test(s2))
+          return f + ": falta _fitChgToggle — el plan original ya no se puede desplegar.";
+        // La unidad NO puede ignorarse del todo: '60 lb' vs '60 kg' ES un cambio.
+        if (!/_metaUnit\(a\)/.test(s2) || !/ua===ub/.test(s2))
+          return f + ": _metaEq dejo de comparar la unidad — '60 lb' y '60 kg' pasarian por iguales.";
+        // El render NO puede volver a comparar strings crudos para decidir el cambio.
+        if (/_rl\.m\s*!==\s*\(e\.meta/.test(s2) || /_rl\.n\s*!==\s*\(e\.nombre/.test(s2))
+          return f + ": volvio la comparacion cruda (_rl.m !== e.meta) — reaparecen los falsos 'lo cambio'.";
+      }
+      const p2 = read("panel-v2.html");
+      if (p2) {
+        const i = p2.indexOf("var _rl=FREAL[_exKeyP(e)]||null;");
+        if (i < 0) return "panel-v2.html: desaparecio el render de fit_ejercicios_real.";
+        const blk = p2.slice(i, i + 2600);
+        // El valor del cliente va SIN tachar y el plan queda plegado (hidden).
+        if (!/_chgM\?\("<span style='"\+_sNow/.test(blk))
+          return "panel-v2.html: el dato del cliente volvio a mostrarse tachado o detras del plan.";
+        if (!/class='fit-chg-det' hidden/.test(blk))
+          return "panel-v2.html: el plan original dejo de estar plegado (vuelve a salir 'de primeras').";
+      }
+      return null;
+    },
+  },
+  {
     name: "resenas: las 3 vias del portal publican en `reviews` (no se pierden)",
     bug: "El portal tiene 3 formas de dejar resena y solo 2 llegaban al perfil " +
          "publico del coach: _saveResena (la tarjeta 'Resena' con coach/plataforma) " +

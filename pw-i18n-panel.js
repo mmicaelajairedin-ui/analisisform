@@ -478,6 +478,10 @@
     "Coach creado. El email automático no salió — copia este link y mándaselo tú (con eso activa su cuenta):": "Coach created. The automatic email didn't go out — copy this link and send it to them (that activates their account):",
     "Coach creado. Le llegó el email de activación — y por las dudas, cópiale este link directo:": "Coach created. The activation email was sent — and just in case, copy this direct link for them:",
     "Coach de Carrera": "Career Coach",
+    "Medalla Oro": "Gold medal",
+    "Medalla Plata": "Silver medal",
+    "Medalla Bronce": "Bronze medal",
+    "Mándale la tarea de la semana por chat + por qué importa": "Send the week's task by chat + why it matters",
     "Coach de Fitness": "Fitness Coach",
     "Coach desactivada": "Coach deactivated",
     "Coach desactivada ✓": "Coach deactivated",
@@ -2418,7 +2422,28 @@
     [/^Cobro falló hace (\d+) d$/, 'Charge failed $1 d ago'],
     [/^Prueba · quedan (\d+) d$/, 'Trial · $1 d left'],
     [/^Vencida hace (\d+) d$/, 'Expired $1 d ago'],
-    [/^faltan (\d+) para (.+)$/, '$1 left for $2']
+    [/^faltan (\d+) para (.+)$/, '$1 left for $2'],
+    // ── Textos que el panel ARMA concatenando (auditoria visual, sept 2026) ──
+    // Se veian en castellano con el panel en ingles, en la MISMA pantalla que el
+    // resto traducido ("Buenas noches, Micaela" junto a "Start here"/"My business").
+    // No era texto sin traducir: el diccionario es coincidencia EXACTA del nodo
+    // completo, y estos se arman con un numero o un nombre en el medio, asi que
+    // nunca coinciden con una clave. Van como regla, que es el mecanismo previsto.
+    // El reemplazo puede ser una FUNCION (String.replace lo soporta): la usamos
+    // donde hace falta singular/plural.
+    [/^Buenos días, (.+)$/, 'Good morning, $1'],
+    [/^Buenas tardes, (.+)$/, 'Good afternoon, $1'],
+    [/^Buenas noches, (.+)$/, 'Good evening, $1'],
+    [/^(\d+)\/(\d+) completados$/, '$1/$2 completed'],
+    [/^Medalla oro · (\d+) clientes?$/, function(_,n){ return 'Gold medal · '+n+' client'+(n==='1'?'':'s'); }],
+    [/^Medalla plata · (\d+) clientes?$/, function(_,n){ return 'Silver medal · '+n+' client'+(n==='1'?'':'s'); }],
+    [/^Medalla bronce · (\d+) clientes?$/, function(_,n){ return 'Bronze medal · '+n+' client'+(n==='1'?'':'s'); }],
+    [/^Hoy tienes (\d+) seguimientos? · (\d+) informes? por revisar$/, function(_,a,b){
+      return 'Today you have '+a+' follow-up'+(a==='1'?'':'s')+' · '+b+' report'+(b==='1'?'':'s')+' to review'; }],
+    [/^(\d+) de Pathway · (\d+) directos?$/, '$1 from Pathway · $2 direct'],
+    [/^hace (\d+) d · Semana (\d+)$/, '$1d ago · Week $2'],
+    [/^hace (\d+) h · Semana (\d+)$/, '$1h ago · Week $2'],
+    [/^hace (\d+) min · Semana (\d+)$/, '$1min ago · Week $2']
   ];
 
   // Traduce una cadena cruda respetando espacios y (opcional) un prefijo de
