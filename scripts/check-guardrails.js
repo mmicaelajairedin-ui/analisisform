@@ -3060,25 +3060,33 @@ const RULES = [
       // Fallback a modo real vacío con aviso (no maqueta, no blanco).
       if (!/catch\(function\(\)\{[\s\S]{0,200}_apply\(null,\[\],\[\],null,\[\]\)/.test(mc))
         return "multicoach.html: mcLoadReal no queda en modo real vacío ante error (vuelve a caer a demo o blanco).";
-      // El login debe rutear al owner a su panel de red. OJO: MultiCoach se
-      // mudo a su propio dominio (pathwayplatforms.com) con handoff seguro
-      // (commit b8c3781: pathway-handoff emite un codigo de un solo uso, sin
-      // tokens en la URL). La regla vieja exigia `multicoach.html` y fallaba por
-      // una mudanza deliberada. Vale cualquiera de las dos salidas, pero UNA
-      // tiene que haber: el owner no puede quedar en el panel de coach.
-      const lg = read("login.html");
-      if (lg) {
-        const viejo = /rol\s*===\s*['"]owner['"][\s\S]{0,200}multicoach\.html/.test(lg);
-        const nuevo = /rol\s*===\s*['"]owner['"][\s\S]{0,900}pathwayplatforms\.com/.test(lg);
-        if (!viejo && !nuevo)
-          return "login.html: el owner ya no se rutea a su panel de red (ni multicoach.html ni el handoff a pathwayplatforms.com).";
-        if (nuevo) {
-          if (!/functions\/v1\/pathway-handoff/.test(lg))
-            return "login.html: el owner va a pathwayplatforms.com SIN pasar por pathway-handoff (la sesion no viaja: caeria en un login vacio).";
-          const hf = read("supabase/functions/pathway-handoff/index.ts");
-          if (!hf) return "falta supabase/functions/pathway-handoff/index.ts (sin ella el owner no puede entrar a su red).";
-        }
+      // ENTRADA UNICA (cierre MultiCoach, sept 2026). El owner tiene que llegar
+      // a multicoach.html por TODAS sus puertas. Historia: la regla original
+      // exigia multicoach.html; luego se acepto tambien el handoff a
+      // pathwayplatforms.com (commit b8c3781), y el resultado fue que el login
+      // por email mandaba al dueno a un dominio que nunca se activo mientras el
+      // de Google lo dejaba en el panel de coach: tres destinos, ninguno el
+      // producto. Ahora hay uno solo. Si algun dia se activa el dominio propio,
+      // esta regla se actualiza a la vez que el redirect — no antes.
+      // Se comparan las lineas SIN comentarios: una mencion a un dominio dentro
+      // de un comentario no es una redireccion (asi se colaba un falso verde).
+      const sinComentarios = (s) => s.replace(/^\s*\/\/.*$/gm, "").replace(/\/\*[\s\S]*?\*\//g, "");
+      for (const f of ["login.html", "login-en.html"]) {
+        const raw = read(f);
+        if (!raw) continue;
+        const lg = sinComentarios(raw);
+        if (!/rol\s*===\s*['"]owner['"][\s\S]{0,400}multicoach\.html/.test(lg))
+          return f + ": el owner ya no se rutea a multicoach.html (entrada unica de la red).";
+        if (/pathwayplatforms\.com/.test(lg))
+          return f + ": vuelve a redirigir a pathwayplatforms.com. Ese dominio no esta activado (docs/PATHWAYPLATFORMS_SETUP.md) y el dueno acaba fuera del producto.";
       }
+      // Y las otras dos puertas del dueno: tras pagar y desde el panel de coach.
+      const pl = read("pago-listo.html");
+      if (pl && /multicoach-v3\.html/.test(sinComentarios(pl)))
+        return "pago-listo.html: tras pagar se entra a multicoach-v3.html (carril retirado), no al MultiCoach oficial.";
+      const pv = read("panel-v2.html");
+      if (pv && /href='multicoach-v3\.html'/.test(sinComentarios(pv)))
+        return "panel-v2.html: 'Mi red' / demo siguen apuntando a multicoach-v3.html (carril retirado).";
       return null;
     },
   },
@@ -6009,7 +6017,10 @@ const RULES = [
         if (/t===?"fin_pres"/.test(pan)) return "panel-v2.html: volvió la pestaña fin_pres (era la de Finanzas).";
       }
       // 4) Ningún nicho vuelve a llamarse 'financiero' en el ruteo del portal.
-      for (const f of ["login.html", "auth-callback.html", "panel-v2.html", "reservar.html"]) {
+      // multicoach.html se sumo al cerrar MultiCoach: su router de nicho seguia
+      // mandando al portal borrado (/pathway-fin-cliente.html) porque no estaba
+      // en esta lista y nadie lo miro al renombrar el nicho.
+      for (const f of ["login.html", "auth-callback.html", "panel-v2.html", "reservar.html", "multicoach.html"]) {
         const s3 = read(f); if (!s3) continue;
         if (/'financiero'|"financiero"/.test(s3)) return f + ": volvió el nicho 'financiero' (se reconvirtió a 'life').";
         if (/pathway-fin-cliente\.html/.test(s3)) return f + ": apunta al portal viejo (pathway-fin-cliente.html).";
@@ -6058,6 +6069,147 @@ const RULES = [
         if (/'[^'\n]*\b(hasn|isn|doesn|don|won|can|couldn|it|you|we|they|that|let)'[a-z]/.test(bb))
           return en + ": hay un apostrofo ingles SIN ESCAPAR dentro de un string de comilla simple en TXT (rompe el <script> entero).";
       }
+      return null;
+    },
+  },
+  {
+    name: "multicoach: los permisos del colaborador tienen UNA sola fuente (mc_permisos)",
+    bug: "Habia TRES almacenes de permisos y ninguno funcionaba entero: los toggles de " +
+         "la ficha escribian configuracion.permisos (negocio/perfil_publico/marketplace, " +
+         "que son capacidades de Pathway y no deciden nada en MultiCoach); el menu del " +
+         "colaborador leia la tabla colaborador_permisos, que NINGUNA pantalla escribia " +
+         "—solo se podia poblar por SQL, asi que todo colaborador se quedaba sin acceso—; " +
+         "y configuracion.mc_permisos, el contrato disenado a proposito y validado por " +
+         "editar-coach-red, no lo usaba nadie. Ahora mc_permisos es la fuente unica: lo " +
+         "escribe la pestana Acceso de la ficha de coach y lo leen los tres frontends. " +
+         "Ver docs/multicoach-legacy.md.",
+    check() {
+      const mc = read("multicoach.html");
+      if (!mc) return null;
+      // El vocabulario y el lector viven en multicoach.html, una sola vez.
+      if (!/var MC_GRANT_DEFS\s*=/.test(mc)) return "multicoach.html: falta MC_GRANT_DEFS (vocabulario de permisos de MultiCoach).";
+      if (!/function _mcGrantsDe\(/.test(mc)) return "multicoach.html: falta _mcGrantsDe() (lector de configuracion.mc_permisos).";
+      // Tiene que existir la pantalla que los escribe, y escribir por la edge
+      // function que valida el contrato (no un PATCH directo a usuarios).
+      if (!/function _coachAcceso\(/.test(mc) || !/function _mcAccSave\(/.test(mc))
+        return "multicoach.html: falta la pestana Acceso de la ficha de coach (_coachAcceso/_mcAccSave). Sin ella los permisos solo se pueden dar por SQL.";
+      if (!/mc_permisos:\{v:1,org_id:/.test(mc.replace(/\s/g, "")))
+        return "multicoach.html: _mcAccSave ya no manda el contrato {v,org_id,grants} a editar-coach-red.";
+      // La edge function tiene que seguir validando el contrato.
+      const ecr = read("supabase/functions/editar-coach-red/index.ts");
+      if (!ecr) return "falta supabase/functions/editar-coach-red/index.ts.";
+      if (!/mc_permisos_invalido/.test(ecr) || !/cfg\.mc_permisos\s*=/.test(ecr))
+        return "editar-coach-red: ya no valida ni guarda mc_permisos (la pantalla de Acceso escribiria al vacio).";
+      // Y nadie puede volver a leer la tabla legacy como fuente de verdad.
+      const sinComentarios = (s) => s.replace(/^\s*\/\/.*$/gm, "").replace(/\/\*[\s\S]*?\*\//g, "");
+      for (const f of ["multicoach.html", "login.html", "login-en.html", "panel-v2.html"]) {
+        const s = read(f);
+        if (s && /colaborador_permisos\?/.test(sinComentarios(s)))
+          return f + ": vuelve a leer la tabla colaborador_permisos. Nadie la escribe (docs/multicoach-legacy.md): el colaborador se queda sin permisos.";
+      }
+      return null;
+    },
+  },
+  {
+    name: "multicoach: Programas usa el esquema REAL (mc_programas), no el diseno muerto",
+    bug: "Dos bugs encadenados. (1) Programas estaba en el menu pero __go() no lo listaba " +
+         "como implementado: salia el toast 'Etapa proxima' y renderPrograms() era codigo " +
+         "muerto; si se desbloqueaba, servia MOCK_PROGRAMS —programas ficticios con coaches " +
+         "inventados— como fallback SILENCIOSO. (2) El arreglo apuntaba a una tabla " +
+         "`programs` de las migraciones 0102/0110/0112 que NUNCA se aplico y que no existe " +
+         "en produccion. El esquema real es `mc_programas` + `mc_programa_coaches`, creado " +
+         "por el flujo mc_*, con RLS FORZADA y sus helpers mc_pw_*. Esta regla impide " +
+         "volver a cualquiera de los dos agujeros. Ver docs/multicoach-legacy.md.",
+    check() {
+      const mcRaw = read("multicoach.html");
+      if (!mcRaw) return null;
+      // Se mira lo que se EJECUTA: un nombre de columna citado en un comentario
+      // para explicar que NO se usa no puede poner la regla en rojo.
+      const mc = mcRaw.replace(/^\s*\/\/.*$/gm, "").replace(/\/\*[\s\S]*?\*\//g, "");
+      const plano = mc.replace(/\s/g, "");
+      // 1) Alcanzable: el router tiene que aceptarlo.
+      if (!/s==='programas'/.test(plano.replace(/"/g, "'")))
+        return "multicoach.html: __go() ya no acepta 'programas' (el menu lo ofrece y el router lo rechaza con un toast).";
+      // 2) Sin datos inventados en modo real.
+      if (/MOCK_PROGRAMS/.test(mc))
+        return "multicoach.html: volvio MOCK_PROGRAMS. Una red sin programas es una lista vacia, no una lista de ejemplo.";
+      // 3) El esquema REAL, y solo ese.
+      if (!/rest\/v1\/mc_programas/.test(mc))
+        return "multicoach.html: Programas ya no habla con mc_programas (el esquema real de produccion).";
+      if (!/rest\/v1\/mc_programa_coaches/.test(mc))
+        return "multicoach.html: falta mc_programa_coaches — la asignacion de coaches a un programa vive en esa tabla puente.";
+      if (/rest\/v1\/programs\b/.test(mc))
+        return "multicoach.html: vuelve a apuntar a la tabla `programs`. Ese diseno (migraciones 0102/0110/0112) NUNCA se aplico y no existe en produccion.";
+      // 4) Columnas inventadas que la tabla real no tiene.
+      for (const inventada of ["completion", "\\bp\\.clients\\b"]) {
+        if (new RegExp(inventada).test(mc))
+          return "multicoach.html: Programas usa un campo que mc_programas NO tiene (" + inventada + "). Sus columnas son nombre, descripcion, estado, duracion_semanas, owner_coach_id, creado_por.";
+      }
+      // 5) CRUD completo + ficha.
+      for (const fn of ["_progNuevo", "_progEditar", "_progBorrar", "_renderProgFicha", "_progSumarCoach", "_progQuitarCoach"]) {
+        if (!new RegExp("function " + fn + "\\(").test(mc))
+          return "multicoach.html: falta " + fn + "() (Programas sin alta, edicion, borrado, ficha o asignacion de coaches).";
+      }
+      if (!/method:'PATCH'/.test(plano) || !/method:'DELETE'/.test(plano))
+        return "multicoach.html: Programas ya no edita (PATCH) o no borra (DELETE).";
+      // 6) Escrituras acotadas por org_id: segunda capa sobre la RLS forzada.
+      const acotadas = (plano.match(/'&org_id=eq\.'\+encodeURIComponent\(MC_ORG\.id\)/g) || []).length;
+      if (acotadas < 3)
+        return "multicoach.html: alguna escritura de Programas perdio el filtro por org_id (la RLS ya acota, pero esto es la segunda capa). Encontradas: " + acotadas + ", esperadas >=3 (PATCH, DELETE de programa y DELETE de coach).";
+      // 7) El diseno muerto no puede volver por la puerta de las migraciones.
+      if (read("supabase/migrations/0112_programs_rls_fix.sql"))
+        return "volvio supabase/migrations/0112_programs_rls_fix.sql. Esa migracion crea policies sobre `programs`, una tabla que no existe: el esquema real es mc_programas.";
+      return null;
+    },
+  },
+  {
+    name: "multicoach: los SELECT contra candidatos usan columnas que EXISTEN",
+    bug: "mi-red pedia `candidatos.updated_at`, que no existe en esta base. PostgREST " +
+         "responde 400 ante una columna desconocida y el helper q() convierte cualquier " +
+         "!ok en [], asi que los DUENOS VEIAN SU RED VACIA —cero clientes, KPIs a cero, " +
+         "Analytics vacio— sin un solo mensaje de error. Se descubrio comparando el " +
+         "esquema real contra el repositorio, no por un fallo visible. Despues se repitio " +
+         "el patron al anadir `notas`, que tampoco existe: la nota interna del cliente " +
+         "vive en `notas_privadas` (la misma que escribe panel-v2); `notas_coach` NO " +
+         "sirve, guarda el chat serializado. Ver docs/multicoach-legacy.md.",
+    check() {
+      // Columnas de `candidatos` que NO existen en produccion y que ya nos han
+      // mordido. Si alguien las vuelve a poner en un select o en un update, aqui
+      // se ve antes de que la red se quede muda.
+      const FANTASMA = ["updated_at", "notas", "plan", "estado"];
+      const sinComentarios = (x) => x.replace(/^\s*\/\/.*$/gm, "").replace(/\/\*[\s\S]*?\*\//g, "");
+
+      // A · B — mi-red: sin updated_at, con notas_privadas.
+      const mr = read("supabase/functions/mi-red/index.ts");
+      if (!mr) return "falta supabase/functions/mi-red/index.ts.";
+      const sel = sinComentarios(mr).match(/candidatos\?org_id=eq\.[^`]*`/);
+      if (!sel) return "mi-red: no se encuentra el SELECT de candidatos.";
+      const cols = (sel[0].match(/select=([^&`]*)/) || [])[1] || "";
+      for (const c of FANTASMA) {
+        if (new RegExp("(^|,)" + c + "(,|$)").test(cols))
+          return "mi-red: el SELECT de candidatos vuelve a pedir `" + c + "`, que NO existe. PostgREST devolvera 400 y q() lo convertira en [] — el dueno se queda sin clientes y en silencio.";
+      }
+      if (!/notas_privadas/.test(cols))
+        return "mi-red: el SELECT de candidatos ya no trae `notas_privadas`; la nota interna no volveria al recargar.";
+
+      // C · D — editar-cliente-red: persiste en notas_privadas, nunca en notas/notas_coach.
+      const ec = sinComentarios(read("supabase/functions/editar-cliente-red/index.ts") || "");
+      if (!ec) return "falta supabase/functions/editar-cliente-red/index.ts.";
+      if (!/update\.notas_privadas\s*=/.test(ec))
+        return "editar-cliente-red: la nota interna ya no se escribe en `notas_privadas`.";
+      if (/update\.notas\s*=/.test(ec))
+        return "editar-cliente-red: vuelve a escribir `candidatos.notas`, que no existe. El PATCH es uno solo: falla ENTERO y no se guarda tampoco el nombre ni el email.";
+      if (/notas_coach/.test(ec))
+        return "editar-cliente-red: usa `notas_coach`. Esa columna guarda el CHAT serializado — escribir la nota ahi lo pisaria.";
+      if (/update\.plan\s*=/.test(ec))
+        return "editar-cliente-red: vuelve a escribir `candidatos.plan`, que no existe (y ningun llamador la mandaba).";
+
+      // El frontend tiene que leer la nota del mismo sitio.
+      const mc = sinComentarios(read("multicoach.html") || "");
+      if (mc && !/notasInternas:\(c\.notas_privadas/.test(mc.replace(/\s/g, "")))
+        return "multicoach.html: mcMapCli ya no mapea la nota desde `notas_privadas`.";
+      if (mc && /select=[^'\`"]*(,|=)updated_at/.test(mc))
+        return "multicoach.html: algun SELECT directo a candidatos volvio a pedir `updated_at` (no existe).";
       return null;
     },
   },

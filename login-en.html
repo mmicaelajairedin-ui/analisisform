@@ -355,7 +355,7 @@ function _handleGoogleAuthSuccess(access_token, refresh_token, btn){
       if(usrStr){
         var usr = JSON.parse(usrStr);
         var _v = 'v=' + Date.now();
-        var dest = usr.rol === 'owner' ? '/panel-v2.html#multicoach&v=' :
+        var dest = usr.rol === 'owner' ? '/multicoach.html?' :
                    (usr.rol === 'coach' || usr.rol === 'admin') ? '/panel-v2.html?' :
                    (usr.rol === 'empleado') ? '/empleado.html?' :
                    '/cliente.html?';
@@ -833,20 +833,26 @@ async function entrar(){
       })();
     }
     else if(usuario.rol === 'colaborador' && usuario.org_id){
-      // Iniciar fetch de permisos en paralelo (NO await aquí)
+      // Acceso del colaborador a MultiCoach. FUENTE UNICA:
+      // usuarios.configuracion.mc_permisos = { v, org_id, grants:[modulo...] },
+      // que escribe el dueno desde la pestana "Acceso" de la ficha del coach.
+      // Antes esto consultaba la tabla colaborador_permisos, que NINGUNA
+      // pantalla escribe (solo se podia poblar por SQL): el colaborador se
+      // quedaba siempre fuera. La tabla queda como legacy, ver
+      // docs/multicoach-legacy.md.
       _colaboradorPromise = (async function(){
         try{
-          var _permRes = await fetch(SB+'/rest/v1/colaborador_permisos?usuario_id=eq.'+encodeURIComponent(usuario.id)+'&org_id=eq.'+encodeURIComponent(usuario.org_id)+'&select=permisos', {
-            headers: {'apikey': KEY, 'Authorization': 'Bearer ' + _jwt}
-          });
-          var _permRows = await _permRes.json();
-          if(_permRows && Array.isArray(_permRows) && _permRows.length > 0){
+          var _mp = usuario.configuracion && usuario.configuracion.mc_permisos;
+          var _gr = (_mp && Array.isArray(_mp.grants)) ? _mp.grants : null;
+          if(_gr === null){
+            // Sin lista guardada = acceso completo (el dueno todavia no lo acoto).
             multicoachAccess = true;
-            colaboradorPermisos = _permRows[0].permisos || [];
+            colaboradorPermisos = null;
             return true;
-          } else {
-            return false;
           }
+          multicoachAccess = _gr.length > 0;
+          colaboradorPermisos = _gr;
+          return multicoachAccess;
         }catch(_e){
           return false;
         }
@@ -926,24 +932,9 @@ async function entrar(){
     try{ sessionStorage.removeItem('pw_auth_retry'); }catch(e){}
     var _v='v='+Date.now();
     if(usuario.rol==='owner' || (usuario.rol==='colaborador' && multicoachAccess)) {
-      // Handoff seguro de sesión a MultiCoach
-      try {
-        var _handoffResp = await fetch(SB+'/functions/v1/pathway-handoff', {
-          method: 'POST',
-          headers: {'Content-Type': 'application/json', 'Authorization': 'Bearer '+_jwt},
-        });
-        if (_handoffResp.ok) {
-          var _handoffData = await _handoffResp.json();
-          if (_handoffData.code) {
-            window.location.href='https://pathwayplatforms.com/?handoff='+encodeURIComponent(_handoffData.code);
-            return;
-          }
-        }
-      } catch(e) {
-        console.error('[handoff] Error:', e);
-      }
-      // Fallback si handoff falla: redirect sin código (usuario tendrá que hacer login)
-      window.location.href='https://pathwayplatforms.com/?'+_v;
+      // ENTRADA UNICA (cierre MultiCoach) — ver la nota extensa en login.html.
+      // Mismo origen ⇒ la sesion viaja sola, el handoff no hace falta.
+      window.location.href=BASE+'/multicoach.html?'+_v;
     }
     else if(usuario.rol==='coach'||usuario.rol==='admin'){
       window.location.href=BASE+'/panel-v2.html?'+_v;

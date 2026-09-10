@@ -1,13 +1,19 @@
 // ===================================================================
 // editar-cliente-red — el DUEÑO de una red edita un cliente (candidato):
-// - nombre, email, estado (activo/inactivo)
-// - plan, notas (campos candidatos)
+// - nombre, email, estado (activo/inactivo → columna `activo`)
+// - notas internas del coach (→ columna `notas_privadas`)
+//
+// ⚠️ NOMBRES DE COLUMNA. El PATCH es uno solo: si UNA clave no existe en
+// `candidatos`, PostgREST devuelve 400 y NO se guarda nada del resto. Esta
+// funcion escribia `notas` y `plan`, que no existen en esta base — por eso las
+// notas nunca llegaron a guardarse. La nota interna vive en `notas_privadas`
+// (la misma que usa panel-v2); `notas_coach` NO sirve: guarda el chat.
 //
 // Service role tras verificar owner + que el cliente pertenece a SU org.
 //
-// Body:   { cliente_id, nombre?, email?, estado?, plan?, notas? }
+// Body:   { cliente_id, nombre?, email?, estado?, notas? }
 // Header: Authorization: Bearer <JWT del owner logueado>
-// Resp:   { ok, nombre?, email?, estado?, plan?, notas? } | { error }
+// Resp:   { ok, nombre?, email?, estado?, notas? } | { error }
 //
 // Deploy: supabase functions deploy editar-cliente-red --no-verify-jwt
 // ===================================================================
@@ -72,7 +78,7 @@ Deno.serve(async (req: Request) => {
   const orgId = await ownerOrg(email);
   if (!orgId) return json({ error: "not_owner" }, 403);
 
-  let body: { cliente_id?: string; nombre?: string; email?: string; estado?: string; plan?: string; notas?: string };
+  let body: { cliente_id?: string; nombre?: string; email?: string; estado?: string; notas?: string };
   try { body = await req.json(); } catch { return json({ error: "bad_json" }, 400); }
   const clienteId = (body.cliente_id || "").toString().trim();
   if (!clienteId) return json({ error: "missing_cliente" }, 400);
@@ -80,9 +86,8 @@ Deno.serve(async (req: Request) => {
   const hasNombre = typeof body.nombre === "string" && body.nombre.trim().length > 0;
   const hasEmail = typeof body.email === "string" && body.email.trim().length > 0;
   const hasEstado = typeof body.estado === "string" && body.estado.trim().length > 0;
-  const hasPlan = typeof body.plan === "string" && body.plan.trim().length > 0;
   const hasNotas = typeof body.notas === "string";
-  if (!hasNombre && !hasEmail && !hasEstado && !hasPlan && !hasNotas) return json({ error: "nothing_to_update" }, 400);
+  if (!hasNombre && !hasEmail && !hasEstado && !hasNotas) return json({ error: "nothing_to_update" }, 400);
 
   // Verificar que el cliente pertenece a ESTA org
   if (!(await clienteInOrg(clienteId, orgId))) return json({ error: "cliente_ajeno" }, 403);
@@ -100,8 +105,9 @@ Deno.serve(async (req: Request) => {
     if (!["activo", "inactivo"].includes(s)) return json({ error: "invalid_estado" }, 400);
     update.activo = s === "activo";
   }
-  if (hasPlan) update.plan = body.plan!.trim().slice(0, 100);
-  if (hasNotas) update.notas = (body.notas || "").toString().trim().slice(0, 2000);
+  // `plan` se retiro: esa columna no existe en `candidatos` y ningun cliente de
+  // esta funcion la mandaba nunca. Incluirla hacia fallar el PATCH ENTERO.
+  if (hasNotas) update.notas_privadas = (body.notas || "").toString().trim().slice(0, 2000);
 
   try {
     const r = await fetch(
@@ -116,7 +122,6 @@ Deno.serve(async (req: Request) => {
     nombre: hasNombre ? update.nombre : undefined,
     email: hasEmail ? update.email : undefined,
     estado: hasEstado ? body.estado!.toLowerCase() : undefined,
-    plan: hasPlan ? update.plan : undefined,
-    notas: hasNotas ? update.notas : undefined,
+    notas: hasNotas ? update.notas_privadas : undefined,
   });
 });

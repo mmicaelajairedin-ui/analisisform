@@ -27,6 +27,22 @@ const CHROMIUM_PATH = process.env.PW_CHROMIUM_PATH || '';
 
 module.exports = defineConfig({
   testDir: './tests',
+  // Solo *.spec.js — que es como se llaman los 10 tests de Playwright del repo.
+  //
+  // POR QUE HACE FALTA DECIRLO. El patron por defecto tambien recoge *.test.js,
+  // y `tests/coach-services-ios-blocking.test.js` esta escrito en estilo Jest:
+  // usa `describe`/`test` globales sin importarlos, `document`/`window` (necesita
+  // un DOM, que en Playwright vive en el navegador, no en el proceso de Node) y
+  // `jest.fn()`. Al recogerlo, el runner petaba con "describe is not defined"
+  // ANTES de ejecutar nada, y la suite ENTERA se quedaba en 0 tests. Es decir:
+  // este repositorio llevaba tiempo sin correr un solo test de Playwright, y el
+  // verde del CI no significaba nada.
+  //
+  // Este filtro deja el archivo de iOS exactamente como esta —no se le toca una
+  // linea de logica— y devuelve la suite a la vida. Para que ese test corra de
+  // verdad hace falta un runner con DOM (Jest + jsdom, o vitest), que hoy no
+  // esta en package.json: es tarea aparte, anotada en su cabecera.
+  testMatch: '**/*.spec.js',
   // El bot logueado (entrar + render + recorrer secciones) de un panel pesado
   // (dueño multicoach) necesita más de 30s legítimamente. 60s da margen sin tapar
   // roturas reales (un panel roto igual falla el render en 15s).

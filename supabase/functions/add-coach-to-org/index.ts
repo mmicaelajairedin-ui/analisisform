@@ -46,6 +46,24 @@ async function isAdmin(id: string, email: string): Promise<boolean> {
   } catch { return false; }
 }
 
+// El DUEÑO de esa organización también puede sumar un coach a SU red. Mismo
+// patrón que reassign-client. No amplía lo que ya se podía hacer: las tres
+// comprobaciones de más abajo siguen intactas — el coach tiene que existir, ser
+// rol='coach' y ser INDEPENDIENTE (sin org_id), y el cupo del plan se respeta.
+// Lo que sí impide es que un dueño toque una organización que no es la suya.
+async function isOwnerOfOrg(id: string, email: string, org_id: string): Promise<boolean> {
+  const ors: string[] = [];
+  if (id) ors.push(`auth_id.eq.${encodeURIComponent(id)}`);
+  if (email) ors.push(`email.ilike.${encodeURIComponent(email)}`);
+  if (!ors.length || !org_id) return false;
+  try {
+    const r = await fetch(`${SB_URL}/rest/v1/usuarios?or=(${ors.join(",")})&rol=eq.owner&select=id,org_id&limit=2`, { headers: svc });
+    if (!r.ok) return false;
+    const rows = await r.json();
+    return Array.isArray(rows) && rows.some((x: any) => x && x.org_id === org_id);
+  } catch { return false; }
+}
+
 Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: CORS });
   if (req.method !== "POST") return json({ error: "post_only" }, 405);
@@ -55,13 +73,17 @@ Deno.serve(async (req: Request) => {
   const token = auth.replace(/^Bearer\s+/i, "").trim();
   const who = await callerIdentity(token);
   if (!who) return json({ error: "no_session" }, 403);
-  if (!(await isAdmin(who.id, who.email))) return json({ error: "not_admin" }, 403);
 
   let body: { coach_id?: string; org_id?: string };
   try { body = await req.json(); } catch { return json({ error: "bad_json" }, 400); }
   const coach_id = (body.coach_id || "").toString().trim();
   const org_id = (body.org_id || "").toString().trim();
   if (!coach_id || !org_id) return json({ error: "missing_ids" }, 400);
+
+  // El gate va DESPUÉS de leer org_id porque el dueño se valida contra ESA org.
+  if (!(await isAdmin(who.id, who.email)) && !(await isOwnerOfOrg(who.id, who.email, org_id))) {
+    return json({ error: "not_authorized" }, 403);
+  }
 
   // Verificar que el coach existe y es independiente
   let coach: { id: string; rol: string; org_id: string | null; email: string; nombre: string } | null = null;

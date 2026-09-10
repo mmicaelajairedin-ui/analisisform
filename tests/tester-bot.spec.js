@@ -310,56 +310,55 @@ test.describe('💳 Selector de plan — cambiar de plan sin salir del panel', (
   });
 });
 
-// 🏋️ Contrato de handoff del owner — Pathway tiene que ENTREGARLE la sesion a
-// MultiCoach. Este test comprueba ESO y nada mas: no entra en MultiCoach ni
-// valida su contenido, porque una caida de MultiCoach no debe poner en rojo el
-// CI de Pathway. Esa validacion pertenece a la suite de MultiCoach.
+// 🏋️ Contrato de ENTRADA del owner — el login tiene que dejarlo dentro de
+// MultiCoach. Este test comprueba ESO y nada mas: no entra a validar el
+// contenido de MultiCoach, porque una caida suya no debe poner en rojo el CI de
+// Pathway. Esa validacion vive en tests/multicoach-cierre.spec.js.
 //
-// `login.html:898-917` tiene TRES desenlaces, y el test anterior los confundia
-// todos en el mismo timeout de 25 s:
-//   A · EXITO   -> pathway-handoff devuelve codigo -> pathwayplatforms.com/?handoff=<code>
-//   B · FALLO   -> fallback de :917 -> pathwayplatforms.com/?v=<ts>. La sesion NO
-//                  viaja: quien entra tendra que volver a identificarse. No es exito.
-//   C · CRITICO -> no navega. El `fetch` de :902 NO tiene timeout, asi que si esa
-//                  funcion se cuelga el `await` no vuelve, el `catch` no salta
-//                  —no es un error de red— y se queda en la pantalla de login.
+// HISTORIA, porque el test cambio de forma con el producto. Hasta el cierre del
+// Carril A (sept 2026) el owner salia hacia `pathwayplatforms.com` con un codigo
+// de un solo uso emitido por `pathway-handoff`, y este test afirmaba ese codigo.
+// Ese dominio nunca se activo (docs/PATHWAYPLATFORMS_SETUP.md lo marca PENDING),
+// asi que el dueno acababa fuera del producto. Ahora la entrada es
+// `/multicoach.html`, en el MISMO origen: la sesion de Supabase viaja sola y no
+// hay handoff que afirmar. Si algun dia se reactiva el dominio propio, este test
+// y el guardrail «el dueno logueado ve su RED REAL» se actualizan A LA VEZ que
+// el redirect — no antes.
 //
-// Ensanchar el patron a /pathwayplatforms/ daria los tres por buenos. Por eso se
-// afirma el CODIGO, no el dominio.
+// Quedan dos desenlaces que el timeout de 25 s confundia, y se separan abajo:
+//   A · EXITO   -> login.html manda a /multicoach.html
+//   B · CRITICO -> no navega: o fallan las credenciales, o el login no llego a
+//                  pedir el token. La red grabada lo distingue.
 //
 // NO se da por hecho que la cuenta TEST_GYM_* sea `rol='owner'`: no consta en
 // ningun sitio del repositorio y su valor es un secreto. Lo unico descartado es
 // que tome el camino de coach/admin, porque ese acaba en panel-v2.html y el test
 // pasaria. Las dos hipotesis vivas —camino de owner, o login que no navega— las
 // separan las aserciones de abajo, cada una con su mensaje.
-test.describe('🏋️ Handoff del owner — Pathway entrega la sesion a MultiCoach', () => {
-  test('el owner sale del login con un codigo de handoff', async ({ page }) => {
+test.describe('🏋️ Entrada del owner — Pathway lo deja dentro de MultiCoach', () => {
+  test('el owner sale del login y aterriza en multicoach.html', async ({ page }) => {
     const email = process.env.TEST_GYM_EMAIL;
     const password = process.env.TEST_GYM_PASSWORD;
     test.skip(!email || !password, 'Sin TEST_GYM_EMAIL/PASSWORD — se saltea');
 
     const { errores, correlationId } = capturarErrores(page);
 
-    // Se graban las navegaciones: la SPA de MultiCoach consume el ?handoff= y
-    // reescribe la URL, asi que mirar page.url() al final es una carrera.
+    // Se graban las navegaciones: MultiCoach reescribe la URL al arrancar (fija
+    // el #seccion), asi que mirar page.url() al final es una carrera.
     const navegaciones = [];
     page.on('framenavigated', (f) => { if (f === page.mainFrame()) navegaciones.push(f.url()); });
 
-    // La corrida #177 dejo demostrado el DESENLACE —el owner no sale de
-    // login.html— pero no la CAUSA: el mensaje admitia por igual «el login
-    // fallo» y «el fetch se colgo», y con eso el fallo llevaba dias en C2.
-    // Aqui se graba la RED para separarlas, sin tocar login.html:
+    // Se graba la RED para separar las causas sin tocar login.html:
     //   - si no hay respuesta de /auth/v1/token  -> el formulario ni lo pidio
     //   - si esa respuesta es >= 400             -> A · credenciales
-    //   - si es 200 y no se pide pathway-handoff -> la condicion de owner no se
+    //   - si es 200 y no navega                  -> la condicion de owner no se
     //                                               cumple (rol distinto)
-    //   - si se pide y no responde               -> C · el fetch sin timeout
-    //   - si responde >= 400                     -> la funcion devuelve error
-    const red = { auth: null, handoffPedido: false, handoffEstado: null };
+    // `handoffPedido` se sigue vigilando, pero ahora en NEGATIVO: si vuelve a
+    // pedirse es que regreso el camino viejo por el dominio sin activar.
+    const red = { auth: null, handoffPedido: false };
     page.on('response', (r) => {
       const u = r.url();
       if (/\/auth\/v1\/token/.test(u)) red.auth = r.status();
-      if (/pathway-handoff/.test(u)) red.handoffEstado = r.status();
     });
     page.on('request', (r) => { if (/pathway-handoff/.test(r.url())) red.handoffPedido = true; });
 
@@ -368,10 +367,10 @@ test.describe('🏋️ Handoff del owner — Pathway entrega la sesion a MultiCo
     await page.fill('#password', /** @type {string} */ (password));
     await page.locator('#password').press('Enter');
 
-    // C · ¿salio del login? Esta asercion es la que separa las dos hipotesis.
+    // ¿salio del login? Esta asercion separa las dos hipotesis.
     let salio = true;
     try {
-      await expect(page).toHaveURL(/pathwayplatforms\.com|panel-v2/i, { timeout: 25000 });
+      await expect(page).toHaveURL(/multicoach\.html|panel-v2/i, { timeout: 25000 });
     } catch (_e) {
       salio = false;
     }
@@ -386,37 +385,33 @@ test.describe('🏋️ Handoff del owner — Pathway entrega la sesion a MultiCo
         red.auth === null
           ? 'TEST · el formulario no llego a pedir /auth/v1/token (¿cambiaron los selectores de login.html?)'
           : red.auth >= 400
-            ? `A · CREDENCIALES: /auth/v1/token devolvio ${red.auth}. La cuenta TEST_GYM_* no entra; no es un fallo del handoff.`
-            : !red.handoffPedido
-              ? 'PRODUCTO · el login autentico (200) pero NUNCA pidio pathway-handoff: la cuenta no cumple la condicion de owner de login.html:898 (rol distinto de owner/colaborador-con-acceso).'
-              : red.handoffEstado === null
-                ? 'C · EL FETCH SE COLGO: se pidio pathway-handoff y no llego respuesta en 25 s. Es el fetch SIN timeout de login.html:902, y deja al owner plantado.'
-                : `PRODUCTO · pathway-handoff respondio ${red.handoffEstado}: no devolvio codigo utilizable y el owner se queda en el login.`;
+            ? `A · CREDENCIALES: /auth/v1/token devolvio ${red.auth}. La cuenta TEST_GYM_* no entra; no es un fallo de la entrada.`
+            : 'PRODUCTO · el login autentico (200) pero no navego a ningun panel. Revisar el bloque de redireccion por rol de login.html.';
 
       expect(
         salio,
         `El owner no salio de login.html en 25 s.\n` +
           `CAUSA: ${causa}\n` +
-          `Red: auth=${red.auth} · handoff pedido=${red.handoffPedido} · handoff estado=${red.handoffEstado}\n` +
+          `Red: auth=${red.auth} · handoff pedido=${red.handoffPedido}\n` +
           `Pantalla: ${visible.slice(0, 300)}`,
       ).toBe(true);
     }
 
-    const destino = navegaciones.find((u) => /pathwayplatforms\.com|panel-v2/i.test(u)) || page.url();
+    const destino = navegaciones.find((u) => /multicoach\.html|panel-v2/i.test(u)) || page.url();
 
     // La cuenta no toma el camino de owner. Lo dice, no pasa en silencio.
     expect(
       destino,
       `La cuenta TEST_GYM_* acabo en "${destino}": no toma el camino de owner. ` +
-        'O le cambiaron el rol, o cambio la condicion de login.html:898.',
-    ).toMatch(/pathwayplatforms\.com/i);
+        'O le cambiaron el rol, o cambio la condicion de rol de login.html.',
+    ).toMatch(/multicoach\.html/i);
 
-    // B · llego, pero sin sesion.
+    // Y no puede haber vuelto el camino viejo por el dominio sin activar.
     expect(
-      destino,
-      `Llego a "${destino}" SIN ?handoff=. pathway-handoff no devolvio codigo y salto ` +
-        'el fallback de login.html:917: la sesion no viaja y habra que entrar otra vez.',
-    ).toMatch(/[?&]handoff=[^&]+/);
+      red.handoffPedido,
+      'El login volvio a pedir pathway-handoff. Ese camino sale a pathwayplatforms.com, ' +
+        'que no esta activado (docs/PATHWAYPLATFORMS_SETUP.md): el dueno acabaria fuera del producto.',
+    ).toBe(false);
 
     // Errores de JS del propio login.html, que sigue siendo de Pathway.
     expect(
