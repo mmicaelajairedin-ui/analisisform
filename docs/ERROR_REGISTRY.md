@@ -26,6 +26,114 @@
 
 ---
 
+## ERR-FITSESS-001: El portal del cliente lee con la anon key y ve su ficha vacía
+
+**Estado:** FIXED
+**Fecha detectado:** 2026-09-09
+**Fecha fixed:** 2026-09-09
+**Severity:** CRITICAL
+
+### Scope Metadata
+- **Module:** `portal-fitness`
+- **Scope Type:** `MODULE_SPECIFIC`
+- **Scope Belongs To:** `claude/fix-portal-session-rls`
+- **Blocking Scope:** `other`
+- **Blocks Current Branch:** No
+
+### Síntoma
+El cliente entra a su portal y no ve su rutina (o ve una vieja). Lo que guarda
+—"lo que hice", hábitos— desaparece al recargar, **sin ningún mensaje de error**.
+
+### Categoría
+`AUTH` · `RLS` · `SILENT_FAILURE`
+
+### Módulo
+`pw-auth.js` + `pathway-fit-cliente.html`
+
+### Root Cause
+`tokenSync()` descartaba el `access_token` vencido y devolvía `null`; **no lo
+refrescaba**. `_hdr()` del portal es SÍNCRONO (`PWAUTH.headersSync`), así que la
+request salía con la anon key. El interceptor de fetch tampoco subía el JWT
+porque también dependía de `tokenSync()`.
+
+Con RLS estricto, un SELECT con anon key **no da error**: devuelve `HTTP 200`
+con lista vacía. El self-healing sólo reintenta ante 401/403, así que **nunca se
+dispara**. Cadena completa:
+
+```
+token vencido -> anon key -> SELECT devuelve [] (200 OK)
+-> pwInit cree que no hay ficha -> _clienteSinFicha() -> _ensureFicha()
+-> POST /candidatos -> 403 (42501)
+```
+
+Del lado de la escritura es el mismo bug: el PATCH no matchea ninguna fila,
+PostgREST responde 200 con `[]`, `sbPatch` lo detecta (`ok:false`) pero los
+llamadores sólo escuchaban `.catch()` — que nunca corría.
+
+### Evidencia (producción)
+`client_errors`, recurrente y sólo en clientes que **SÍ tienen ficha**:
+
+| Fecha | Email | Veces |
+|-------|-------|-------|
+| 2026-09-09 | rosmandubon134@gmail.com | 7 |
+| 2026-09-08 | rosmandubon134@gmail.com | 3 |
+| 2026-09-02 | rosmandubon134@gmail.com | 5 |
+| 2026-08-26 | rosmandubon134@gmail.com | 5 |
+
+`POST /rest/v1/candidatos {code=42501; new row violates row-level security policy}`
+
+`candidatos.id=213` (Rosman Dubon) existe y tiene 33 KB de rutina: el portal
+intentó **crear una ficha que ya existía**.
+
+### Fix aplicado
+El grueso vive en `pw-auth.js`, así sirve a las 14 páginas que lo cargan:
+
+1. **`hasStoredSession()`** — distingue "visitante anónimo" de "usuario logueado
+   con token vencido" mirando el `refresh_token` persistido.
+2. **`ready(ms)`** — espera a que la sesión esté lista, **con timeout**: si el
+   SDK del CDN no carga, resuelve con lo que haya y NO cuelga la página.
+3. **Gate en el interceptor de `fetch`** — request a tabla con RLS, sin token
+   válido pero con sesión guardada: espera el refresh y recién ahí la emite.
+   Un anónimo no espera nada. El interceptor se refactorizó a `_send()` para no
+   duplicar la lógica de subida de headers (antes estaba dos veces).
+4. **`tokenSync()`** — un token vencido dispara `refreshOnce()` en background.
+
+En el portal fitness:
+
+5. `_ensureFicha` lee con `_hdr()` (JWT), no con la anon key hardcodeada.
+6. Se **elimina el POST** a `candidatos` desde el cliente: la RLS lo niega
+   siempre (`candidatos_insert_coach_admin` exige `coach_id = pw_coach_id()` y
+   el body iba sin `coach_id`), así que sólo producía un 403 por carga sin crear
+   nada nunca. Ahora se registra `ficha_faltante` vía `__pwReport`. Auto-crear
+   la ficha requeriría una edge function con service role (como
+   `guardar-intake` para la foto), no PostgREST con la clave del navegador.
+7. Los guardados del gym miran `r.ok`, no sólo `.catch()`.
+
+### Verificación
+A/B del gate con el SDK simulado, contra la versión anterior del archivo:
+
+| Escenario | Antes | Después |
+|-----------|-------|---------|
+| Anónimo (sin sesión) | sin JWT ✅ | sin JWT ✅, sin demora |
+| **Token vencido** | **sin JWT ❌ (el bug)** | **con JWT ✅** |
+| Token válido | con JWT ✅ | con JWT ✅ |
+
+Arranque de las 5 páginas clave (fit, panel, formulario, fin, cliente): 0
+errores JS, mismo contenido renderizado y sin demora medible — medido en el peor
+caso, con el CDN bloqueado.
+
+### Cómo evitar la regresión
+Regla en `check-guardrails.js`: el gate tiene que seguir existiendo, `ready()`
+conservar su timeout, un token vencido disparar `refreshOnce()`, `_ensureFicha`
+no volver a leer con la anon key ni a hacer el INSERT, y el guardado del gym
+seguir mirando `r.ok`. Probada con 5 tests negativos.
+
+### Pendiente
+`pathway-life-cliente.html` y `cliente.html` se benefician del arreglo de
+`pw-auth.js`, pero conservan sus propios `.catch()` mudos en los guardados.
+
+---
+
 ## ERR-UPLOAD-001: Avatar persistence mismatch
 
 **Estado:** TRIAGED  
@@ -594,7 +702,7 @@ La guarda de `/cliente.html` era una lista **negra**: solo `coach` y `admin` se 
 panel. Un `owner`, `colaborador` o `empleado` que llegaba por marcador, back del navegador o
 link compartido se quedaba dentro de la superficie del cliente (y veía "Perfil no encontrado
 para: …" en vez de irse a su lugar). Los portales hermanos
-(`pathway-fit-cliente.html`, `pathway-fin-cliente.html`) ya usaban lista blanca.
+(`pathway-fit-cliente.html`, `pathway-life-cliente.html`) ya usaban lista blanca.
 
 ### Fix
 Lista blanca `PW_CLIENT_ROLES = ['cliente','candidato']` + mapa `PW_ROLE_HOME` que manda a
@@ -899,6 +1007,7 @@ antes de tocar la lógica del onboarding.
 
 | Error | Estado | Severity | Module | Fixed | Verified |
 |-------|--------|----------|--------|-------|----------|
+| **ERR-FITSESS-001** | **FIXED** | **CRITICAL** | **portal-fitness** | ✅ | ❌ |
 | ERR-UPLOAD-001 | TRIAGED | CRITICAL | avatar | ✅ | ✅ |
 | ERR-UPLOAD-002 | TRIAGED | CRITICAL | exercise | ✅ | ✅ |
 | ERR-UPLOAD-003 | TRIAGED | HIGH | exercise | ✅ | ✅ |

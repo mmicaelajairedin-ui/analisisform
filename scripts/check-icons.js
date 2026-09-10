@@ -73,7 +73,7 @@ else ok("ninguna librería de iconos de terceros (solo Lucide via pw-icons.js)."
 // ── 3. Las pantallas clave cargan la fuente única ───────────────────────────
 const MUST_LOAD = [
   "index.html", "index-en.html", "panel-v2.html", "multicoach.html",
-  "cliente.html", "pathway-fit-cliente.html", "pathway-fin-cliente.html",
+  "cliente.html", "pathway-fit-cliente.html", "pathway-life-cliente.html",
 ];
 const notLoading = MUST_LOAD.filter((f) => exists(f) && !/pw-icons\.js/.test(read(f)));
 if (notLoading.length) fail("estas pantallas clave no cargan pw-icons.js: " + notLoading.join(", ") + ".");

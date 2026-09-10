@@ -77,19 +77,19 @@
       +'</table></td></tr>'
       +'<tr><td style="padding:20px 32px 32px;font-family:Arial,Helvetica,sans-serif;">'+BTN(DEMO,"Quiero verlo con mi marca →")+'</td></tr>'); } },
 
-    { n:"Finanzas · la pregunta", nicho:"finanzas", s:"{Nombre}, ¿tu marca o una planilla suelta?", build:function(nm){ return WRAP(HEADER
+    { n:"Life · la pregunta", nicho:"life", s:"{Nombre}, ¿tu marca o un cuaderno suelto?", build:function(nm){ return WRAP(HEADER
       +'<tr><td style="padding:32px 32px 28px;font-family:Arial,Helvetica,sans-serif;">'
       +'<div style="font-size:12px;font-weight:bold;letter-spacing:1px;text-transform:uppercase;color:#52B788;">Hola '+esc(nm)+'</div>'
       +'<div style="font-family:Georgia,serif;font-size:24px;line-height:1.25;color:#1B2E26;font-weight:bold;margin:8px 0 16px;">¿Tu marca… o una planilla de Excel?</div>'
-      +'<div style="font-size:15px;line-height:1.65;color:#42514A;">Cuando le compartís el plan financiero a tu cliente, ¿entra a <b>un portal con tu marca</b>… o a una planilla suelta?<br><br>Con <b>Pathway</b> tus clientes ven su plan, metas y avance en un lugar con tu logo — y la IA arma lo pesado.</div>'
+      +'<div style="font-size:15px;line-height:1.65;color:#42514A;">Cuando le compartís los acuerdos de la sesión a tu cliente, ¿entra a <b>un portal con tu marca</b>… o a un audio y un cuaderno?<br><br>Con <b>Pathway</b> tus clientes ven sus objetivos, próximos pasos y avance en un lugar con tu logo — y la IA arma lo pesado.</div>'
       +'<div style="height:22px;line-height:22px;font-size:0;">&nbsp;</div>'+BTN(DEMO,"Agendar demo (11 min) →")+'</td></tr>'); } },
 
-    { n:"Finanzas · tu marca", nicho:"finanzas", s:"cómo se vería tu coaching financiero con tu marca", build:function(nm){ return WRAP(HEADER
-      +'<tr><td style="padding:30px 32px 8px;font-family:Arial,Helvetica,sans-serif;"><div style="font-family:Georgia,serif;font-size:23px;color:#1B2E26;font-weight:bold;margin-bottom:8px;">Tu coaching financiero, con cara de producto</div><div style="font-size:15px;line-height:1.6;color:#42514A;">Hola '+esc(nm)+', esto verían tus clientes con Pathway:</div></td></tr>'
+    { n:"Life · tu marca", nicho:"life", s:"cómo se vería tu acompañamiento con tu marca", build:function(nm){ return WRAP(HEADER
+      +'<tr><td style="padding:30px 32px 8px;font-family:Arial,Helvetica,sans-serif;"><div style="font-family:Georgia,serif;font-size:23px;color:#1B2E26;font-weight:bold;margin-bottom:8px;">Tu acompañamiento, con cara de producto</div><div style="font-size:15px;line-height:1.6;color:#42514A;">Hola '+esc(nm)+', esto verían tus clientes con Pathway:</div></td></tr>'
       +'<tr><td style="padding:10px 32px 4px;"><table width="100%" cellpadding="0" cellspacing="0" border="0" style="background:#F4F8F3;border-radius:12px;">'
       +step("1","Tu marca, no la nuestra","Portal con tu logo y tu color.")
-      +step("2","La IA arma los informes","Presupuestos y planes financieros en minutos.")
-      +step("3","Tus clientes ven su avance","Metas y finanzas, mes a mes.")
+      +step("2","La IA arma los informes","Punto de partida y proceso por etapas en minutos.")
+      +step("3","Tus clientes ven su avance","Objetivos y próximos pasos, sesión a sesión.")
       +'</table></td></tr>'
       +'<tr><td style="padding:20px 32px 32px;font-family:Arial,Helvetica,sans-serif;">'+BTN(DEMO,"Quiero verlo con mi marca →")+'</td></tr>'); } },
 
