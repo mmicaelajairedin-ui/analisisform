@@ -6053,6 +6053,48 @@ const RULES = [
     },
   },
   {
+    name: "seguridad: el gate de sesión del panel NO depende del hostname",
+    bug: "panel-v2 decidía si exigir login con una regex sobre location.hostname " +
+         "(prod = pathwaycareercoach.com | *.pages.dev). En cualquier OTRO origen " +
+         "—los previews públicos de Netlify que se publican en cada PR, o un dominio " +
+         "nuevo— `prod` daba false y el panel arrancaba SIN pedir sesión. No filtraba " +
+         "datos reales (sin sesión el panel cae en el dataset de ejemplo y la RLS " +
+         "bloquea el resto), pero un control de autenticación no puede depender del " +
+         "dominio desde el que se sirve el archivo. Ahora la sesión se exige SIEMPRE " +
+         "salvo en localhost, y el redirect al login es RELATIVO (bajo cualquier " +
+         "dominio manda al login de ese mismo dominio).",
+    check() {
+      const p = read("panel-v2.html");
+      if (!p) return null;
+      const i = p.indexOf("(function bootPanel(){");
+      if (i < 0) return "panel-v2.html: no se encuentra bootPanel().";
+      const boot = p.slice(i, i + 1400);
+      if (/location\.hostname/.test(boot) && !/localhost/.test(boot))
+        return "panel-v2.html: el gate de bootPanel volvió a depender del hostname.";
+      if (/\.pages\.dev\$|pathwaycareercoach\\.com\$/.test(boot))
+        return "panel-v2.html: volvió la allowlist de dominios en el gate de sesión (prod=...).";
+      if (!/if\(!_local && \(!u \|\| !u\.id/.test(boot))
+        return "panel-v2.html: el gate ya no exige sesión en todo origen que no sea local.";
+      if (/window\.location\.href\s*=\s*"https?:\/\//.test(boot))
+        return "panel-v2.html: el redirect al login volvió a ser absoluto (debe ser relativo).";
+      // red.html: los dominios propios de la plataforma nunca son el dominio
+      // custom de una red. Si se cuela uno, red.html queda en blanco ahí.
+      const r = read("red.html");
+      if (r) {
+        const j = r.indexOf("function customHost(");
+        if (j < 0) return "red.html: no se encuentra customHost().";
+        // Se comparan como TEXTO plano (sin las barras de escape del regex de
+        // red.html), que si no "pages\\.dev" no matchea contra /\\.pages\\.dev$/.
+        const ch = r.slice(j, j + 700).replace(/\\/g, "");
+        for (const d of ["pathwaycareercoach.com", "pathwayplatforms.com", "pages.dev", "netlify.app"]) {
+          if (ch.indexOf(d) < 0)
+            return "red.html: customHost() dejó de excluir un dominio propio de la plataforma (" + d + ").";
+        }
+      }
+      return null;
+    },
+  },
+  {
     name: "nicho Life: no vuelve la terminología ni los campos de Finanzas",
     bug: "El nicho financiero se reconvirtió a Life (sep-2026): el portal, el intake " +
          "y la pestaña del panel dejaron de hablar de presupuesto/deudas/patrimonio/ahorro " +
