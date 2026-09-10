@@ -233,6 +233,30 @@ Deno.serve(async (req: Request) => {
     const merged = { ...cfg };
     if (prev.fecha_fin_prueba) merged.fecha_fin_prueba = prev.fecha_fin_prueba;
     if (prev.creado_por_admin) merged.creado_por_admin = prev.creado_por_admin;
+
+    // ⚠️ PERTENENCIA A UNA RED — no se puede perder al activar.
+    //
+    // `configuracion` se reescribe entera con la del formulario de registro, y
+    // antes solo se rescataban las dos claves de arriba. Todo lo que escribe
+    // `agregar-coach-red` cuando el dueño invita moría en este PATCH:
+    //
+    //   • es_coach_red / plan:'red'  → panel-v2 (`return 0` en el calculo de
+    //     paywall) los usa para saber que ESE asiento lo paga el dueño. Sin
+    //     ellos el coach invitado quedaba como un coach individual en prueba y
+    //     acababa topandose con el muro de pago aunque su organizacion pagara.
+    //   • member_role / no_da_clases → distinguen Colaborador de Coach. Sin
+    //     member_role, un colaborador activaba su cuenta y salia como coach:
+    //     login lo mandaba a panel-v2 en vez de a MultiCoach.
+    //   • coach_type                 → el nicho de la organizacion, no el que
+    //     el formulario haya elegido por su cuenta.
+    //
+    // El alta la hizo el dueño: sus decisiones mandan sobre lo que traiga el
+    // formulario. `pendiente_activacion` se apaga aqui, que es justo el momento
+    // en que la persona reclama la cuenta.
+    for (const k of ["es_coach_red", "plan", "estado_sub", "member_role", "no_da_clases", "creado_por_owner", "coach_type"]) {
+      if (prev[k] !== undefined) merged[k] = prev[k];
+    }
+    if (prev.pendiente_activacion) merged.pendiente_activacion = false;
     try {
       const r = await fetch(
         `${SB_URL}/rest/v1/usuarios?id=eq.${encodeURIComponent(existing.id)}&select=id,email,rol,nombre,activo,configuracion`,

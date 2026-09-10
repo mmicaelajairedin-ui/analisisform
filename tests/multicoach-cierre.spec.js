@@ -307,3 +307,97 @@ test.describe('MultiCoach · nicho Life', () => {
     expect(txt).not.toMatch(/presupuesto|deuda|invers/i);
   });
 });
+
+/**
+ * FASE 2 — los permisos existian pero solo dentro de Equipo > (abrir persona) >
+ * pestana Acceso. En Configuracion, que es donde se los busca, no habia nada:
+ * de ahi el "no me deja cambiar los permisos". Ahora Configuracion tiene su
+ * propia seccion, sobre el MISMO `mc_permisos` (no una tabla nueva).
+ */
+test.describe('MultiCoach · permisos desde Configuracion', () => {
+  test('Configuracion tiene una seccion Permisos y edita el acceso real', async ({ page }) => {
+    const errores = [];
+    page.on('pageerror', e => errores.push(e.message));
+    await page.goto(MC(), { waitUntil: 'load' });
+    await page.waitForTimeout(900);
+    await ir(page, 'config');
+
+    const secciones = await page.$$eval('.cp-cfg-nav-item', els => els.map(e => e.innerText.trim().split('\n')[0]));
+    expect(secciones, secciones.join('|')).toContain('Permisos');
+
+    await page.evaluate(() => window._goCfg('permisos'));
+    await page.waitForTimeout(350);
+
+    // Lista a las personas de la red (nunca al propio dueno: no se autolimita).
+    const miembros = await page.$$eval('.mc-perm-grid nav .cp-cfg-nav-item', els => els.map(e => e.dataset.id));
+    expect(miembros.length).toBeGreaterThan(0);
+    const owner = await page.evaluate(() => (window.DB.coaches || []).filter(c => c.esOwner).map(c => c.id));
+    owner.forEach(id => expect(miembros).not.toContain(id));
+
+    // El toggle responde y NO saca al dueno de la pantalla.
+    const antes = await page.$$eval('.cp-toggle .cp-switch', els => els.map(e => e.dataset.g + '=' + e.classList.contains('is-on')));
+    await page.click('.cp-toggle .cp-switch[data-g="cobros"]');
+    await page.waitForTimeout(300);
+    const despues = await page.$$eval('.cp-toggle .cp-switch', els => els.map(e => e.dataset.g + '=' + e.classList.contains('is-on')));
+    expect(despues).not.toEqual(antes);
+    expect(await page.evaluate(() => window._cfgSec)).toBe('permisos');
+
+    // Cambiar de persona reengancha la seleccion a ESA persona.
+    if (miembros[1]) {
+      await page.click(`.mc-perm-grid nav .cp-cfg-nav-item[data-id="${miembros[1]}"]`);
+      await page.waitForTimeout(300);
+      expect(await page.evaluate(() => window._mcAccFor)).toBe(miembros[1]);
+    }
+    expect(errores, errores.join(' | ')).toHaveLength(0);
+  });
+
+  test('la pantalla escribe mc_permisos, no una tabla nueva', async ({ page }) => {
+    const src = await (await fetch(`${BASE}multicoach.html`)).text();
+    const sinComentarios = src.replace(/^\s*\/\/.*$/gm, '').replace(/\/\*[\s\S]*?\*\//g, '');
+    expect(sinComentarios).toMatch(/_cfgPermisos/);
+    expect(sinComentarios).toMatch(/mc_permisos/);
+    // Las capacidades de Pathway del lateral son OTRA cosa y ya no se anuncian
+    // como si fueran el acceso a MultiCoach.
+    expect(sinComentarios).not.toMatch(/A qué le das acceso/);
+    expect(sinComentarios).toMatch(/Capacidades en Pathway/);
+    expect(sinComentarios).not.toMatch(/colaborador_permisos/);
+  });
+});
+
+/**
+ * FASE 2 — rendimiento. La tipografia se cargaba con @import dentro del <style>:
+ * el navegador no la descubria hasta parsear el CSS inline y hasta que no
+ * resolvia NO pintaba nada. Medido con el CDN de fuentes lento: 12,8 s en blanco.
+ */
+test.describe('MultiCoach · rendimiento', () => {
+  test('la tipografia no bloquea el primer render', async ({ page }) => {
+    const src = await (await fetch(`${BASE}multicoach.html`)).text();
+    expect(src).not.toMatch(/@import url\("https:\/\/fonts\.googleapis/);
+    expect(src).toMatch(/rel="preconnect" href="https:\/\/fonts\.googleapis\.com"/);
+    expect(src).toMatch(/media="print" onload="this\.media='all'/);
+  });
+
+  test('el dashboard del dueno tiene estilo propio (no queda markup sin CSS)', async ({ page }) => {
+    await page.goto(MC(), { waitUntil: 'load' });
+    await page.waitForTimeout(900);
+    // Un <button> sin CSS no es flex y no tiene padding: asi se salia el
+    // subtitulo de su caja en los cuatro atajos del dashboard.
+    const btn = await page.evaluate(() => {
+      const b = document.querySelector('.action-btn');
+      if (!b) return null;
+      const cs = getComputedStyle(b);
+      const d = b.getBoundingClientRect(), t = b.querySelector('.action-btn-desc').getBoundingClientRect();
+      return { display: cs.display, pad: parseInt(cs.paddingTop, 10), desbordado: t.bottom > d.bottom + 1 };
+    });
+    expect(btn).not.toBeNull();
+    expect(btn.display).toBe('flex');
+    expect(btn.pad).toBeGreaterThan(0);
+    expect(btn.desbordado, 'el subtitulo se sale del boton').toBe(false);
+    // Los recuadros de cabecera dejaron de tener fondo pintado a mano.
+    const tinte = await page.evaluate(() => {
+      const t = document.querySelector('.mc-hero-tile');
+      return t ? getComputedStyle(t).backgroundColor : null;
+    });
+    expect(tinte).not.toMatch(/82,\s*183,\s*136/);
+  });
+});

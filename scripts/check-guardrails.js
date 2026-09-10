@@ -6273,6 +6273,39 @@ const RULES = [
     },
   },
   {
+    name: "invitacion: activar la cuenta NO borra la pertenencia a la red",
+    bug:
+      "Cuando el dueno invita a alguien, `agregar-coach-red` crea la fila con " +
+      "es_coach_red, plan:'red', estado_sub, member_role, no_da_clases y el " +
+      "coach_type de la organizacion. Al activar la cuenta desde registro.html, " +
+      "`registrar-coach` reescribia `configuracion` ENTERA con la del formulario " +
+      "y solo rescataba fecha_fin_prueba y creado_por_admin. Consecuencias reales: " +
+      "(1) panel-v2 decide con `es_coach_red`/`plan==='red'` que ese asiento lo " +
+      "paga el dueno (return 0 en el calculo del paywall) — al perderse, el coach " +
+      "invitado quedaba como coach individual en prueba y acababa contra el muro " +
+      "de pago aunque su organizacion pagara; (2) sin `member_role`, un " +
+      "Colaborador activaba y salia como coach, asi que el login lo mandaba a " +
+      "panel-v2 en vez de a MultiCoach.",
+    check() {
+      const f = "supabase/functions/registrar-coach/index.ts";
+      const s2 = read(f);
+      if (!s2) return f + ": falta la funcion que activa las cuentas invitadas.";
+      const rama = s2.slice(s2.indexOf('estado === "invitada"'));
+      if (!rama) return f + ": ya no existe la rama de activacion de una cuenta invitada.";
+      for (const k of ["es_coach_red", "plan", "estado_sub", "member_role", "no_da_clases", "coach_type"]) {
+        if (!new RegExp('"' + k + '"').test(rama))
+          return f + ": la activacion dejo de conservar `" + k + "` de la invitacion (el invitado pierde su asiento de red).";
+      }
+      if (!/pendiente_activacion/.test(rama))
+        return f + ": la activacion no apaga `pendiente_activacion`.";
+      // El alta del dueno tiene que seguir escribiendo esas claves.
+      const inv = read("supabase/functions/agregar-coach-red/index.ts");
+      if (inv && !/es_coach_red:\s*true/.test(inv))
+        return "agregar-coach-red: dejo de marcar `es_coach_red` — el asiento de red no se reconoceria.";
+      return null;
+    },
+  },
+  {
     name: "multicoach: los SELECT contra candidatos usan columnas que EXISTEN",
     bug: "mi-red pedia `candidatos.updated_at`, que no existe en esta base. PostgREST " +
          "responde 400 ante una columna desconocida y el helper q() convierte cualquier " +
