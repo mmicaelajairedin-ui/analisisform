@@ -46,6 +46,19 @@ async function q(path: string): Promise<any[]> {
   } catch { return []; }
 }
 
+// ⚠️ CADA COLUMNA DE ESTE SELECT TIENE QUE EXISTIR EN `candidatos`.
+// PostgREST responde 400 ante una columna desconocida y `q()` convierte
+// cualquier !ok en [], asi que un solo nombre mal escrito deja al duenio con
+// la red VACIA y sin un solo mensaje. Paso exactamente eso: el SELECT pedia
+// `updated_at`, que en esta base no existe, y los owners llevaban tiempo
+// viendo cero clientes. Antes de tocar esta linea, comprobar contra la base.
+//
+// `notas_privadas` es la nota interna del coach sobre el cliente — la misma
+// que escribe y lee panel-v2. NO es `notas` (no existe) ni `notas_coach`
+// (esa guarda el chat serializado).
+const CLIENTES_Q = (orgId: string) =>
+  `candidatos?org_id=eq.${encodeURIComponent(orgId)}&select=id,nombre,email,activo,coach_id,semana_activa,foto_perfil,notas_privadas,created_at&order=created_at.desc`;
+
 Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: CORS });
   if (!SB_URL || !SERVICE || !ANON) return json({ error: "env_missing" }, 500);
@@ -61,22 +74,16 @@ Deno.serve(async (req: Request) => {
   const orgId = owner && owner.org_id;
   if (!orgId) return json({ error: "not_owner" }, 403);
 
-  const orgs = await q(`organizaciones?id=eq.${encodeURIComponent(orgId)}&select=*&limit=1`);
+  // PERF (fase 2): estas tres NO dependen entre si — solo de orgId — y se pedian
+  // una detras de otra. Eran 3 viajes en serie a PostgREST en el camino critico
+  // del arranque del duenio. En paralelo cuesta lo que la mas lenta, no la suma.
+  const [orgs, coaches, clientes] = await Promise.all([
+    q(`organizaciones?id=eq.${encodeURIComponent(orgId)}&select=*&limit=1`),
+    // order estable → el color por coach en la agenda del panel no baila entre recargas.
+    q(`usuarios?org_id=eq.${encodeURIComponent(orgId)}&rol=eq.coach&order=created_at.asc&select=id,nombre,email,activo,foto_url,configuracion`),
+    q(CLIENTES_Q(orgId)),
+  ]);
   const org = orgs[0] || null;
-
-  // order estable → el color por coach en la agenda del panel no baila entre recargas.
-  const coaches = await q(`usuarios?org_id=eq.${encodeURIComponent(orgId)}&rol=eq.coach&order=created_at.asc&select=id,nombre,email,activo,foto_url,configuracion`);
-  // ⚠️ CADA COLUMNA DE ESTE SELECT TIENE QUE EXISTIR EN `candidatos`.
-  // PostgREST responde 400 ante una columna desconocida y `q()` convierte
-  // cualquier !ok en [], asi que un solo nombre mal escrito deja al dueño con
-  // la red VACIA y sin un solo mensaje. Paso exactamente eso: el SELECT pedia
-  // `updated_at`, que en esta base no existe, y los owners llevaban tiempo
-  // viendo cero clientes. Antes de tocar esta linea, comprobar contra la base.
-  //
-  // `notas_privadas` es la nota interna del coach sobre el cliente — la misma
-  // que escribe y lee panel-v2. NO es `notas` (no existe) ni `notas_coach`
-  // (esa guarda el chat serializado).
-  const clientes = await q(`candidatos?org_id=eq.${encodeURIComponent(orgId)}&select=id,nombre,email,activo,coach_id,semana_activa,foto_perfil,notas_privadas,created_at&order=created_at.desc`);
 
   // Citas de TODA la red (agenda del owner + historial de sesiones por cliente).
   // La RLS de citas es por coach → el owner no las lee directo; acá con service
@@ -89,9 +96,13 @@ Deno.serve(async (req: Request) => {
     const from = new Date(Date.now() - 120 * 86400000).toISOString();
     const inList = coachIds.map((id) => String(id)).join(",");
     // Personal citas: coach_id en el team
-    const personal = await q(`citas?coach_id=in.(${inList})&inicio=gte.${from}&order=inicio.desc&select=id,nombre,email,tipo,inicio,estado,coach_id,telefono,origen,resultado,notas_llamada,grupal,modalidad,lugar`);
-    // Group events: org_id match y grupal=true
-    const grupal = await q(`citas?org_id=eq.${encodeURIComponent(orgId)}&grupal=eq.true&inicio=gte.${from}&order=inicio.desc&select=id,nombre,email,tipo,inicio,estado,coach_id,telefono,origen,resultado,notas_llamada,grupal,modalidad,lugar`);
+    const CITA_COLS = "id,nombre,email,tipo,inicio,estado,coach_id,telefono,origen,resultado,notas_llamada,grupal,modalidad,lugar";
+    // PERF (fase 2): personales y grupales son independientes → en paralelo.
+    const [personal, grupal] = await Promise.all([
+      q(`citas?coach_id=in.(${inList})&inicio=gte.${from}&order=inicio.desc&select=${CITA_COLS}`),
+      // Group events: org_id match y grupal=true
+      q(`citas?org_id=eq.${encodeURIComponent(orgId)}&grupal=eq.true&inicio=gte.${from}&order=inicio.desc&select=${CITA_COLS}`),
+    ]);
     // Deduplication: avoid showing the same cita twice (personal + grupal filters can overlap)
     const seen = new Set<string>();
     citas = [...personal, ...grupal].filter((c) => {

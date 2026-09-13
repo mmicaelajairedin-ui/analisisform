@@ -307,3 +307,205 @@ test.describe('MultiCoach · nicho Life', () => {
     expect(txt).not.toMatch(/presupuesto|deuda|invers/i);
   });
 });
+
+/**
+ * FASE 2 — los permisos existian pero solo dentro de Equipo > (abrir persona) >
+ * pestana Acceso. En Configuracion, que es donde se los busca, no habia nada:
+ * de ahi el "no me deja cambiar los permisos". Ahora Configuracion tiene su
+ * propia seccion, sobre el MISMO `mc_permisos` (no una tabla nueva).
+ */
+test.describe('MultiCoach · permisos desde Configuracion', () => {
+  test('Configuracion tiene una seccion Permisos y edita el acceso real', async ({ page }) => {
+    const errores = [];
+    page.on('pageerror', e => errores.push(e.message));
+    await page.goto(MC(), { waitUntil: 'load' });
+    await page.waitForTimeout(900);
+    await ir(page, 'config');
+
+    const secciones = await page.$$eval('.cp-cfg-nav-item', els => els.map(e => e.innerText.trim().split('\n')[0]));
+    expect(secciones, secciones.join('|')).toContain('Permisos');
+
+    await page.evaluate(() => window._goCfg('permisos'));
+    await page.waitForTimeout(350);
+
+    // Lista a las personas de la red (nunca al propio dueno: no se autolimita).
+    const miembros = await page.$$eval('.mc-perm-grid nav .cp-cfg-nav-item', els => els.map(e => e.dataset.id));
+    expect(miembros.length).toBeGreaterThan(0);
+    const owner = await page.evaluate(() => (window.DB.coaches || []).filter(c => c.esOwner).map(c => c.id));
+    owner.forEach(id => expect(miembros).not.toContain(id));
+
+    // El toggle responde y NO saca al dueno de la pantalla.
+    const antes = await page.$$eval('.cp-toggle .cp-switch', els => els.map(e => e.dataset.g + '=' + e.classList.contains('is-on')));
+    await page.click('.cp-toggle .cp-switch[data-g="cobros"]');
+    await page.waitForTimeout(300);
+    const despues = await page.$$eval('.cp-toggle .cp-switch', els => els.map(e => e.dataset.g + '=' + e.classList.contains('is-on')));
+    expect(despues).not.toEqual(antes);
+    expect(await page.evaluate(() => window._cfgSec)).toBe('permisos');
+
+    // Cambiar de persona reengancha la seleccion a ESA persona.
+    if (miembros[1]) {
+      await page.click(`.mc-perm-grid nav .cp-cfg-nav-item[data-id="${miembros[1]}"]`);
+      await page.waitForTimeout(300);
+      expect(await page.evaluate(() => window._mcAccFor)).toBe(miembros[1]);
+    }
+    expect(errores, errores.join(' | ')).toHaveLength(0);
+  });
+
+  test('la pantalla escribe mc_permisos, no una tabla nueva', async ({ page }) => {
+    const src = await (await fetch(`${BASE}multicoach.html`)).text();
+    const sinComentarios = src.replace(/^\s*\/\/.*$/gm, '').replace(/\/\*[\s\S]*?\*\//g, '');
+    expect(sinComentarios).toMatch(/_cfgPermisos/);
+    expect(sinComentarios).toMatch(/mc_permisos/);
+    // Las capacidades de Pathway del lateral son OTRA cosa y ya no se anuncian
+    // como si fueran el acceso a MultiCoach.
+    expect(sinComentarios).not.toMatch(/A qué le das acceso/);
+    expect(sinComentarios).toMatch(/Capacidades en Pathway/);
+    expect(sinComentarios).not.toMatch(/colaborador_permisos/);
+  });
+});
+
+/**
+ * FASE 2 — rendimiento. La tipografia se cargaba con @import dentro del <style>:
+ * el navegador no la descubria hasta parsear el CSS inline y hasta que no
+ * resolvia NO pintaba nada. Medido con el CDN de fuentes lento: 12,8 s en blanco.
+ */
+test.describe('MultiCoach · rendimiento', () => {
+  test('la tipografia no bloquea el primer render', async ({ page }) => {
+    const src = await (await fetch(`${BASE}multicoach.html`)).text();
+    expect(src).not.toMatch(/@import url\("https:\/\/fonts\.googleapis/);
+    expect(src).toMatch(/rel="preconnect" href="https:\/\/fonts\.googleapis\.com"/);
+    expect(src).toMatch(/media="print" onload="this\.media='all'/);
+  });
+
+  test('el dashboard del dueno tiene estilo propio (no queda markup sin CSS)', async ({ page }) => {
+    await page.goto(MC(), { waitUntil: 'load' });
+    await page.waitForTimeout(900);
+    // Un <button> sin CSS no es flex y no tiene padding: asi se salia el
+    // subtitulo de su caja en los cuatro atajos del dashboard.
+    const btn = await page.evaluate(() => {
+      const b = document.querySelector('.action-btn');
+      if (!b) return null;
+      const cs = getComputedStyle(b);
+      const d = b.getBoundingClientRect(), t = b.querySelector('.action-btn-desc').getBoundingClientRect();
+      return { display: cs.display, pad: parseInt(cs.paddingTop, 10), desbordado: t.bottom > d.bottom + 1 };
+    });
+    expect(btn).not.toBeNull();
+    expect(btn.display).toBe('flex');
+    expect(btn.pad).toBeGreaterThan(0);
+    expect(btn.desbordado, 'el subtitulo se sale del boton').toBe(false);
+    // Los recuadros de cabecera dejaron de tener fondo pintado a mano.
+    const tinte = await page.evaluate(() => {
+      const t = document.querySelector('.mc-hero-tile');
+      return t ? getComputedStyle(t).backgroundColor : null;
+    });
+    expect(tinte).not.toMatch(/82,\s*183,\s*136/);
+  });
+});
+
+/**
+ * FASE 2 — Comunidad. El titulo del post existia en el formulario y en la base
+ * (`posts_red.titulo`), pero al publicar se metia dentro del cuerpo como
+ * '<b>…</b><br>' y nunca se enviaba en su campo: el feed no podia darle
+ * jerarquia y todo se leia como un bloque plano.
+ */
+test.describe('MultiCoach · Comunidad visual', () => {
+  test('el post publica titulo y destacado en sus propios campos', async ({ page }) => {
+    // OJO: aqui NO se quitan comentarios. Un `/*` de CSS emparejaba con un `*/`
+    // muy posterior y el filtro se llevaba por delante el 20% del fichero, este
+    // bloque incluido. Estos patrones son de codigo y no aparecen en prosa.
+    const src = await (await fetch(`${BASE}multicoach.html`)).text();
+    // Se envia `titulo` aparte y `destacado` dentro de `data` (jsonb que ya existe).
+    expect(src).toMatch(/action:'publish',titulo:ti/);
+    expect(src).toMatch(/data:\{destacado:dest\}/);
+    // Y ya no se incrusta en el cuerpo al publicar.
+    expect(src).not.toMatch(/body\+='<b>'\+_mcEsc\(ti\)/);
+    // Ninguna tabla nueva: sigue siendo posts_red via comunidad-red.
+    expect(src).not.toMatch(/rest\/v1\/posts_red/);
+    expect(src).toMatch(/functions\/v1\/comunidad-red/);
+  });
+
+  test('el feed da jerarquia al titulo y destaca a ancho completo', async ({ page }) => {
+    await page.goto(MC(), { waitUntil: 'load' });
+    await page.waitForTimeout(900);
+    await ir(page, 'comunidad');
+    await page.waitForTimeout(500);
+    const cards = await page.$$eval('.revista .post', els => els.map(e => ({
+      ti: (e.querySelector('.post-ti') || {}).textContent || '',
+      dest: e.classList.contains('is-dest'),
+      badge: !!e.querySelector('.post-dest'),
+    })));
+    expect(cards.length).toBeGreaterThan(0);
+    expect(cards.some(c => c.ti.trim().length > 0), 'ningun post muestra titulo').toBe(true);
+    const d = cards.filter(c => c.dest);
+    expect(d.length, 'no hay ningun destacado').toBeGreaterThan(0);
+    d.forEach(c => expect(c.badge).toBe(true));
+    // El destacado ocupa toda la fila.
+    const ancho = await page.evaluate(() => {
+      const g = document.querySelector('.revista'), d = document.querySelector('.revista .post.is-dest');
+      if (!g || !d) return null;
+      return Math.round(d.getBoundingClientRect().width) >= Math.round(g.getBoundingClientRect().width) - 2;
+    });
+    expect(ancho).toBe(true);
+    // El titulo se lee en la serif, no en el mismo cuerpo que el texto.
+    const fuente = await page.evaluate(() => {
+      const t = document.querySelector('.revista .post-ti');
+      return t ? getComputedStyle(t).fontFamily : '';
+    });
+    expect(fuente.toLowerCase()).toMatch(/fraunces|georgia|serif/);
+  });
+});
+
+/**
+ * FASE 2 — decision 8: `owner-settings.html` es del carril C retirado y ofrecia
+ * "Conectar" para Calendly, Stripe y Zapier sin ningun backend. Sale de
+ * circulacion sin borrar el fichero.
+ */
+test.describe('MultiCoach · integraciones honestas', () => {
+  test('owner-settings no es alcanzable y no ofrece conexiones falsas', async ({ page }) => {
+    const redirects = await (await fetch(`${BASE}_redirects`)).text();
+    expect(redirects).toMatch(/\/owner-settings\.html\s+\/multicoach\.html#config\s+301/);
+    const src = await (await fetch(`${BASE}owner-settings.html`)).text();
+    expect(src).toMatch(/CARRIL C RETIRADO/);
+    expect(src).toMatch(/location\.replace\('\/multicoach\.html#config'\)/);
+    expect(src).toMatch(/name="robots" content="noindex/);
+  });
+
+  test('MultiCoach no promete integraciones que no existen', async ({ page }) => {
+    const src = await (await fetch(`${BASE}multicoach.html`)).text();
+    const sinComentarios = src.replace(/^\s*\/\/.*$/gm, '').replace(/\/\*[\s\S]*?\*\//g, '');
+    for (const falsa of ['Zapier', 'Mailchimp', 'HubSpot']) {
+      expect(sinComentarios, `MultiCoach anuncia ${falsa}`).not.toContain(falsa);
+    }
+  });
+});
+
+/**
+ * FASE 2 — decision 10: Configuracion prometia pathwaycareercoach.com/g/<slug>
+ * como "Tu link publico" y esa ruta no la sirve nadie. Los datos se siguen
+ * guardando; lo que cambia es que deja de presentarse como funcional.
+ */
+test.describe('MultiCoach · la pagina publica no se promete', () => {
+  test('el interruptor esta desactivado y avisa de que aun no responde', async ({ page }) => {
+    await page.goto(MC(), { waitUntil: 'load' });
+    await page.waitForTimeout(900);
+    await ir(page, 'config');
+    await page.evaluate(() => window._goCfg('profile'));
+    await page.waitForTimeout(350);
+
+    const sw = await page.$('#cfp-pub');
+    expect(sw, 'falta el interruptor de pagina publica').not.toBeNull();
+    expect(await sw.isDisabled()).toBe(true);
+
+    const aviso = await page.$eval('.mc-soon', e => e.innerText).catch(() => '');
+    expect(aviso).toMatch(/no responde|preparaci/i);
+
+    const txt = await page.evaluate(() => document.querySelector('.cp-cfg-panel').innerText);
+    expect(txt).not.toMatch(/Tu link público/i);
+
+    // Los campos siguen ahi: el dato se guarda para cuando exista la pagina.
+    for (const id of ['cfp-nombre', 'cfg-slug-noexiste', 'cfp-slug', 'cfp-titulo', 'cfp-desc']) {
+      if (id === 'cfg-slug-noexiste') continue;
+      expect(await page.$('#' + id), `falta el campo ${id}`).not.toBeNull();
+    }
+  });
+});

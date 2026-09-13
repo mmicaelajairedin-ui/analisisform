@@ -5072,8 +5072,19 @@ const RULES = [
       if (!s) return null;
       if (!/function mcBoot\(\)[\s\S]{0,3000}rest\/v1\/usuarios\?id=eq\./.test(s))
         return "multicoach.html: mcBoot ya no verifica el rol fresco contra el servidor (usuarios?id=eq.) → un dueño con mj_user viejo vuelve a ver la maqueta 'Alex'.";
-      if (!/rol==='coach'&&f\.org_id[\s\S]{0,200}panel-v2\.html/.test(s))
-        return "multicoach.html: mcBoot ya no manda al coach de una red a SU panel (panel-v2.html).";
+      // Se ampliO: antes solo se devolvia al coach CON org_id; ahora a cualquier
+      // coach, tenga red o no. Manda la cuenta, no la puerta por la que entro.
+      if (!/rol==='coach'[\s\S]{0,400}panel-v2\.html/.test(s))
+        return "multicoach.html: mcBoot ya no manda al coach a SU panel (panel-v2.html).";
+      // Y la vuelta: un dueno que abre el panel del coach vuelve a su red, salvo
+      // que lo haya pedido a proposito (?coach=1 desde MultiCoach).
+      const pan = read("panel-v2.html");
+      if (pan) {
+        if (!/rol==="owner"[\s\S]{0,160}location\.replace\("multicoach\.html/.test(pan))
+          return "panel-v2.html: un dueno logueado ya no vuelve a su red (multicoach.html).";
+        if (!/\[?\?&\]\(demo\|embed\|coach\)=1/.test(pan) && !/demo\|embed\|coach/.test(pan))
+          return "panel-v2.html: se perdio la excepcion ?coach=1 — el dueno no podria usar su propio panel de coach.";
+      }
       if (!/function _mcPaintOwner\(/.test(s) || !/_mcPaintOwner\(owner\)/.test(s))
         return "multicoach.html: mcLoadReal ya no pinta la identidad real del dueño al instante (_mcPaintOwner) → vuelve el flash de 'Alex Gómez'.";
       if (/MC_REAL=false;\s*mcApplyNiche\(\)/.test(s))
@@ -6298,6 +6309,66 @@ const RULES = [
       // 7) El diseno muerto no puede volver por la puerta de las migraciones.
       if (read("supabase/migrations/0112_programs_rls_fix.sql"))
         return "volvio supabase/migrations/0112_programs_rls_fix.sql. Esa migracion crea policies sobre `programs`, una tabla que no existe: el esquema real es mc_programas.";
+      return null;
+    },
+  },
+  {
+    name: "multicoach: la interfaz no promete la pagina publica hasta que exista",
+    bug:
+      "Configuracion > Perfil ensenaba un interruptor 'Activar pagina publica' y " +
+      "anunciaba la URL pathwaycareercoach.com/g/<slug> como 'Tu link publico'. " +
+      "Esa ruta NO la sirve nadie: la coach activaba el interruptor, copiaba el " +
+      "link, lo compartia y quien lo abria se encontraba un 404. Los datos (slug, " +
+      "titulo, descripcion) si se guardan en organizaciones.marca, asi que el " +
+      "arreglo no es quitar el formulario sino dejar de presentarlo como algo que " +
+      "ya funciona. Cuando /g/<slug> se sirva de verdad, se revierte esta regla.",
+    check() {
+      const s2 = read("multicoach.html");
+      if (!s2) return "falta multicoach.html";
+      if (!/\/g\/'\+slug/.test(s2)) return null;   // ya no se construye la URL: nada que vigilar
+      // Mientras la ruta no exista, el interruptor no puede estar operativo...
+      if (/id="cfp-pub"[^>]*onclick=/.test(s2))
+        return "multicoach.html: el interruptor de pagina publica vuelve a ser operativo, pero /g/<slug> sigue sin servirse.";
+      if (!/id="cfp-pub"[\s\S]{0,120}disabled/.test(s2))
+        return "multicoach.html: el interruptor de pagina publica ya no esta deshabilitado.";
+      // ...y la interfaz tiene que decir que todavia no responde.
+      if (!/mc-soon/.test(s2))
+        return "multicoach.html: desaparecio el aviso de que la pagina publica todavia no existe.";
+      if (/Tu link p\u00fablico|Tu link publico/.test(s2))
+        return "multicoach.html: vuelve a llamar 'tu link publico' a una URL que no responde.";
+      return null;
+    },
+  },
+  {
+    name: "invitacion: activar la cuenta NO borra la pertenencia a la red",
+    bug:
+      "Cuando el dueno invita a alguien, `agregar-coach-red` crea la fila con " +
+      "es_coach_red, plan:'red', estado_sub, member_role, no_da_clases y el " +
+      "coach_type de la organizacion. Al activar la cuenta desde registro.html, " +
+      "`registrar-coach` reescribia `configuracion` ENTERA con la del formulario " +
+      "y solo rescataba fecha_fin_prueba y creado_por_admin. Consecuencias reales: " +
+      "(1) panel-v2 decide con `es_coach_red`/`plan==='red'` que ese asiento lo " +
+      "paga el dueno (return 0 en el calculo del paywall) — al perderse, el coach " +
+      "invitado quedaba como coach individual en prueba y acababa contra el muro " +
+      "de pago aunque su organizacion pagara; (2) sin `member_role`, un " +
+      "Colaborador activaba y salia como coach, asi que el login lo mandaba a " +
+      "panel-v2 en vez de a MultiCoach.",
+    check() {
+      const f = "supabase/functions/registrar-coach/index.ts";
+      const s2 = read(f);
+      if (!s2) return f + ": falta la funcion que activa las cuentas invitadas.";
+      const rama = s2.slice(s2.indexOf('estado === "invitada"'));
+      if (!rama) return f + ": ya no existe la rama de activacion de una cuenta invitada.";
+      for (const k of ["es_coach_red", "plan", "estado_sub", "member_role", "no_da_clases", "coach_type"]) {
+        if (!new RegExp('"' + k + '"').test(rama))
+          return f + ": la activacion dejo de conservar `" + k + "` de la invitacion (el invitado pierde su asiento de red).";
+      }
+      if (!/pendiente_activacion/.test(rama))
+        return f + ": la activacion no apaga `pendiente_activacion`.";
+      // El alta del dueno tiene que seguir escribiendo esas claves.
+      const inv = read("supabase/functions/agregar-coach-red/index.ts");
+      if (inv && !/es_coach_red:\s*true/.test(inv))
+        return "agregar-coach-red: dejo de marcar `es_coach_red` — el asiento de red no se reconoceria.";
       return null;
     },
   },
