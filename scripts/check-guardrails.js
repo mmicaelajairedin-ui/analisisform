@@ -73,6 +73,35 @@ const RULES = [
     },
   },
   {
+    name: "cobros: el default de moneda es el MISMO en el panel y en el checkout",
+    bug: "ERR-CURRENCY-002. El default era 'eur' en 7 puntos de 4 archivos, con " +
+         "47 coaches sin moneda elegida (mayoria LatAm) y la plataforma cobrando " +
+         "en USD. Se paso a 'usd'. El riesgo REAL a futuro no es el valor sino la " +
+         "DERIVA: si alguien cambia el default del panel y no el de las edge " +
+         "functions, el coach ve un simbolo y Stripe cobra en otra moneda — y eso " +
+         "no lo detecta ningun test de UI. Esta regla exige que coincidan.",
+    check() {
+      const DEF = "usd";
+      const front = read("panel-v2.html");
+      if (front) {
+        const m = front.match(/function _monCode\(\)\{[^}]*\|\|"([a-z]{3})"/);
+        if (!m) return "panel-v2.html: no se pudo leer el default de _monCode().";
+        if (m[1] !== DEF)
+          return "panel-v2.html: el default del panel es '" + m[1] + "' y el del checkout '" + DEF + "' — el coach veria un simbolo y Stripe cobraria otra moneda.";
+      }
+      for (const f of ["supabase/functions/connect-checkout/index.ts",
+                       "supabase/functions/red-checkout/index.ts"]) {
+        const s2 = read(f);
+        if (!s2) continue;
+        if (/\?\?\s*"eur"|\|\|\s*"eur"|=\s*"eur";|:\s*"eur",/.test(s2))
+          return f + ": volvio un fallback a 'eur' — el checkout dejaria de coincidir con el panel.";
+        if (!new RegExp('"' + DEF + '"').test(s2))
+          return f + ": no aparece el default '" + DEF + "'.";
+      }
+      return null;
+    },
+  },
+  {
     name: "colores: las burbujas del chat NO usan el color de marca (van neutras)",
     bug: "Regla de la coach: los colores son neutros (blanco/crema) y SOLO lo " +
          "white-label cambia al color de marca. El chat es chrome, no white-label. " +

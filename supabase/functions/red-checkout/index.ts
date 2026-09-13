@@ -97,8 +97,8 @@ function pubServicios(cfg: Record<string, any>) {
     name: String(s?.name ?? s?.nombre ?? "Servicio"),
     desc: String(s?.desc ?? s?.descripcion ?? ""),
     price: Number(s?.price ?? s?.precio ?? 0),
-    moneda: (MONEDAS_OK.has(String(s?.moneda ?? cfg?.moneda ?? "eur").toLowerCase())
-      ? String(s?.moneda ?? cfg?.moneda ?? "eur").toLowerCase() : "eur"),
+    moneda: (MONEDAS_OK.has(String(s?.moneda ?? cfg?.moneda ?? "usd").toLowerCase())
+      ? String(s?.moneda ?? cfg?.moneda ?? "usd").toLowerCase() : "usd"),
     recurrente: s?.recurrente === true || s?.suscripcion === true,
   })).filter((s: any) => s.price > 0);
 }
@@ -202,12 +202,12 @@ Deno.serve(async (req: Request) => {
       if (!found) return json({ error: "Servicio no encontrado" }, 404);
       svc = found;
     } else {
-      const rawMon = String(p.moneda || "eur").toLowerCase();
+      const rawMon = String(p.moneda || "usd").toLowerCase();
       svc = {
         idx: null,
         name: String(p.concepto || "Servicio").trim().slice(0, 120) || "Servicio",
         price: customMonto,
-        moneda: MONEDAS_OK.has(rawMon) ? rawMon : "eur",
+        moneda: MONEDAS_OK.has(rawMon) ? rawMon : "usd",
         recurrente: false,
       };
     }
