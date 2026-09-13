@@ -345,3 +345,31 @@ necesitan tabla, columna ni policy nueva. Para el **cliente** sí hay hueco: lee
 ⚠️ Dato real: **4 de 6 organizaciones no tienen `fecha_fin_prueba`**, y una está
 vencida desde el 12-08-2026 con `activo=true`. Sin esa fecha,
 `_mcPaywallCheck()` no avisa ni corta: hoy están en prueba indefinida.
+
+### 10-bis. Por qué una organización queda en estado incoherente (fase 2)
+
+`organizaciones.estado_sub` / `activo` los escriben **solo dos sitios**:
+`stripe-webhook` (y solo si existe una suscripción de Stripe) y `suspender-org`
+(manual, admin). **No hay ningún cron que venza la prueba de una organización.**
+
+Consecuencia comprobada en producción: una red cuya prueba caducó pero que nunca
+llegó a suscribirse se queda en `prueba` + `activo=true` **para siempre**, porque
+el único código capaz de moverla a `vencida` es el webhook, y el webhook no se
+dispara sin suscripción. Es el caso de la «Red de Gustavo García» (prueba fin
+12-08-2026, `stripe_customer_id` y `stripe_subscription_id` en NULL).
+
+`coach-lifecycle` NO cubre esto: trabaja sobre coaches individuales
+(`coach_nudges`), nunca sobre `organizaciones`.
+
+### 10-ter. Organizaciones huérfanas
+
+`mi-red` exige una fila en `usuarios` con `rol='owner'` y ese `org_id`. Dos
+organizaciones tienen `owner_email` apuntando a una cuenta que **no existe** en
+`usuarios`, así que nadie puede abrirlas aunque tengan clientes dentro:
+
+| Organización | owner_email | Clientes atrapados |
+|---|---|---|
+| Pathway - Micaela | mmicaela.jairedin@gmail.com | 9 |
+| Test Organization 2 | owner2@test.com | 1 |
+
+No se ha tocado ningún dato. Cualquier corrección se propone antes.

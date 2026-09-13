@@ -6284,6 +6284,33 @@ const RULES = [
     },
   },
   {
+    name: "multicoach: la interfaz no promete la pagina publica hasta que exista",
+    bug:
+      "Configuracion > Perfil ensenaba un interruptor 'Activar pagina publica' y " +
+      "anunciaba la URL pathwaycareercoach.com/g/<slug> como 'Tu link publico'. " +
+      "Esa ruta NO la sirve nadie: la coach activaba el interruptor, copiaba el " +
+      "link, lo compartia y quien lo abria se encontraba un 404. Los datos (slug, " +
+      "titulo, descripcion) si se guardan en organizaciones.marca, asi que el " +
+      "arreglo no es quitar el formulario sino dejar de presentarlo como algo que " +
+      "ya funciona. Cuando /g/<slug> se sirva de verdad, se revierte esta regla.",
+    check() {
+      const s2 = read("multicoach.html");
+      if (!s2) return "falta multicoach.html";
+      if (!/\/g\/'\+slug/.test(s2)) return null;   // ya no se construye la URL: nada que vigilar
+      // Mientras la ruta no exista, el interruptor no puede estar operativo...
+      if (/id="cfp-pub"[^>]*onclick=/.test(s2))
+        return "multicoach.html: el interruptor de pagina publica vuelve a ser operativo, pero /g/<slug> sigue sin servirse.";
+      if (!/id="cfp-pub"[\s\S]{0,120}disabled/.test(s2))
+        return "multicoach.html: el interruptor de pagina publica ya no esta deshabilitado.";
+      // ...y la interfaz tiene que decir que todavia no responde.
+      if (!/mc-soon/.test(s2))
+        return "multicoach.html: desaparecio el aviso de que la pagina publica todavia no existe.";
+      if (/Tu link p\u00fablico|Tu link publico/.test(s2))
+        return "multicoach.html: vuelve a llamar 'tu link publico' a una URL que no responde.";
+      return null;
+    },
+  },
+  {
     name: "invitacion: activar la cuenta NO borra la pertenencia a la red",
     bug:
       "Cuando el dueno invita a alguien, `agregar-coach-red` crea la fila con " +

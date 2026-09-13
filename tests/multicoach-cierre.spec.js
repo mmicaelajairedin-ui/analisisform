@@ -478,3 +478,34 @@ test.describe('MultiCoach · integraciones honestas', () => {
     }
   });
 });
+
+/**
+ * FASE 2 — decision 10: Configuracion prometia pathwaycareercoach.com/g/<slug>
+ * como "Tu link publico" y esa ruta no la sirve nadie. Los datos se siguen
+ * guardando; lo que cambia es que deja de presentarse como funcional.
+ */
+test.describe('MultiCoach · la pagina publica no se promete', () => {
+  test('el interruptor esta desactivado y avisa de que aun no responde', async ({ page }) => {
+    await page.goto(MC(), { waitUntil: 'load' });
+    await page.waitForTimeout(900);
+    await ir(page, 'config');
+    await page.evaluate(() => window._goCfg('profile'));
+    await page.waitForTimeout(350);
+
+    const sw = await page.$('#cfp-pub');
+    expect(sw, 'falta el interruptor de pagina publica').not.toBeNull();
+    expect(await sw.isDisabled()).toBe(true);
+
+    const aviso = await page.$eval('.mc-soon', e => e.innerText).catch(() => '');
+    expect(aviso).toMatch(/no responde|preparaci/i);
+
+    const txt = await page.evaluate(() => document.querySelector('.cp-cfg-panel').innerText);
+    expect(txt).not.toMatch(/Tu link público/i);
+
+    // Los campos siguen ahi: el dato se guarda para cuando exista la pagina.
+    for (const id of ['cfp-nombre', 'cfg-slug-noexiste', 'cfp-slug', 'cfp-titulo', 'cfp-desc']) {
+      if (id === 'cfg-slug-noexiste') continue;
+      expect(await page.$('#' + id), `falta el campo ${id}`).not.toBeNull();
+    }
+  });
+});
