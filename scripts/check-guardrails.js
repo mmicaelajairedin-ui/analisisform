@@ -6423,6 +6423,64 @@ const RULES = [
       return null;
     },
   },
+  {
+    name: "multicoach: A es legacy — no recibe funcionalidad nueva",
+    bug: "Decision de producto del 2026-09-14: MultiCoach tiene DOS " +
+         "implementaciones y la superviviente es B (repo `multicoach`, " +
+         "pathwayplatforms.com). `multicoach.html` se queda en produccion hasta " +
+         "que B alcance la paridad, pero NO recibe funcionalidad nueva: hacerla " +
+         "dos veces es el desarrollo paralelo que se acaba de congelar. " +
+         "Esta regla NO es una puerta cerrada — es una FIRMA. Mide el tamano de " +
+         "lo que se le agrega y, si es grande, pide que el commit diga que es un " +
+         "arreglo y no una funcion nueva. Un fix critico de produccion nunca se " +
+         "bloquea: se escribe la marca y pasa, y el motivo queda en el historial. " +
+         "Ver CLAUDE.md, seccion 'MULTICOACH — multicoach.html ES LEGACY'.",
+    check() {
+      // Lineas AGREGADAS a multicoach.html, respecto de main, que puede pasar
+      // sin firma. Un arreglo critico suele ser mucho mas chico que esto; lo
+      // que no cabe aca no es que este prohibido, es que se firma.
+      const UMBRAL = 60;
+      const MARCAS = /(FIX-CRITICO-MULTICOACH|RETIRADA-MULTICOACH)\s*:/;
+
+      let git;
+      try { git = require("child_process"); } catch (e) { return null; }
+      const sh = (cmd) => {
+        try { return git.execSync(cmd, { stdio: ["ignore", "pipe", "ignore"] }).toString(); }
+        catch (e) { return null; }
+      };
+
+      // La base es main. Si no se puede resolver —clon shallow de CI, repo sin
+      // remoto— la regla NO opina: callar es mejor que frenar por no saber.
+      let base = null;
+      for (const ref of ["origin/main", "main"]) {
+        if (sh("git rev-parse --verify --quiet " + ref)) { base = ref; break; }
+      }
+      if (!base) return null;
+      const mb = sh("git merge-base " + base + " HEAD");
+      if (!mb) return null;
+
+      // Solo lo COMMITEADO: antes del commit la marca todavia no puede existir,
+      // y la regla no va a pedir algo que aun no se puede dar.
+      const numstat = sh("git diff --numstat " + mb.trim() + " HEAD -- multicoach.html");
+      if (numstat === null) return null;
+      const m = /^(\d+)\s+(\d+)\s/.exec(numstat.trim());
+      if (!m) return null;                       // sin cambios en el archivo
+      const agregadas = parseInt(m[1], 10) || 0;
+      if (agregadas <= UMBRAL) return null;
+
+      // Los mensajes de los commits que TOCAN el archivo en esta rama.
+      const log = sh("git log --format=%B " + mb.trim() + "..HEAD -- multicoach.html");
+      if (log === null) return null;
+      if (MARCAS.test(log)) return null;
+
+      return "multicoach.html suma " + agregadas + " lineas sobre " + base + " y ningun " +
+             "commit que lo toca dice por que. A es LEGACY: lo nuevo va al repo `multicoach` " +
+             "(B). Si esto ES un arreglo critico de produccion o un paso de la retirada, " +
+             "ponlo en el mensaje del commit y pasa:\n" +
+             "        FIX-CRITICO-MULTICOACH: <que estaba roto en produccion>\n" +
+             "        RETIRADA-MULTICOACH: <que paso de la retirada es>";
+    },
+  },
 ];
 
 
