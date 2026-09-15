@@ -6234,7 +6234,7 @@ function viewClienteDetalle(c){
     var _nd=_nut.dias||{};
     var _NDAYS=[["lun","Lunes"],["mar","Martes"],["mie","Miércoles"],["jue","Jueves"],["vie","Viernes"],["sab","Sábado"],["dom","Domingo"]];
     var _dayRows=_NDAYS.map(function(d){ return "<div class='cp-form-row'><label class='cp-form-label'>"+d[1]+"</label><textarea id='cf-nut-"+d[0]+"' class='cp-form-textarea' style='min-height:52px' placeholder='Desayuno… · Almuerzo… · Merienda… · Cena…'>"+esc(_nd[d[0]]||"")+"</textarea></div>"; }).join("");
-    body=_visBar('nutricion','Nutrición')+"<div class='cp-card'><div class='cp-card-hd'><h3 class='cp-card-title'>Nutrición · día a día<span class='dot'>.</span></h3><span class='cp-eyebrow'>Lo ve el cliente en su portal</span></div><div class='cp-card-pad' style='display:flex;flex-direction:column;gap:10px'>"+
+    body=_visBar('nutricion','Nutrición')+"<div class='cp-card'><div class='cp-card-hd'><h3 class='cp-card-title'>Nutrición · día a día<span class='dot'>.</span></h3><span class='cp-eyebrow'>"+(_cliVisOn('nutricion')?"Lo ve el cliente en su portal":"⚠ OCULTA — el cliente NO la ve")+"</span></div><div class='cp-card-pad' style='display:flex;flex-direction:column;gap:10px'>"+
       "<div class='cp-form-hint' style='margin:0'>Carga las comidas de cada día (no hace falta llenar todos). El cliente las ve día por día y puede anotar lo que comió de verdad.</div>"+
       _dayRows+
       "<div class='cp-form-row'><label class='cp-form-label'>Pautas generales</label><textarea id='cf-nut-pautas' class='cp-form-textarea' style='min-height:70px' placeholder='Macros/calorías, agua, qué evitar, horarios…'>"+esc(_nut.pautas||"")+"</textarea></div>"+
@@ -13533,7 +13533,13 @@ document.addEventListener("click", function(ev){
     _sbw("candidatos?id=eq."+encodeURIComponent(fnid),"PATCH",{fit_nutricion:fnv})
       .then(function(r){
         if(r && r.ok){ CLIENTS.forEach(function(x){ if(String(x.id)===String(fnid)&&x.raw) x.raw.fit_nutricion=fnv; });
-          toast(_nHayAlgo?"Nutrición guardada ✓ — el cliente la ve":"Plan de nutrición borrado"); return; }
+          // No basta con que se guarde: si la seccion esta oculta el cliente no la
+          // ve, y prometerselo al coach es lo que hizo que este fallo durara.
+          var _oculta=_visOculta(rawOf(fnid),"nutricion");
+          toast(!_nHayAlgo ? "Plan de nutrición borrado"
+            : (_oculta ? "Guardada ✓ — pero Nutrición está OCULTA para este cliente: actívala arriba para que la vea"
+                       : "Nutrición guardada ✓ — el cliente la ve"));
+          return; }
         // 2xx con CERO filas = el PATCH no casó ninguna fila (la sesión no
         // resolvió, o este cliente no está a tu nombre). NO es una columna que
         // falte: fit_nutricion existe en candidatos. El mensaje viejo mandaba a
@@ -15912,6 +15918,12 @@ function _busyOff(){ _genBusy = false; try{ if(_genBusyTimer){ clearTimeout(_gen
 var UPGRADE_URL="https://pathwaycareercoach.com/upgrade.html";
 var STRIPE_PORTAL="https://billing.stripe.com/p/login/fZu3cv9aE2py6b20f98AE00";
 function rawOf(id){ var c=CLIENTS.filter(function(x){return String(x.id)===String(id);})[0]; return (c&&c.raw)||null; }
+// Una seccion puede estar GUARDADA y a la vez OCULTA para el cliente
+// (candidatos.visibilidad). Sin esto, el panel prometia "el cliente la ve"
+// mientras el portal la escondia — y el coach no tenia forma de saberlo salvo
+// mirar el interruptor de arriba. Caso real: un cliente con su plan cargado y
+// nutricion en false, que llamo por telefono porque no veia nada.
+function _visOculta(raw, k){ try{ var m=JSON.parse((raw&&raw.visibilidad)||"{}")||{}; return m[k]===false; }catch(e){ return false; } }
 function _val(id){ var e=document.getElementById(id); return e?e.value:""; }
 // IMO (índice músculo-óseo) = masa muscular ÷ masa ósea. Se autocompleta al
 // cargar ambos (los dos en kg), así la coach no lo calcula a mano.

@@ -3663,6 +3663,32 @@ const RULES = [
     },
   },
   {
+    name: "nutrición: el panel no promete 'el cliente la ve' si la sección está OCULTA",
+    why:
+      "Una seccion puede estar GUARDADA y a la vez oculta para el cliente " +
+      "(candidatos.visibilidad, que el portal aplica en applyVisFit: " +
+      "vis[k]===false esconde el boton de nav Y la seccion entera). El panel " +
+      "decia 'Nutricion guardada ✓ — el cliente la ve' y ponia de rotulo 'Lo ve " +
+      "el cliente en su portal' SIN MIRAR ese interruptor. Caso real medido: un " +
+      "cliente con su plan cargado y nutricion:false llamo por telefono porque no " +
+      "veia nada, y el coach tenia razon en creer que lo habia guardado — lo habia " +
+      "guardado. Regla: donde se afirme que el cliente VE algo, se comprueba la " +
+      "visibilidad; guardar y mostrar son dos cosas distintas.",
+    check() {
+      var p = read("panel-v2.html");
+      if (!p) return "panel-v2.html: no existe.";
+      if (!/function _visOculta\s*\(/.test(p))
+        return "panel-v2.html: falta _visOculta() — el panel vuelve a prometer que el cliente ve algo sin mirar candidatos.visibilidad.";
+      if (!/_visOculta\(rawOf\(fnid\),\s*["']nutricion["']\)/.test(p))
+        return "panel-v2.html: el guardado de nutricion ya no comprueba si la seccion esta oculta para ese cliente.";
+      if (/toast\(_nHayAlgo\?"Nutrición guardada ✓ — el cliente la ve"/.test(p))
+        return "panel-v2.html: el aviso de guardado volvio a prometer 'el cliente la ve' sin condicion.";
+      if (!/_cliVisOn\('nutricion'\)\?"Lo ve el cliente en su portal"/.test(p))
+        return "panel-v2.html: el rotulo de la tarjeta de Nutricion volvio a afirmar que el cliente la ve sin mirar la visibilidad.";
+      return null;
+    },
+  },
+  {
     name: "portal fitness: toggleEx no pisa la función de traducción t()",
     why:
       "Dentro de toggleEx se declaraba 'var t = day.querySelectorAll(\'.ex\').length', " +
