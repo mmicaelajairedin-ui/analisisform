@@ -8,6 +8,7 @@
 <script src="/pw-lang.js"></script>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <script src="pw-app.js"></script>
+<script src="/pw-destino.js"></script>
 <script src="pw-observe.js"></script>
 <script src="/pw-consent.js"></script>
 <script src="/pw-pixel.js"></script>
@@ -888,12 +889,40 @@ async function registrar(){
     // Marcar este dispositivo: ya uso una prueba (anti-abuso del trial).
     try{ localStorage.setItem('pw_trial_used','1'); }catch(e){}
 
+    // ATERRIZAJE POR ROL — lo decide `pw-destino.js`, la MISMA fuente que usa
+    // login.html. Antes esto iba SIEMPRE a panel-v2.html, y ahi se perdia el
+    // unico trabajo que hacia falta para que funcionara: `agregar-coach-red`
+    // guarda `member_role` al invitar y `registrar-coach` v24 lo CONSERVA al
+    // activar, precisamente para que a un colaborador se le mande a MultiCoach.
+    // Como este camino se salta el login, que era el unico que enrutaba, ese
+    // dato no lo miraba nadie y el colaborador acababa en el panel del coach.
+    //
+    // `coach` es la respuesta de `registrar-coach`: trae `rol` y la
+    // `configuracion` ya mezclada, que es donde viene `member_role`. No hace
+    // falta volver a leer la fila.
+    //
     // Si la sesión no llegó a crearse, el panel no podría escribir: lo mandamos
     // a login.html, que es el camino que sabe reparar la identidad. No es un
-    // fallback decorativo — es la ruta real de recuperación.
-    var primerLogin = _authOk
-      ? 'panel-v2.html?welcome=1'
-      : ('login.html?email=' + encodeURIComponent(email) + '&nuevo=1');
+    // fallback decorativo — es la ruta real de recuperación, y ademas enruta.
+    var primerLogin = 'login.html?email=' + encodeURIComponent(email) + '&nuevo=1';
+    if(_authOk){
+      try{
+        primerLogin = await PWDEST.destinoAsync({
+          id: coach.id, email: email, rol: coach.rol || 'coach', nombre: nombre,
+          org_id: (coach.org_id || null),
+          configuracion: coach.configuracion || configuracion
+        }, {
+          // Solo al coach se le da la bienvenida del alta: al dueno y al
+          // colaborador les toca MultiCoach, que no tiene esa pantalla.
+          extra: 'welcome=1',
+          buscarNicho: async function(em){
+            var _sc = window.supabase.createClient(SB, KEY);
+            var _cq = await _sc.from('candidatos').select('nicho').eq('email', em).limit(1);
+            return (_cq && _cq.data && _cq.data.length) ? _cq.data[0].nicho : null;
+          }
+        });
+      }catch(_e){ primerLogin = 'panel-v2.html?welcome=1'; }
+    }
     setTimeout(function(){
       window.location.href = primerLogin;
     }, 1200);

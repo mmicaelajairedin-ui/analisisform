@@ -6481,6 +6481,60 @@ const RULES = [
              "        RETIRADA-MULTICOACH: <que paso de la retirada es>";
     },
   },
+  {
+    name: "aterrizaje por rol: UNA sola fuente (pw-destino.js) en las cuatro puertas",
+    bug: "P0-5. La misma decision —a donde va una persona tras autenticarse— " +
+         "estaba escrita CUATRO veces (login.html, login-en.html, registro.html, " +
+         "registro-en.html) y no decia lo mismo: los login enrutaban por rol y " +
+         "los registro terminaban SIEMPRE en panel-v2.html. Por eso el trabajo " +
+         "de registrar-coach v24 —conservar member_role al activar, justo para " +
+         "mandar al colaborador a MultiCoach— no lo ejercia nadie: el camino de " +
+         "activacion se salta el login, que era el unico que enrutaba. " +
+         "Y debajo habia un segundo defecto que rompia la regla TAMBIEN en el " +
+         "login: el colaborador no se reconoce por `usuarios.rol`. Medido en " +
+         "produccion el 2026-09-15: rol='colaborador' son 0 filas, y " +
+         "rol='coach' + configuracion.member_role='colaborador' son 2. " +
+         "Es el patron de _slugify: la misma regla copiada acaba divergiendo.",
+    check() {
+      const mod = read("pw-destino.js");
+      if (!mod) return "falta pw-destino.js — el enrutado por rol se quedaria sin fuente unica.";
+
+      // El modulo tiene que seguir reconociendo al colaborador por la BANDERA.
+      const m = noComments(mod);
+      if (!/function esColaborador\(/.test(m))
+        return "pw-destino.js: falta esColaborador() — nadie decidiria quien va a MultiCoach.";
+      if (!/member_role\s*===\s*['\"]colaborador['\"]/.test(m))
+        return "pw-destino.js: esColaborador dejo de mirar configuracion.member_role. " +
+               "rol='colaborador' son 0 filas en produccion: sin la bandera, ningun colaborador llega a MultiCoach.";
+      for (const destino of ["multicoach.html", "panel-v2.html", "empleado.html", "cliente.html"]) {
+        if (!m.includes(destino)) return "pw-destino.js: ya no resuelve " + destino + ".";
+      }
+
+      // Las cuatro puertas lo cargan y NINGUNA vuelve a decidir por su cuenta.
+      for (const f of ["login.html", "login-en.html", "registro.html", "registro-en.html"]) {
+        const h = read(f);
+        if (!h) return "falta " + f + ".";
+        if (!/<script src="\/pw-destino\.js"><\/script>/.test(h))
+          return f + ": ya no carga pw-destino.js — esa puerta vuelve a enrutar por su cuenta.";
+        const js = noComments(inlineJs(h));
+        if (!/PWDEST\.destinoAsync\(/.test(js))
+          return f + ": no llama a PWDEST.destinoAsync() — el destino se decide en otro sitio.";
+        // Un destino escrito a mano en el redirect final es como volvio la vez anterior.
+        if (/location\.href\s*=\s*['\"][^'\"]*multicoach\.html/.test(js))
+          return f + ": vuelve a mandar a multicoach.html con una URL escrita a mano.";
+        if (/location\.href\s*=\s*BASE\s*\+\s*['\"]\/(multicoach|panel-v2|empleado|cliente)\.html/.test(js))
+          return f + ": vuelve a enrutar por su cuenta en vez de preguntarle a pw-destino.js.";
+      }
+
+      // Y el alta no puede volver a terminar SIEMPRE en el panel del coach.
+      for (const f of ["registro.html", "registro-en.html"]) {
+        const js = noComments(inlineJs(read(f)));
+        if (/primerLogin\s*=\s*_authOk\s*\?\s*['\"]panel-v2\.html/.test(js))
+          return f + ": el aterrizaje tras activar vuelve a ser panel-v2.html fijo, sin mirar el rol.";
+      }
+      return null;
+    },
+  },
 ];
 
 

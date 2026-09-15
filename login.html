@@ -19,6 +19,7 @@ if (!localStorage.getItem('mj_login_reloaded')) {
 <script src="/pw-lang.js"></script>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <script src="pw-app.js"></script>
+<script src="/pw-destino.js"></script>
 <meta name="color-scheme" content="light">
 <style>html{color-scheme:light;}</style>
 <link rel="icon" href="/favicon-app.svg?v=6" type="image/svg+xml">
@@ -930,40 +931,34 @@ async function entrar(){
     // (El panel, ante un 401 por carrera de token al entrar, reintenta UNA vez
     // recargando en vez de desloguear; esto resetea ese "una vez" por login.)
     try{ sessionStorage.removeItem('pw_auth_retry'); }catch(e){}
-    var _v='v='+Date.now();
-    if(usuario.rol==='owner' || (usuario.rol==='colaborador' && multicoachAccess)) {
-      // ENTRADA UNICA (cierre MultiCoach): el dueno y el colaborador con acceso
-      // van SIEMPRE a multicoach.html, en este mismo dominio. Como es el mismo
-      // origen, la sesion de Supabase ya viaja con el: no hace falta el handoff.
-      // (Antes esto apuntaba a pathwayplatforms.com via pathway-handoff. Ese
-      // dominio no esta activado, asi que el dueno acababa fuera del producto.
-      // La edge function pathway-handoff sigue desplegada y sin tocar: si algun
-      // dia se activa el dominio propio, se vuelve a ella cambiando este bloque.)
-      window.location.href=BASE+'/multicoach.html?'+_v;
-    }
-    else if(usuario.rol==='coach'||usuario.rol==='admin'){
-      window.location.href=BASE+'/panel-v2.html?'+_v;
-    } else if(usuario.rol==='empleado'){
-      // Empleado (equipo comercial): panel propio mínimo con las plantillas.
-      window.location.href=BASE+'/empleado.html?'+_v;
-    } else {
-      // Clientes de nicho (fitness/life) van a su portal; carrera = cliente.html.
-      // El nicho real está en candidatos.nicho (la config del usuario puede no
-      // tenerlo). Lo leemos con el cliente de Supabase (lleva el JWT → pasa RLS).
-      var _ct=(usuario.configuracion&&usuario.configuracion.coach_type)||'';
-      if(!_ct || _ct==='carrera'){
-        try{
-          var _sc=window.supabase.createClient(SB,KEY);
-          var _cq=await _sc.from('candidatos').select('nicho').eq('email',email).limit(1);
-          if(_cq && _cq.data && _cq.data.length && _cq.data[0].nicho) _ct=_cq.data[0].nicho;
-        }catch(_e){}
+    // ENRUTADO POR ROL — decide `pw-destino.js`, que es la UNICA fuente.
+    // Antes esta decision estaba escrita aqui y en registro.html por separado,
+    // y la de registro no miraba el rol: terminaba siempre en panel-v2.
+    //
+    // El dueno y el colaborador van a multicoach.html en ESTE dominio. Como es
+    // el mismo origen, la sesion de Supabase ya viaja con ellos: no hace falta
+    // el handoff. (Antes esto apuntaba a pathwayplatforms.com via
+    // pathway-handoff. Ese dominio no esta activado, asi que el dueno acababa
+    // fuera del producto. La edge function pathway-handoff sigue desplegada y
+    // sin tocar: si algun dia se activa el dominio propio, se vuelve a ella
+    // cambiando pw-destino.js, que ahora es un solo sitio.)
+    window.location.href = await PWDEST.destinoAsync(usuario, {
+      base: BASE,
+      // NO se le pasa `multicoach`: lo deduce el modulo del MISMO sitio
+      // (configuracion.mc_permisos) y con la MISMA regla. `multicoachAccess`
+      // de arriba solo se calcula para `rol='colaborador'`, que en produccion
+      // son 0 filas — hoy el colaborador lo es por `member_role`, cuya fila es
+      // `rol='coach'`, asi que la variable valdria `false` y mandaria a
+      // MultiCoach a nadie. La comprobacion de arriba sigue intacta y sigue
+      // frenando el login de quien no tiene ninguna seccion.
+      // El nicho real esta en candidatos.nicho (la config del usuario puede no
+      // tenerlo). Se lee con el cliente de Supabase, que lleva el JWT -> RLS ok.
+      buscarNicho: async function(em){
+        var _sc = window.supabase.createClient(SB, KEY);
+        var _cq = await _sc.from('candidatos').select('nicho').eq('email', em).limit(1);
+        return (_cq && _cq.data && _cq.data.length) ? _cq.data[0].nicho : null;
       }
-      if(!_ct)_ct='carrera';
-      var _em='&email='+encodeURIComponent((''+(usuario.email||'')).toLowerCase().trim());
-      if(_ct==='fitness'){ window.location.href=BASE+'/pathway-fit-cliente.html?'+_v+_em; }
-      else if(_ct==='life'){ window.location.href=BASE+'/pathway-life-cliente.html?'+_v+_em; }
-      else { window.location.href=BASE+'/cliente.html?'+_v; }
-    }
+    });
   }catch(err){
     error.textContent=TXT[_lng].err_net;
     btn.disabled=false;loading.style.display='none';
