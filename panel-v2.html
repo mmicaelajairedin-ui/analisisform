@@ -5585,6 +5585,19 @@ function _avanceHtml(c, embed){
 // Próximo paso del coach CON este cliente (guía que se mueve sola). Devuelve la
 // pestaña destino + la etiqueta, o null cuando ya está encaminado. Aditiva: solo
 // resalta el paso natural, no oculta nada. Señales reales: reportState / cvState.
+// Un plan de nutricion CUENTA solo si tiene algo dentro. El esqueleto vacio
+// ({"dias":{"lun":"",...},"pautas":""}) es una cadena NO vacia, asi que con
+// !!c.raw.fit_nutricion daba "cargado" y la guia dejaba de pedirle al coach que
+// armara el plan — mientras el cliente veia su portal sin nada.
+function _nutConContenido(v){
+  if(!v) return false;
+  var s=(""+v).trim(); if(!s) return false;
+  if(s.charAt(0)!=="{") return true;
+  try{ var o=JSON.parse(s)||{}, d=o.dias||{};
+    for(var k in d){ if(d.hasOwnProperty(k) && (""+(d[k]||"")).trim()!=="") return true; }
+    return (""+(o.pautas||"")).trim()!=="";
+  }catch(e){ return true; }
+}
 function _cliNextStep(c, tipo){
   if(!c) return null;
   var pub=function(v){ return v==="published"; };
@@ -5595,7 +5608,7 @@ function _cliNextStep(c, tipo){
   if(tipo==='fitness'){
     if(!has('fit_rutina')) return { tab:"fit_rutina", label:"Arma la rutina en Gym" };
     if(!has('fit_antro'))  return { tab:"fit_antro",  label:"Carga la primera medición en Antropometría" };
-    if(!has('fit_nutricion') && !has('fit_nutri_log')) return { tab:"fit_nutri", label:"Arma el plan de nutrición" };
+    if(!_nutConContenido(c.raw&&c.raw.fit_nutricion) && !has('fit_nutri_log')) return { tab:"fit_nutri", label:"Arma el plan de nutrición" };
     return null;
   }
   if(tipo==='life'){
@@ -5622,7 +5635,7 @@ var _CLI_CASCADE = {
   fitness: { base:{perfil:1,plan:1,sesiones:1}, chain:[
     { tab:"fit_rutina", data:function(c){ return !!(c.raw&&c.raw.fit_rutina); } },
     { tab:"fit_antro",  data:function(c){ return !!(c.raw&&c.raw.fit_antro); } },
-    { tab:"fit_nutri",  data:function(c){ return !!(c.raw&&(c.raw.fit_nutricion||c.raw.fit_nutri_log)); } },
+    { tab:"fit_nutri",  data:function(c){ return !!(c.raw&&(_nutConContenido(c.raw.fit_nutricion)||c.raw.fit_nutri_log)); } },
   ]},
   life: { base:{perfil:1,plan:1,sesiones:1}, chain:[
     { tab:"proceso", data:function(c){ return !!(c.raw&&(c.raw.proc_objetivos||c.raw.proc_seguimiento)); } },
@@ -13504,12 +13517,32 @@ document.addEventListener("click", function(ev){
   if(act==="fit-nutri-save"){
     var fnid=el.getAttribute("data-id"); if(!fnid) return;
     var _NDK=["lun","mar","mie","jue","vie","sab","dom"], _ndias={}; _NDK.forEach(function(k){ _ndias[k]=_val("cf-nut-"+k).trim(); });
-    var fnv=JSON.stringify({dias:_ndias, pautas:_val("cf-nut-pautas").trim()});
+    var _npautas=_val("cf-nut-pautas").trim();
+    var fnv=JSON.stringify({dias:_ndias, pautas:_npautas});
+    // GUARDA: un plan con los 7 dias vacios se guardaba igual, y la cadena
+    // resultante ({"dias":{...""},"pautas":""}) es NO vacia, asi que el panel
+    // lo contaba como "nutricion cargada" mientras el cliente leia "Tu coach
+    // todavia no cargo tu plan". Guardar nada tiene que ser una decision, no
+    // un accidente. (Caso real: 1 de los 5 planes de produccion era esto.)
+    var _nHayAlgo=_NDK.some(function(k){ return _ndias[k]!==""; })||_npautas!=="";
+    if(!_nHayAlgo && !confirm("El plan esta vacio: no hay ningun dia cargado.\n\n"+
+        "Si guardas asi, tu cliente va a ver \u00abtu coach todavia no cargo tu plan\u00bb.\n\n"+
+        "\u00bfBorrar el plan que ve el cliente?")) return;
     var fnc=CLIENTS.filter(function(x){return String(x.id)===String(fnid);})[0];
     if(fnc && fnc._example){ if(fnc.raw) fnc.raw.fit_nutricion=fnv; toast("Nutrición guardada en el demo ✓ (no se guarda — es el cliente de ejemplo)"); render(); return; }
     _sbw("candidatos?id=eq."+encodeURIComponent(fnid),"PATCH",{fit_nutricion:fnv})
-      .then(function(r){ if(!r.ok) throw 0; CLIENTS.forEach(function(x){ if(String(x.id)===String(fnid)&&x.raw) x.raw.fit_nutricion=fnv; }); toast("Nutrición guardada ✓ — el cliente la ve"); })
-      .catch(function(){ alert("No se pudo guardar. Falta la columna fit_nutricion en candidatos (migración nicho_extra_fields.sql)."); });
+      .then(function(r){
+        if(r && r.ok){ CLIENTS.forEach(function(x){ if(String(x.id)===String(fnid)&&x.raw) x.raw.fit_nutricion=fnv; });
+          toast(_nHayAlgo?"Nutrición guardada ✓ — el cliente la ve":"Plan de nutrición borrado"); return; }
+        // 2xx con CERO filas = el PATCH no casó ninguna fila (la sesión no
+        // resolvió, o este cliente no está a tu nombre). NO es una columna que
+        // falte: fit_nutricion existe en candidatos. El mensaje viejo mandaba a
+        // buscar una migración que no era el problema.
+        if(r && r.status>=200 && r.status<300){
+          alert("No se guardó nada.\n\nTu sesión no está activa o este cliente no está a tu nombre. Cerrá sesión, volvé a entrar y guardá otra vez."); return; }
+        alert("No se pudo guardar (error "+((r&&r.status)||"?")+"). Volvé a intentarlo.");
+      })
+      .catch(function(){ alert("No se pudo guardar: no hubo conexión con el servidor."); });
     return;
   }
   if(act==="cli-saveweek"){
