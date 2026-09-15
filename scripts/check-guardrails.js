@@ -3630,6 +3630,64 @@ const RULES = [
     },
   },
   {
+    name: "nutrición: un plan VACÍO no se guarda en silencio ni cuenta como cargado",
+    why:
+      "Un cliente llamó porque su plan no le llegaba. El coach lo cargaba, veía " +
+      "'Nutrición guardada ✓' y al reabrir la pestaña salía EN BLANCO; el cliente " +
+      "leía 'Tu coach todavía no cargó tu plan'. Causa: fit-nutri-save arma el " +
+      "plan con _val('cf-nut-'+dia), y _val devuelve '' si no encuentra el campo, " +
+      "así que se guardaba el esqueleto entero vacío " +
+      "{\"dias\":{\"lun\":\"\",...},\"pautas\":\"\"} — 85 caracteres, o sea una cadena NO " +
+      "vacía. Y ahí se cerraba la trampa: !!c.raw.fit_nutricion la daba por " +
+      "verdadera, la guía dejaba de pedir el plan y la cascada marcaba el paso " +
+      "hecho. Medido en producción: 1 de 5 planes era exactamente eso. Nació bien " +
+      "el 2026-06-04 (era UN texto suelto: vacío era '') y se rompió el 2026-06-05 " +
+      "en df25b5ea, al pasar a día a día. Regla: 'tiene contenido' se pregunta " +
+      "recorriendo los días, nunca con !!cadena; y guardar nada se confirma.",
+    check() {
+      var p = read("panel-v2.html");
+      if (!p) return "panel-v2.html: no existe.";
+      if (!/function _nutConContenido\s*\(/.test(p))
+        return "panel-v2.html: falta _nutConContenido() — 'nutrición cargada' vuelve a ser !!cadena y un plan vacío contaria como cargado.";
+      if (/!!\s*\(\s*c\.raw\s*&&\s*\(\s*c\.raw\.fit_nutricion\s*\|\|/.test(p))
+        return "panel-v2.html: la cascada volvio a usar !!c.raw.fit_nutricion — el esqueleto vacio cuenta como plan cargado.";
+      if (!/_nutConContenido\(c\.raw\.fit_nutricion\)/.test(p))
+        return "panel-v2.html: la cascada de progreso ya no pregunta por CONTENIDO del plan de nutricion.";
+      if (!/_nutConContenido\(c\.raw\s*&&\s*c\.raw\.fit_nutricion\)/.test(p))
+        return "panel-v2.html: _cliNextStep ya no pregunta por CONTENIDO — el coach deja de ver 'arma el plan de nutricion' con el plan vacio.";
+      if (!/_nHayAlgo/.test(p) || !/if\(!_nHayAlgo && !confirm\(/.test(p))
+        return "panel-v2.html: fit-nutri-save ya no confirma antes de guardar un plan vacio — se puede borrar el plan del cliente sin querer.";
+      if (/Falta la columna fit_nutricion/.test(p))
+        return "panel-v2.html: volvio el aviso que culpa a la columna fit_nutricion. Esa columna EXISTE en candidatos: el mensaje manda a buscar una migracion que no es el problema.";
+      return null;
+    },
+  },
+  {
+    name: "portal fitness: toggleEx no pisa la función de traducción t()",
+    why:
+      "Dentro de toggleEx se declaraba 'var t = day.querySelectorAll(\'.ex\').length', " +
+      "y ese 't' pisa la función de traducción global t() en TODA la función. Al " +
+      "marcar el ÚLTIMO ejercicio del día se llamaba t('diaCompletoToast') sobre un " +
+      "número → 'TypeError: t is not a function' (el error de produccion decía 't " +
+      "is 9': ese día tenía 9 ejercicios). La llamada a PWJ.celebrate está dentro " +
+      "de un try, pero el showToast final NO, así que la excepción sale de la " +
+      "función y se lleva el resto del manejador. Observado en client_errors en DOS " +
+      "clientes distintos, el 14-09 y el 15-09 de 2026. Regla: ninguna variable " +
+      "local de pathway-fit-cliente.html puede llamarse 't'.",
+    check() {
+      var f = read("pathway-fit-cliente.html");
+      if (!f) return "pathway-fit-cliente.html: no existe.";
+      var m = /function toggleEx\(el\)\{[\s\S]*?\n\}/.exec(f);
+      if (!m) return "pathway-fit-cliente.html: no se encontro toggleEx — si se renombro, actualiza este guardrail.";
+      var cuerpo = m[0];
+      if (/\bvar\s+t\s*=/.test(cuerpo))
+        return "pathway-fit-cliente.html: toggleEx volvio a declarar 'var t' — pisa la funcion de traduccion y revienta al completar el dia.";
+      if (!/t\('diaCompletoToast'\)/.test(cuerpo))
+        return "pathway-fit-cliente.html: toggleEx ya no traduce el aviso de dia completo (si se quito el toast, actualiza este guardrail).";
+      return null;
+    },
+  },
+  {
     name: "nutrición: el guardado del cliente resiste RLS (edge function + fallback)",
     why:
       "Lo que el cliente anota en nutrición (fit_nutri_real) se guardaba con PATCH " +
