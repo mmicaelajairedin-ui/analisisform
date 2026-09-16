@@ -5664,7 +5664,12 @@ var _CLI_CASCADE = {
   fitness: { base:{perfil:1,plan:1,sesiones:1}, chain:[
     { tab:"fit_rutina", data:function(c){ return _listaConContenido(c.raw&&c.raw.fit_rutina); } },
     { tab:"fit_antro",  data:function(c){ return _listaConContenido(c.raw&&c.raw.fit_antro); } },
-    { tab:"fit_nutri",  data:function(c){ return !!(c.raw&&(_nutConContenido(c.raw.fit_nutricion)||c.raw.fit_nutri_log)); } },
+    // PARALELO a Antropometria, no despues. Un plan de comidas no necesita
+    // mediciones: colgarlo de ellas dejaba al coach SIN la pestana de Nutricion
+    // para un cliente sin antropometria, mientras el cliente SI veia la seccion
+    // en su portal (vacia). El coach no tenia donde cargar lo que su cliente
+    // estaba mirando.
+    { tab:"fit_nutri",  paralelo:true, data:function(c){ return !!(c.raw&&(_nutConContenido(c.raw.fit_nutricion)||c.raw.fit_nutri_log)); } },
   ]},
   life: { base:{perfil:1,plan:1,sesiones:1}, chain:[
     { tab:"proceso", data:function(c){ return !!(c.raw&&(c.raw.proc_objetivos||c.raw.proc_seguimiento)); } },
@@ -5680,10 +5685,14 @@ function _cliVisibleTabs(c, tipo, allTabs){
   // cuando el anterior YA tiene datos. Candado: un eslabón con datos se muestra
   // siempre (aunque el hito no esté), así nunca se oculta algo con contenido.
   var open = (c.reportState==="published");
+  var puertaPrevia = open;
   cfg.chain.forEach(function(step){
+    // `paralelo`: este eslabon se abre CON el anterior, no DESPUES de el — usa
+    // su misma puerta y no consume su turno en el domino.
+    var puerta = step.paralelo ? puertaPrevia : open;
     var has=true; try{ has=!!step.data(c); }catch(e){ has=true; }  // ante error → mostrar (safe)
-    if(open || has) shown[step.tab]=true;
-    open = (open && has);                                          // el siguiente necesita ESTE con datos
+    if(puerta || has) shown[step.tab]=true;
+    if(!step.paralelo){ puertaPrevia = puerta; open = (puerta && has); } // el siguiente necesita ESTE con datos
   });
   return allTabs.filter(function(x){ return shown[x[0]]; });
 }
