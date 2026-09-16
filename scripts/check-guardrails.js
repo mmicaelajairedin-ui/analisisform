@@ -3779,10 +3779,29 @@ const RULES = [
         return "panel-v2.html: el aviso de medicion volvio a prometer 'el cliente la ve' sin condicion.";
       if (/toast\("Ejercicio agregado ✓ — el cliente lo ve"\)/.test(p))
         return "panel-v2.html: el aviso de ejercicio volvio a prometer 'el cliente lo ve' sin condicion.";
-      if (!/_visOculta\(fac&&fac\.raw,"antropometria"\)/.test(p))
+      // No se ata a COMO se lee la fila (fac.raw vs rawOf(id)): despues de
+      // ofrecer encender la seccion hay que releerla fresca, asi que fijar la
+      // forma vieja obligaria a elegir entre el guardarrail y la correccion.
+      // Lo que se exige es que la comprobacion de ESA seccion siga ahi.
+      if (!/_visOculta\([^;\n]{0,60}"antropometria"\)/.test(p))
         return "panel-v2.html: el guardado de antropometria ya no comprueba si la seccion esta oculta para ese cliente.";
-      if (!/_visOculta\(fec&&fec\.raw,"rutina"\)/.test(p))
+      if (!/_visOculta\([^;\n]{0,60}"rutina"\)/.test(p))
         return "panel-v2.html: el alta de ejercicio ya no comprueba si Gym esta oculto para ese cliente.";
+      // Y lo que el aviso pasivo NO hacia: avisar de que esta oculta y dejar al
+      // coach ahi es lo que dejo tres fichas reales invisibles desde julio. El
+      // panel tiene que OFRECER encenderla, en las tres secciones.
+      if (!/function _ofrecerVer\s*\(/.test(p))
+        return "panel-v2.html: falta _ofrecerVer() — el panel vuelve a avisar de que la seccion esta oculta sin ofrecer mostrarla.";
+      if (!/_ofrecerVer\(\s*\w+\s*,\s*"nutricion"/.test(p))
+        return "panel-v2.html: guardar nutricion ya no ofrece mostrarsela al cliente cuando esta oculta.";
+      if (!/_ofrecerVer\(\s*\w+\s*,\s*"antropometria"/.test(p))
+        return "panel-v2.html: guardar una medicion ya no ofrece mostrar Antropometria cuando esta oculta.";
+      if (!/_ofrecerVer\(\s*\w+\s*,\s*"rutina"/.test(p))
+        return "panel-v2.html: el alta de ejercicio ya no ofrece mostrar Gym cuando esta oculto.";
+      // El coach tiene que poder COMPROBARLO, no creerselo: el portal del
+      // cliente a un clic desde donde decide la visibilidad.
+      if (!/ver su portal<\/a>/.test(p))
+        return "panel-v2.html: la barra de visibilidad ya no enlaza al portal del cliente — el coach no puede comprobar lo que ve.";
       if (!/_cliVisOn\('antropometria'\)\?"Lo que cargas aquí el cliente lo ve/.test(p))
         return "panel-v2.html: el rotulo de la tarjeta de Antropometria volvio a afirmar que el cliente la ve sin mirar la visibilidad.";
       return null;

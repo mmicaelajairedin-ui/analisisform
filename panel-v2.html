@@ -5749,8 +5749,14 @@ function viewClienteDetalle(c){
   // pestaña Gestión que repita todos los toggles juntos.
   var _cliVisMap={}; try{ _cliVisMap=JSON.parse((c.raw&&c.raw.visibilidad)||"{}")||{}; }catch(e){}
   var _cliVisOn=function(k){ return _cliVisMap[k]!==false; };
+  // El enlace de preview (?coach_view=) existia y vivia lejos, en Acciones
+  // rapidas. Va aqui porque es AQUI donde el coach decide que ve el cliente:
+  // enciende la seccion y la comprueba con sus ojos, sin esperar a que el
+  // cliente llame. Afirmar "el cliente la ve" y no dar como mirarlo es lo que
+  // hizo que este fallo durara meses (R-108).
   var _visBar=function(k,lbl){ var on=_cliVisOn(k); return "<div class='cp-card cp-card-pad' style='display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:14px'>"+
-    "<div style='font-size:12.5px;color:var(--pw-text-soft)'>"+esc(lbl)+" en el portal del cliente</div>"+
+    "<div style='font-size:12.5px;color:var(--pw-text-soft)'>"+esc(lbl)+" en el portal del cliente"+
+      (c.email?" · <a href='"+esc(portalUrl)+"' target='_blank' rel='noopener' style='color:var(--pw-brand,#2D6A4F);font-weight:600;text-decoration:underline'>ver su portal</a>":"")+"</div>"+
     "<span style='display:inline-flex;align-items:center;gap:8px;font-size:11px;font-weight:600;color:var(--pw-text-soft)'>"+(on?"El cliente la ve":"Oculta")+"<button class='cp-switch "+(on?"is-on":"")+"' data-act='clivis:"+k+"' data-id='"+esc(c.id)+"'><span></span></button></span>"+
   "</div>"; };
   var body;
@@ -13564,10 +13570,14 @@ document.addEventListener("click", function(ev){
         if(r && r.ok){ CLIENTS.forEach(function(x){ if(String(x.id)===String(fnid)&&x.raw) x.raw.fit_nutricion=fnv; });
           // No basta con que se guarde: si la seccion esta oculta el cliente no la
           // ve, y prometerselo al coach es lo que hizo que este fallo durara.
-          var _oculta=_visOculta(rawOf(fnid),"nutricion");
-          toast(!_nHayAlgo ? "Plan de nutrición borrado"
-            : (_oculta ? "Guardada ✓ — pero Nutrición está OCULTA para este cliente: actívala arriba para que la vea"
-                       : "Nutrición guardada ✓ — el cliente la ve"));
+          if(!_nHayAlgo){ toast("Plan de nutrición borrado"); return; }
+          // El toast va DESPUES de _ofrecerVer a proposito: esa funcion hace
+          // render() por dentro, y un toast emitido antes se lo llevaría.
+          var _nVis=_ofrecerVer(fnid,"nutricion","Nutrición");
+          toast(_nVis ? "Nutrición guardada ✓ — y ya se la mostramos al cliente"
+            : (_visOculta(rawOf(fnid),"nutricion")
+                ? "Guardada ✓ — pero Nutrición sigue OCULTA: el cliente NO la ve"
+                : "Nutrición guardada ✓ — el cliente la ve"));
           return; }
         // 2xx con CERO filas = el PATCH no casó ninguna fila (la sesión no
         // resolvió, o este cliente no está a tu nombre). NO es una columna que
@@ -14141,7 +14151,7 @@ document.addEventListener("click", function(ev){
     _arr.push(m); _arr.sort(function(a,b){ return (""+(a.fecha||"")).localeCompare(""+(b.fecha||"")); });
     var _aj=JSON.stringify(_arr);
     _sbw("candidatos?id=eq."+encodeURIComponent(faid),"PATCH",{fit_antro:_aj})
-      .then(function(r){ if(!r.ok) throw 0; if(fac&&fac.raw) fac.raw.fit_antro=_aj; toast(_visOculta(fac&&fac.raw,"antropometria") ? "Medición guardada ✓ — pero Antropometría está OCULTA: préndela arriba para que el cliente la vea" : "Medición guardada ✓ — el cliente la ve"); render(); })
+      .then(function(r){ if(!r.ok) throw 0; if(fac&&fac.raw) fac.raw.fit_antro=_aj; var _aVis=_ofrecerVer(faid,"antropometria","Antropometría"); toast(_aVis ? "Medición guardada ✓ — y ya se la mostramos al cliente" : (_visOculta(rawOf(faid),"antropometria") ? "Guardada ✓ — pero Antropometría sigue OCULTA: el cliente NO la ve" : "Medición guardada ✓ — el cliente la ve")); render(); })
       .catch(function(){ alert("No se pudo guardar la medición. Reintenta."); });
     return;
   }
@@ -14174,7 +14184,7 @@ document.addEventListener("click", function(ev){
     // memoria para que la coach vea cómo queda; no persiste (se resetea al recargar).
     if(fec && fec._example){ fec.raw.fit_rutina=jE; window._frFoto=""; toast("Ejercicio agregado al demo ✓ (no se guarda — es el cliente de ejemplo)"); render(); return; }
     _sbw("candidatos?id=eq."+encodeURIComponent(feid),"PATCH",{fit_rutina:jE})
-      .then(function(r){ if(!r.ok) throw 0; if(fec&&fec.raw) fec.raw.fit_rutina=jE; window._frFoto=""; toast(_visOculta(fec&&fec.raw,"rutina") ? "Ejercicio agregado ✓ — pero Gym está OCULTO: préndelo arriba para que el cliente lo vea" : "Ejercicio agregado ✓ — el cliente lo ve"); render(); })
+      .then(function(r){ if(!r.ok) throw 0; if(fec&&fec.raw) fec.raw.fit_rutina=jE; window._frFoto=""; var _eVis=_ofrecerVer(feid,"rutina","Gym"); toast(_eVis ? "Ejercicio agregado ✓ — y ya se lo mostramos al cliente" : (_visOculta(rawOf(feid),"rutina") ? "Agregado ✓ — pero Gym sigue OCULTO: el cliente NO lo ve" : "Ejercicio agregado ✓ — el cliente lo ve")); render(); })
       .catch(function(){ alert("No se pudo guardar. Falta la columna fit_rutina en candidatos (ver migración career_nicho_fields.sql)."); });
     return;
   }
@@ -14222,7 +14232,7 @@ document.addEventListener("click", function(ev){
     var jD=JSON.stringify(arrD);
     if(drc && drc._example){ drc.raw.fit_rutina=jD; toast("Día renombrado en el demo ✓ (no se guarda)"); render(); return; }
     _sbw("candidatos?id=eq."+encodeURIComponent(drid),"PATCH",{fit_rutina:jD})
-      .then(function(r){ if(!r.ok) throw 0; if(drc&&drc.raw) drc.raw.fit_rutina=jD; toast(_visOculta(drc&&drc.raw,"rutina") ? "Día renombrado ✓ — pero Gym está OCULTO: préndelo arriba para que el cliente lo vea" : "Día renombrado ✓ — el cliente lo ve"); render(); })
+      .then(function(r){ if(!r.ok) throw 0; if(drc&&drc.raw) drc.raw.fit_rutina=jD; var _dVis=_ofrecerVer(drid,"rutina","Gym"); toast(_dVis ? "Día renombrado ✓ — y ya se lo mostramos al cliente" : (_visOculta(rawOf(drid),"rutina") ? "Renombrado ✓ — pero Gym sigue OCULTO: el cliente NO lo ve" : "Día renombrado ✓ — el cliente lo ve")); render(); })
       .catch(function(){ alert("No se pudo guardar."); });
     return;
   }
@@ -15953,6 +15963,19 @@ function rawOf(id){ var c=CLIENTS.filter(function(x){return String(x.id)===Strin
 // mirar el interruptor de arriba. Caso real: un cliente con su plan cargado y
 // nutricion en false, que llamo por telefono porque no veia nada.
 function _visOculta(raw, k){ try{ var m=JSON.parse((raw&&raw.visibilidad)||"{}")||{}; return m[k]===false; }catch(e){ return false; } }
+// Un aviso PASIVO no arregla nada. El coach guardaba, leia "esta OCULTA:
+// prendela arriba", cerraba el toast y el cliente seguia sin ver su plan —
+// tres fichas reales de produccion llevaban asi desde julio. Aqui se OFRECE
+// encenderla, que es la unica accion que cierra el caso, en el momento en que
+// el coach esta mirando. Devuelve true si quedo visible.
+// Reutiliza _saveCliVis: es merge-safe (relee la fila antes del PATCH), asi que
+// encender nutricion NO pisa lo que el coach haya cambiado en otra seccion.
+function _ofrecerVer(cid, key, label){
+  if(!_visOculta(rawOf(cid), key)) return false;
+  if(!confirm(label+" esta OCULTA para este cliente.\n\nLo que acabas de guardar SI quedo guardado, pero el cliente no lo ve: la seccion no le aparece en su portal.\n\n\u00bfMostrarsela ahora?")) return false;
+  _saveCliVis(cid, function(v){ v[key]=true; });
+  return true;
+}
 function _val(id){ var e=document.getElementById(id); return e?e.value:""; }
 // IMO (índice músculo-óseo) = masa muscular ÷ masa ósea. Se autocompleta al
 // cargar ambos (los dos en kg), así la coach no lo calcula a mano.
