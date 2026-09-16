@@ -1048,7 +1048,7 @@ function toggleEx(el){
     day.classList.add('celebrated');
     // Día completo → marcar el día de GYM en fit_habitos (el coach lo ve en el
     // calendario 💪) y celebrar.
-    try{ var _td=_exToday(); if(_td && typeof WDATA==='object' && WDATA){ (WDATA[_td]=WDATA[_td]||{}).gym=true; if(typeof colorDay==='function') colorDay(_td); if(typeof renderFitCal==='function') renderFitCal(); if(CID) sbPatch('candidatos','id=eq.'+encodeURIComponent(CID),{fit_habitos:JSON.stringify(WDATA)}).catch(function(){}); } }catch(e){}
+    try{ var _td=_exToday(); if(_td && typeof WDATA==='object' && WDATA){ (WDATA[_td]=WDATA[_td]||{}).gym=true; if(typeof colorDay==='function') colorDay(_td); if(typeof renderFitCal==='function') renderFitCal(); if(CID) sbPatch('candidatos','id=eq.'+encodeURIComponent(CID),{fit_habitos:JSON.stringify(WDATA)}).then(_habGuardado).catch(_habGuardado); } }catch(e){}
     try{
       if(window.PWJ&&PWJ.celebrate){ PWJ.celebrate({kind:'logro',title:t('diaEntrenoTitle'),sub:t('diaEntrenoSub'),btn:t('seguir')}); }
       else { fireConfetti(); }
@@ -1238,6 +1238,16 @@ function _authExpired(){
 }
 function sbGet(t,q){ return fetch(SB+'/rest/v1/'+t+'?'+q,{headers:_hdr()}).then(function(r){ if(r.status===401||r.status===403){_authExpired();return [];} return r.json();}); }
 function sbPatch(t,q,d){ return fetch(SB+'/rest/v1/'+t+'?'+q,{method:'PATCH',headers:_hdr({'Content-Type':'application/json','Prefer':'return=representation'}),body:JSON.stringify(d)}).then(function(r){ if(r.status===401||r.status===403){_authExpired();return {ok:false,status:r.status,rows:0};} if(!r.ok)return {ok:false,status:r.status,rows:0}; return r.json().then(function(a){var n=(a&&a.length)||0;return {ok:n>=1,status:r.status,rows:n,json:function(){return Promise.resolve(a);}};},function(){return {ok:true,status:r.status,rows:1};}); }); }
+// Una escritura no confirmada no es una escritura. sbPatch pide
+// `return=representation` y pone ok=false cuando la RLS no casa ninguna fila —
+// un PATCH denegado devuelve 200 con lista vacia, no un error. Dos de los tres
+// guardados de fit_habitos miraban SOLO el error de red (uno con el catch
+// vacio), asi que el habito quedaba pintado en la pantalla del cliente y no
+// llegaba nunca al calendario del coach, sin un aviso. Todos pasan por aqui.
+function _habGuardado(r){
+  if(r && r.ok) return;
+  try{ if(typeof showToast==='function') showToast(t('noGuardoHabito')); }catch(e){}
+}
 function pwHoy(){ return new Date().toISOString().slice(0,10); }
 function esc(s){ return (''+(s==null?'':s)).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
 var COACH_CALENDLY='', COACH_ID='';
@@ -1668,7 +1678,7 @@ function toggleNutriHoy(){
   try{ if(typeof colorDay==='function') colorDay(hoy); }catch(e){}
   try{ if(typeof renderFitCal==='function') renderFitCal(); }catch(e){}
   if(!was){ try{ fireConfetti(); }catch(e){} showToast(t('toastNutriCumplida')); }
-  if(typeof CID!=='undefined'&&CID){ try{ sbPatch('candidatos','id=eq.'+encodeURIComponent(CID),{fit_habitos:JSON.stringify(WDATA)}).catch(function(){ if(typeof showToast==='function') showToast(t('saveErrConn')); }); }catch(e){} }
+  if(typeof CID!=='undefined'&&CID){ try{ sbPatch('candidatos','id=eq.'+encodeURIComponent(CID),{fit_habitos:JSON.stringify(WDATA)}).then(_habGuardado).catch(_habGuardado); }catch(e){} }
 }
 function _exOpenAttr(){ return 'onclick="event.stopPropagation();openEx(this.closest(\'.ex\').querySelector(\'.ex-name\').textContent)"'; }
 function _exPlaceholderHtml(){
@@ -2856,7 +2866,7 @@ async function toggleHabit(el){
   colorDay(SELDAY);
   renderFitCal();
   if(!CID) return;
-  try{ var _r=await sbPatch('candidatos','id=eq.'+encodeURIComponent(CID),{fit_habitos:JSON.stringify(WDATA)}); if(_r&&_r.ok===false) throw 0; }catch(e){ if(typeof showToast==='function') showToast('⚠️ No se pudo guardar el hábito. Revisa tu conexión.'); }
+  try{ var _r=await sbPatch('candidatos','id=eq.'+encodeURIComponent(CID),{fit_habitos:JSON.stringify(WDATA)}); if(_r&&_r.ok===false) throw 0; }catch(e){ _habGuardado(null); }
 }
 pwInit();
 window.addEventListener('load',function(){ [900,2600].forEach(function(t){ setTimeout(function(){ try{ renderNotifs(); }catch(e){} },t); }); });

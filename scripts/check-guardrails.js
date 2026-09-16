@@ -3781,6 +3781,42 @@ const RULES = [
     },
   },
   {
+    name: "hábitos del cliente: el guardado se COMPRUEBA, no se asume",
+    why:
+      "Una escritura no confirmada no es una escritura. sbPatch pide " +
+      "return=representation y pone ok=false cuando la RLS no casa ninguna fila " +
+      "— un PATCH denegado devuelve 200 con lista VACIA, no un error. De los tres " +
+      "guardados de fit_habitos, dos miraban solo el fallo de red (uno con el " +
+      "catch literalmente vacio), asi que el habito quedaba pintado en la " +
+      "pantalla del cliente (colorDay/renderFitCal son optimistas) y no llegaba " +
+      "nunca al calendario del coach, sin un solo aviso. El coach ve al cliente " +
+      "sin entrenar y el cliente jura que lo marco. Regla: todo guardado de " +
+      "fit_habitos pasa por _habGuardado, que mira r.ok y avisa.",
+    check() {
+      var f = read("pathway-fit-cliente.html");
+      if (!f) return "pathway-fit-cliente.html: no existe.";
+      if (!/function _habGuardado\s*\(/.test(f))
+        return "pathway-fit-cliente.html: falta _habGuardado() — los guardados de habitos vuelven a asumir que salio bien.";
+      // Se mira CADA sitio, no se cuentan apariciones sueltas: un sitio verificado
+      // aporta DOS usos de _habGuardado (.then y .catch), asi que contar el total
+      // daba verde con uno de los tres roto — comprobado mutando (R-102).
+      var re = /\{fit_habitos:JSON\.stringify\(WDATA\)\}/g, mm, sitios = 0, mudos = 0;
+      while ((mm = re.exec(f)) !== null) {
+        sitios++;
+        if (f.slice(mm.index, mm.index + 220).indexOf("_habGuardado") === -1) mudos++;
+      }
+      if (sitios < 1)
+        return "pathway-fit-cliente.html: no se encontro ningun guardado de fit_habitos — si se renombro, actualiza este guardrail.";
+      if (mudos > 0)
+        return "pathway-fit-cliente.html: " + mudos + " de " + sitios + " guardados de fit_habitos NO comprueban el resultado. El que falte guarda en silencio: el cliente ve el habito marcado y al coach no le llega.";
+      if (/\{fit_habitos:JSON\.stringify\(WDATA\)\}\)\.catch\(function\(\)\{\}\)/.test(f))
+        return "pathway-fit-cliente.html: volvio un catch VACIO sobre el guardado de habitos — el fallo no se ve en ninguna parte.";
+      if (/showToast\('⚠️ No se pudo guardar el hábito/.test(f))
+        return "pathway-fit-cliente.html: el aviso del habito volvio a estar escrito a mano en espanol — en el portal en ingles saldria en espanol. Usa t('noGuardoHabito').";
+      return null;
+    },
+  },
+  {
     name: "nutrición: el guardado del cliente resiste RLS (edge function + fallback)",
     why:
       "Lo que el cliente anota en nutrición (fit_nutri_real) se guardaba con PATCH " +
