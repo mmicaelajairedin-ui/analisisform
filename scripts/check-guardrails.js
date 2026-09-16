@@ -3714,6 +3714,73 @@ const RULES = [
     },
   },
   {
+    name: "gym y antropometría: 'cargada' se mide por CONTENIDO, no por presencia",
+    why:
+      "Es INC-082 en otros dos campos. Borrar el ultimo ejercicio deja fit_rutina " +
+      "en \"[]\" y borrar la ultima medicion deja fit_antro en \"[]\" — dos " +
+      "caracteres, o sea una cadena NO vacia. Con !!(c.raw&&c.raw.fit_antro) la " +
+      "guia del coach dejaba de pedir 'Carga la primera medicion' y la cascada " +
+      "abria la pestaña siguiente, para un cliente con CERO mediciones. Medido en " +
+      "produccion: un cliente con fit_antro de largo 2. Y el portal del cliente " +
+      "SIEMPRE mide contenido (.length>0, length>2), asi que panel y portal " +
+      "opinaban distinto del mismo cliente — que es lo que hace sonar el telefono. " +
+      "Regla: 'tiene datos' se pregunta recorriendo el contenedor, nunca con " +
+      "!!cadena, y el productor y el consumidor usan la MISMA regla.",
+    check() {
+      var p = read("panel-v2.html");
+      if (!p) return "panel-v2.html: no existe.";
+      if (!/function _listaConContenido\s*\(/.test(p))
+        return "panel-v2.html: falta _listaConContenido() — '[]' vuelve a contar como rutina o medicion cargada.";
+      if (/!!\s*\(\s*c\.raw\s*&&\s*c\.raw\.fit_(rutina|antro)\s*\)/.test(p))
+        return "panel-v2.html: la cascada volvio a usar !!c.raw.fit_rutina/fit_antro — un contenedor vacio cuenta como cargado.";
+      // DOS sitios cada uno: la guia (_cliNextStep) y la cascada de pestañas. Se
+      // CUENTAN, no se busca "alguna": con un .test() bastaba con que sobreviviera
+      // uno para dar verde con el otro roto — comprobado mutando (R-27 dentro de
+      // la propia comprobacion).
+      var nRut = (p.match(/_listaConContenido\(c\.raw&&c\.raw\.fit_rutina\)/g) || []).length;
+      var nAnt = (p.match(/_listaConContenido\(c\.raw&&c\.raw\.fit_antro\)/g) || []).length;
+      if (nRut < 2)
+        return "panel-v2.html: fit_rutina se mide por CONTENIDO en " + nRut + " de los 2 sitios (guia y cascada) — el que falte da 'rutina cargada' con '[]'.";
+      if (nAnt < 2)
+        return "panel-v2.html: fit_antro se mide por CONTENIDO en " + nAnt + " de los 2 sitios (guia y cascada) — el que falte da 'medicion cargada' con '[]'.";
+      var f = read("pathway-fit-cliente.html");
+      if (!f) return "pathway-fit-cliente.html: no existe.";
+      if (!/function _conContenido\s*\(/.test(f))
+        return "pathway-fit-cliente.html: falta _conContenido() — el contexto de la IA vuelve a medir presencia.";
+      if (/\(c\.fit_(rutina|antro)\?"cargada":"pendiente"\)/.test(f))
+        return "pathway-fit-cliente.html: el contexto de la IA volvio a usar !! — le diria al cliente que su plan esta 'cargado' con el contenedor vacio.";
+      if (!/_conContenido\(c\.fit_rutina\)/.test(f) || !/_conContenido\(c\.fit_antro\)/.test(f) || !/_conContenido\(c\.fit_nutricion\)/.test(f))
+        return "pathway-fit-cliente.html: el contexto de la IA ya no mide contenido en las tres secciones.";
+      return null;
+    },
+  },
+  {
+    name: "gym y antropometría: el panel no promete 'el cliente lo ve' si están OCULTAS",
+    why:
+      "Misma mentira que ya se corrigio en Nutricion, en las otras dos secciones " +
+      "que el coach carga. 'Medicion guardada ✓ — el cliente la ve' y 'Ejercicio " +
+      "agregado ✓ — el cliente lo ve' se decian sin mirar candidatos.visibilidad, " +
+      "y el portal esconde la seccion entera cuando vis[k]===false. Medido en " +
+      "produccion: un cliente con antropometria:false cuyo coach recibe ese aviso " +
+      "cada vez que carga una medicion. Regla: donde el panel afirme que el " +
+      "cliente VE algo, comprueba la visibilidad de ESA seccion.",
+    check() {
+      var p = read("panel-v2.html");
+      if (!p) return "panel-v2.html: no existe.";
+      if (/toast\("Medición guardada ✓ — el cliente la ve"\)/.test(p))
+        return "panel-v2.html: el aviso de medicion volvio a prometer 'el cliente la ve' sin condicion.";
+      if (/toast\("Ejercicio agregado ✓ — el cliente lo ve"\)/.test(p))
+        return "panel-v2.html: el aviso de ejercicio volvio a prometer 'el cliente lo ve' sin condicion.";
+      if (!/_visOculta\(fac&&fac\.raw,"antropometria"\)/.test(p))
+        return "panel-v2.html: el guardado de antropometria ya no comprueba si la seccion esta oculta para ese cliente.";
+      if (!/_visOculta\(fec&&fec\.raw,"rutina"\)/.test(p))
+        return "panel-v2.html: el alta de ejercicio ya no comprueba si Gym esta oculto para ese cliente.";
+      if (!/_cliVisOn\('antropometria'\)\?"Lo que cargas aquí el cliente lo ve/.test(p))
+        return "panel-v2.html: el rotulo de la tarjeta de Antropometria volvio a afirmar que el cliente la ve sin mirar la visibilidad.";
+      return null;
+    },
+  },
+  {
     name: "nutrición: el guardado del cliente resiste RLS (edge function + fallback)",
     why:
       "Lo que el cliente anota en nutrición (fit_nutri_real) se guardaba con PATCH " +

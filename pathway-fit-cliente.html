@@ -1139,6 +1139,32 @@ function renderPeso(data){
 <script src="pathway-juego.js?v=1"></script>
 <script src="pw-cabra-juego.js?v=1"></script>
 <script>
+// Un contenedor lleno de nada no es un dato: "[]", "{}" y el esqueleto de
+// nutricion {"dias":{"lun":"",...},"pautas":""} son cadenas NO vacias. Misma
+// regla que `_listaConContenido` del panel del coach — a proposito: si el
+// productor y el consumidor miden "cargado" distinto, el coach ve una cosa y el
+// cliente otra, y nadie puede verlo sin que llame el cliente (INC-082).
+function _conContenido(v){
+  if(!v) return false;
+  var s=(''+v).trim(); if(!s || s==='[]' || s==='{}' || s==='null') return false;
+  var c0=s.charAt(0);
+  if(c0!=='[' && c0!=='{') return true;
+  try{
+    var o=JSON.parse(s);
+    if(o==null) return false;
+    if(Object.prototype.toString.call(o)==='[object Array]'){
+      for(var i=0;i<o.length;i++){ var it=o[i];
+        if(it && typeof it==='object') return true;
+        if((''+(it==null?'':it)).trim()!=='') return true; }
+      return false;
+    }
+    for(var k in o){ if(o.hasOwnProperty(k)){
+      var vv=o[k];
+      if(vv && typeof vv==='object'){ if(_conContenido(JSON.stringify(vv))) return true; continue; }
+      if((''+(vv==null?'':vv)).trim()!=='') return true; } }
+    return false;
+  }catch(e){ return true; }
+}
 window.PW_IA_CFG={
   mode:"cliente",
   // Accesos directos por nicho (fitness): lleva directo a la sección + paso a paso.
@@ -1163,9 +1189,12 @@ window.PW_IA_CFG={
       if(c.dias) p.push("Días de entrenamiento/semana: "+c.dias);
       if(c.lesiones) p.push("Lesiones/cuidados: "+c.lesiones);
       if(c.semana_activa) p.push("Semana del programa: "+c.semana_activa+"/4");
-      p.push("Rutina: "+(c.fit_rutina?"cargada":"pendiente")+
-             ", Antropometría: "+(c.fit_antro?"cargada":"pendiente")+
-             ", Nutrición: "+((c.fit_nutricion||c.nutricion)?"cargada":"pendiente"));
+      // Contenido, NO presencia: "[]", "{}" y el esqueleto vacio de nutricion son
+      // cadenas NO vacias, asi que con `!!` el asistente le decia al cliente que su
+      // plan estaba "cargado" cuando no habia nada dentro (INC-082).
+      p.push("Rutina: "+(_conContenido(c.fit_rutina)?"cargada":"pendiente")+
+             ", Antropometría: "+(_conContenido(c.fit_antro)?"cargada":"pendiente")+
+             ", Nutrición: "+((_conContenido(c.fit_nutricion)||_conContenido(c.nutricion))?"cargada":"pendiente"));
       return { perfil:p.join("\n") };
     }catch(e){ return {}; }
   }
