@@ -179,13 +179,26 @@
         try {
           var url = (typeof input === 'string') ? input : (input && input.url) || '';
           var method = ((init && init.method) || (input && input.method) || 'GET').toUpperCase();
-          if (method === 'POST' && /\/rest\/v1\/contactos_chat(\?|$)/.test(url) && init && typeof init.body === 'string') {
-            var a = window.pwAttr ? window.pwAttr() : null;
-            if (a && a.utm_source) {
-              var parsed = JSON.parse(init.body);
-              var attach = function (o) { if (o && typeof o === 'object' && o.origen == null) o.origen = a; return o; };
-              parsed = Array.isArray(parsed) ? parsed.map(attach) : attach(parsed);
-              init = Object.assign({}, init, { body: JSON.stringify(parsed) });
+          // DOS formas de dejar un contacto, y hasta el 2026-09-16 solo se
+          // contaba una. El formulario de las landings hace un INSERT REST en
+          // contactos_chat; la ficha del directorio (coach.html) va por la Edge
+          // Function contacto-coach, que abre la conversación con ese coach.
+          // Las dos son un Lead. Medido ese día: el directorio entero —el canal
+          // que más trabajo ha costado construir— no generaba ni un evento.
+          var esInsertRest = /\/rest\/v1\/contactos_chat(\?|$)/.test(url);
+          var esFuncionCoach = /\/functions\/v1\/contacto-coach(\?|$)/.test(url);
+          if (method === 'POST' && (esInsertRest || esFuncionCoach)) {
+            // El origen SOLO se inyecta en el INSERT REST, donde `origen` es una
+            // columna de la tabla. La Edge Function tiene su propio contrato de
+            // entrada y meterle un campo que no espera sería romperla para medir.
+            if (esInsertRest && init && typeof init.body === 'string') {
+              var a = window.pwAttr ? window.pwAttr() : null;
+              if (a && a.utm_source) {
+                var parsed = JSON.parse(init.body);
+                var attach = function (o) { if (o && typeof o === 'object' && o.origen == null) o.origen = a; return o; };
+                parsed = Array.isArray(parsed) ? parsed.map(attach) : attach(parsed);
+                init = Object.assign({}, init, { body: JSON.stringify(parsed) });
+              }
             }
             // Evento de conversión: este contacto cuenta como Lead (no-op si no hay pixel/consent).
             try { window.pwTrackLead && window.pwTrackLead(); } catch (e) {}

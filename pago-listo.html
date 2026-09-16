@@ -4,6 +4,11 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0"><style>html{scrollbar-gutter:stable;overflow-x:hidden;max-width:100%;}body{overflow-x:hidden;max-width:100%;}</style>
 <script src="pw-app.js"></script>
+<!-- Meta Pixel + atribucion de origen. Anadido el 2026-09-16: esta pagina
+     no lo cargaba, asi que la confirmacion de pago no contaba ninguna compra. pw-pixel.js no carga el pixel si
+     no hay Pixel ID, pero la ATRIBUCION de origen se captura igual. -->
+<script src="/pw-pixel.js"></script>
+
 <link rel="icon" href="/favicon-app.svg?v=6" type="image/svg+xml">
 <meta name="robots" content="noindex, nofollow">
 <title>¡Pago listo! — Pathway</title>
@@ -112,6 +117,22 @@ body{
 //   ?to=login → login                       (default: se deduce de la sesión)
 //   ?plan=<nombre> → se muestra en el texto (opcional)
 (function(){
+  // MEDICIÓN · hasta el 2026-09-16 esta página no cargaba el pixel, así que
+  // PAID era el único escalón del embudo del que no se contaba absolutamente
+  // nada: había registro y trial medidos y cero compras. Se llega aquí solo
+  // desde el redirect de Stripe, así que la visita ES la compra.
+  //
+  // La guarda es por PESTAÑA, no por navegador: recargar esta página o volver
+  // con el botón atrás no vuelve a contar, y pagar otra vez en una pestaña
+  // nueva sí cuenta — que es lo correcto. La activación real la hace el webhook
+  // de Stripe; esto solo mide.
+  try {
+    if (!sessionStorage.getItem('pw_compra_contada')) {
+      sessionStorage.setItem('pw_compra_contada', '1');
+      if (window.pwTrackPurchase) window.pwTrackPurchase();
+    }
+  } catch (e) { /* nunca romper la confirmación de un pago por culpa del tracking */ }
+
   function qp(k){ try{ return new URLSearchParams(location.search).get(k)||""; }catch(e){ return ""; } }
   var to=(qp("to")||"").toLowerCase();
   var plan=qp("plan");

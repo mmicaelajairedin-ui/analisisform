@@ -3387,8 +3387,34 @@ const RULES = [
       }
       // El interceptor central debe adjuntar el origen a los POST de contactos_chat
       // (cubre soy-candidato, coaches, etc. de una sola vez).
-      if (!/contactos_chat[\s\S]{0,400}o\.origen\s*=\s*a/.test(px))
+      // La ventana subió de 400 a 1200 el 2026-09-16: el bloque lleva ahora el
+      // comentario que explica por qué hay DOS formas de dejar un contacto, y la
+      // distancia entre la cadena y la asignación creció por texto, no por
+      // código. El invariante que se vigila no cambió.
+      if (!/contactos_chat[\s\S]{0,1200}o\.origen\s*=\s*a/.test(px))
         return "pw-pixel.js: se perdió el interceptor que adjunta el origen a los leads de contactos_chat.";
+      // Y las DOS puertas por las que alguien deja un contacto cuentan como Lead.
+      // Hasta el 2026-09-16 solo contaba el INSERT REST de las landings, así que
+      // la ficha del directorio —que va por la Edge Function contacto-coach— no
+      // generaba ni un evento. Es R-99 en la medición: dos entradas a la misma
+      // acción se instrumentan las dos.
+      // El fichero lo lleva dentro de un regex literal, o sea con las barras
+      // escapadas (`functions\\/v1\\/`). Buscarlo sin contemplarlo daba rojo
+      // sobre codigo correcto, que es la peor clase de guardarrail.
+      if (!/functions\\?\/v1\\?\/contacto-coach/.test(px))
+        return "pw-pixel.js: el hook de Lead dejó de cubrir la Edge Function contacto-coach (la ficha del directorio vuelve a no medirse).";
+      // Y las páginas donde el embudo TERMINA tienen que cargarlo, o el escalón
+      // se mide en cero para siempre.
+      for (const f of ["coach.html", "reservar.html", "pago-listo.html"]) {
+        if (read(f) && !/pw-pixel\.js/.test(read(f)))
+          return f + " ya no incluye pw-pixel.js (ese escalon del embudo deja de medirse).";
+      }
+      // La compra se cuenta una vez por pestaña, no en cada recarga.
+      const pl = read("pago-listo.html");
+      if (pl && !/pwTrackPurchase/.test(pl))
+        return "pago-listo.html ya no dispara pwTrackPurchase: PAID vuelve a medirse en cero.";
+      if (pl && /pwTrackPurchase/.test(pl) && !/pw_compra_contada/.test(pl))
+        return "pago-listo.html dispara pwTrackPurchase sin la guarda por pestaña: una recarga cuenta otra compra.";
       // El registro debe guardar el origen en configuracion.
       const reg = read("registro.html");
       if (reg && !/configuracion\.origen\s*=/.test(reg)) return "registro.html: el alta ya no guarda el origen del anuncio (configuracion.origen).";
