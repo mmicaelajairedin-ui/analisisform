@@ -2517,8 +2517,11 @@ const RULES = [
       if (!p) return null;
       if (!/function _cliVisibleTabs/.test(p)) return "panel-v2.html: falta _cliVisibleTabs (cascada de pestañas).";
       if (!/_CLI_CASCADE\s*=/.test(p)) return "panel-v2.html: falta la config _CLI_CASCADE (cadena por nicho).";
-      // El candado: una pestaña con datos se muestra (if(open || has)).
-      if (!/if\(open \|\| has\)\s*shown\[step\.tab\]=true/.test(p)) return "panel-v2.html: _cliVisibleTabs ya no muestra una pestaña con datos (candado roto).";
+      // El candado: una pestaña con datos se muestra (if(puerta || has)).
+      // La variable pasó a llamarse `puerta` al abrir el eslabón de Nutrición en
+      // PARALELO con Antropometría; lo que se vigila es el candado, no el nombre,
+      // y la forma se fija igual de estrecha que antes.
+      if (!/if\(puerta \|\| has\)\s*shown\[step\.tab\]=true/.test(p)) return "panel-v2.html: _cliVisibleTabs ya no muestra una pestaña con datos (candado roto).";
       if (!/carrera:.*fitness:.*life:/s.test(p)) return "panel-v2.html: la cascada no cubre los 3 nichos (carrera/fitness/life).";
       if (!/_cliVisibleTabs\(c,_tipo,_cliTabs\(_tipo\)\)/.test(p)) return "panel-v2.html: la ficha del cliente ya no aplica la cascada _cliVisibleTabs.";
       return null;
@@ -3779,12 +3782,79 @@ const RULES = [
         return "panel-v2.html: el aviso de medicion volvio a prometer 'el cliente la ve' sin condicion.";
       if (/toast\("Ejercicio agregado ✓ — el cliente lo ve"\)/.test(p))
         return "panel-v2.html: el aviso de ejercicio volvio a prometer 'el cliente lo ve' sin condicion.";
-      if (!/_visOculta\(fac&&fac\.raw,"antropometria"\)/.test(p))
+      // No se ata a COMO se lee la fila (fac.raw vs rawOf(id)): despues de
+      // ofrecer encender la seccion hay que releerla fresca, asi que fijar la
+      // forma vieja obligaria a elegir entre el guardarrail y la correccion.
+      // Lo que se exige es que la comprobacion de ESA seccion siga ahi.
+      if (!/_visOculta\([^;\n]{0,60}"antropometria"\)/.test(p))
         return "panel-v2.html: el guardado de antropometria ya no comprueba si la seccion esta oculta para ese cliente.";
-      if (!/_visOculta\(fec&&fec\.raw,"rutina"\)/.test(p))
+      if (!/_visOculta\([^;\n]{0,60}"rutina"\)/.test(p))
         return "panel-v2.html: el alta de ejercicio ya no comprueba si Gym esta oculto para ese cliente.";
+      // Y lo que el aviso pasivo NO hacia: avisar de que esta oculta y dejar al
+      // coach ahi es lo que dejo tres fichas reales invisibles desde julio. El
+      // panel tiene que OFRECER encenderla, en las tres secciones.
+      if (!/function _ofrecerVer\s*\(/.test(p))
+        return "panel-v2.html: falta _ofrecerVer() — el panel vuelve a avisar de que la seccion esta oculta sin ofrecer mostrarla.";
+      if (!/_ofrecerVer\(\s*\w+\s*,\s*"nutricion"/.test(p))
+        return "panel-v2.html: guardar nutricion ya no ofrece mostrarsela al cliente cuando esta oculta.";
+      if (!/_ofrecerVer\(\s*\w+\s*,\s*"antropometria"/.test(p))
+        return "panel-v2.html: guardar una medicion ya no ofrece mostrar Antropometria cuando esta oculta.";
+      if (!/_ofrecerVer\(\s*\w+\s*,\s*"rutina"/.test(p))
+        return "panel-v2.html: el alta de ejercicio ya no ofrece mostrar Gym cuando esta oculto.";
+      // El coach tiene que poder COMPROBARLO, no creerselo: el portal del
+      // cliente a un clic desde donde decide la visibilidad.
+      if (!/ver su portal<\/a>/.test(p))
+        return "panel-v2.html: la barra de visibilidad ya no enlaza al portal del cliente — el coach no puede comprobar lo que ve.";
       if (!/_cliVisOn\('antropometria'\)\?"Lo que cargas aquí el cliente lo ve/.test(p))
         return "panel-v2.html: el rotulo de la tarjeta de Antropometria volvio a afirmar que el cliente la ve sin mirar la visibilidad.";
+      return null;
+    },
+  },
+  {
+    name: "Nutrición no cuelga de Antropometría, y el portal no niega un plan que SI existe",
+    why:
+      "La cascada de pestanas del panel abria Nutricion DESPUES de Antropometria. " +
+      "Medido en produccion: un cliente con rutina cargada y cero mediciones dejaba " +
+      "al coach SIN la pestana de Nutricion — no tenia donde escribir el plan — " +
+      "mientras su cliente SI veia la seccion de Nutricion en el portal, vacia. " +
+      "Un plan de comidas no necesita mediciones. Y del otro lado: el portal pinta " +
+      "solo los dias CON texto, asi que un plan escrito entero en 'Pautas generales' " +
+      "salia como 'Tu coach todavia no cargo tu plan' con las pautas justo debajo — " +
+      "la pantalla contradiciendose sola.",
+    bug: "coach sin pestana de Nutricion para un cliente sin antropometria; portal negando un plan que esta cargado en pautas",
+    check() {
+      var p = read("panel-v2.html");
+      if (!p) return "panel-v2.html: no existe.";
+      // 1 · el eslabon de Nutricion se abre EN PARALELO con Antropometria.
+      if (!/tab:\s*"fit_nutri"\s*,\s*paralelo:\s*true/.test(p))
+        return "panel-v2.html: Nutricion volvio a colgar de Antropometria en la cascada — un cliente sin mediciones deja al coach sin pestana donde cargar el plan.";
+      // 2 · ...y _cliVisibleTabs tiene que HONRARLO. Sin esto la bandera del
+      //     punto 1 es decorativa: estaria declarada y no la leeria nadie.
+      if (!/step\.paralelo\s*\?\s*puertaPrevia\s*:\s*open/.test(p))
+        return "panel-v2.html: _cliVisibleTabs ya no honra `paralelo` — la bandera queda declarada y el domino vuelve a ser estrictamente secuencial.";
+      if (!/if\s*\(\s*!step\.paralelo\s*\)\s*\{\s*puertaPrevia\s*=/.test(p))
+        return "panel-v2.html: un eslabon paralelo volvio a consumir su turno del domino — cierra la puerta del siguiente sin ser su requisito.";
+      // 3 · y Antropometria NO se retira de la cascada para 'arreglarlo': sigue
+      //     siendo el eslabon que abre lo que venga despues.
+      //     OJO: hay que mirar DENTRO de la cadena de fitness. Un `tab:"fit_antro"`
+      //     suelto tambien vive en _cliNextStep (la guia), asi que buscarlo en todo
+      //     el fichero aprobaba con el eslabon ya borrado — medido, no supuesto.
+      var _cadenaFit = (p.match(/fitness:\s*\{[\s\S]*?chain:\s*\[([\s\S]*?)\]\s*\}/) || [])[1] || "";
+      if (!_cadenaFit) return "panel-v2.html: no se encuentra la cadena de fitness en _CLI_CASCADE.";
+      if (!/tab:\s*"fit_antro"/.test(_cadenaFit))
+        return "panel-v2.html: Antropometria desaparecio de la cascada de fitness — el arreglo era desacoplar Nutricion, no borrar el eslabon.";
+      if (!/tab:\s*"fit_rutina"/.test(_cadenaFit))
+        return "panel-v2.html: Gym desaparecio de la cascada de fitness.";
+
+      var f = read("pathway-fit-cliente.html");
+      if (!f) return "pathway-fit-cliente.html: no existe.";
+      // 4 · el portal distingue "no hay plan" de "el plan esta en las pautas".
+      if (!/t\(\s*_hayPautas\s*\?\s*'planEnPautas'\s*:\s*'planVacioSpan'\s*\)/.test(f))
+        return "pathway-fit-cliente.html: el plan de nutricion volvio a negarse en bloque — con pautas cargadas el portal dice 'tu coach todavia no cargo tu plan' y las pinta debajo.";
+      // 5 · con su texto en los DOS idiomas (si falta uno, t() devuelve la clave
+      //     cruda y el cliente lee "planEnPautas").
+      if ((f.match(/planEnPautas\s*:/g) || []).length < 2)
+        return "pathway-fit-cliente.html: falta planEnPautas en alguno de los dos diccionarios — el cliente leeria el nombre de la clave.";
       return null;
     },
   },
