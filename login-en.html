@@ -19,6 +19,7 @@ if (!localStorage.getItem('mj_login_reloaded')) {
 <script src="/pw-lang.js"></script>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <script src="pw-app.js"></script>
+<script src="/pw-multicoach.js"></script>
 <meta name="color-scheme" content="light">
 <style>html{color-scheme:light;}</style>
 <link rel="icon" href="/favicon-app.svg?v=6" type="image/svg+xml">
@@ -355,8 +356,12 @@ function _handleGoogleAuthSuccess(access_token, refresh_token, btn){
       if(usrStr){
         var usr = JSON.parse(usrStr);
         var _v = 'v=' + Date.now();
-        var dest = usr.rol === 'owner' ? '/multicoach.html?' :
-                   (usr.rol === 'coach' || usr.rol === 'admin') ? '/panel-v2.html?' :
+        if(PW_MULTICOACH.esDueno(usr.rol, false)){
+          // Mismo destino que la entrada por email: una sola puerta (R-99).
+          PW_MULTICOACH.urlDeEntrada(SB, access_token).then(function(u){ window.location.href = u; });
+          return;
+        }
+        var dest = (usr.rol === 'coach' || usr.rol === 'admin') ? '/panel-v2.html?' :
                    (usr.rol === 'empleado') ? '/empleado.html?' :
                    '/cliente.html?';
         window.location.href = dest + _v;
@@ -931,10 +936,10 @@ async function entrar(){
     // recargando en vez de desloguear; esto resetea ese "una vez" por login.)
     try{ sessionStorage.removeItem('pw_auth_retry'); }catch(e){}
     var _v='v='+Date.now();
-    if(usuario.rol==='owner' || (usuario.rol==='colaborador' && multicoachAccess)) {
-      // ENTRADA UNICA (cierre MultiCoach) — ver la nota extensa en login.html.
-      // Mismo origen ⇒ la sesion viaja sola, el handoff no hace falta.
-      window.location.href=BASE+'/multicoach.html?'+_v;
+    if(PW_MULTICOACH.esDueno(usuario.rol, multicoachAccess)) {
+      // El dueno va a MultiCoach — ver la nota extensa en pw-multicoach.js.
+      // OTRO origen ⇒ la sesion NO viaja sola: hace falta el handoff.
+      window.location.href = await PW_MULTICOACH.urlDeEntrada(SB, _jwt);
     }
     else if(usuario.rol==='coach'||usuario.rol==='admin'){
       window.location.href=BASE+'/panel-v2.html?'+_v;

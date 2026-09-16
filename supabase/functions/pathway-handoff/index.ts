@@ -34,13 +34,26 @@ function json(data: unknown, status = 200): Response {
   });
 }
 
+// S1 — El codigo es una CREDENCIAL AL PORTADOR: quien lo tenga obtiene una
+// sesion completa, con el rol y la organizacion de su dueno, y sin contrasena.
+//
+// Antes se generaba con Math.random(), que en V8 es xorshift128+: su estado
+// interno se reconstruye observando unas pocas salidas y desde ahi se predicen
+// las siguientes. Los 32 caracteres daban una falsa sensacion de fuerza — la
+// entropia real no era la del alfabeto, era la del generador. Y las instancias
+// de Deno se reutilizan entre invocaciones, asi que ese estado persiste entre
+// peticiones de usuarios distintos.
+//
+// Esto NO era deuda dormida: desde que el dueno entra a MultiCoach por handoff,
+// este codigo es la unica puerta de entrada al producto.
+//
+// Solo cambia la GENERACION. El formato pasa a 32 bytes -> 64 hex, que es lo
+// que `multicoach-exchange-handoff` ya espera. La arquitectura del handoff no
+// se toca.
 function generateCode(): string {
-  const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
-  let code = "";
-  for (let i = 0; i < 32; i++) {
-    code += chars[Math.floor(Math.random() * chars.length)];
-  }
-  return code;
+  const bytes = new Uint8Array(32);
+  crypto.getRandomValues(bytes);
+  return Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join("");
 }
 
 Deno.serve(async (req) => {

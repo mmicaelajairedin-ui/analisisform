@@ -3089,25 +3089,33 @@ const RULES = [
       // Fallback a modo real vacío con aviso (no maqueta, no blanco).
       if (!/catch\(function\(\)\{[\s\S]{0,200}_apply\(null,\[\],\[\],null,\[\]\)/.test(mc))
         return "multicoach.html: mcLoadReal no queda en modo real vacío ante error (vuelve a caer a demo o blanco).";
-      // ENTRADA UNICA (cierre MultiCoach, sept 2026). El owner tiene que llegar
-      // a multicoach.html por TODAS sus puertas. Historia: la regla original
-      // exigia multicoach.html; luego se acepto tambien el handoff a
-      // pathwayplatforms.com (commit b8c3781), y el resultado fue que el login
-      // por email mandaba al dueno a un dominio que nunca se activo mientras el
-      // de Google lo dejaba en el panel de coach: tres destinos, ninguno el
-      // producto. Ahora hay uno solo. Si algun dia se activa el dominio propio,
-      // esta regla se actualiza a la vez que el redirect — no antes.
-      // Se comparan las lineas SIN comentarios: una mencion a un dominio dentro
-      // de un comentario no es una redireccion (asi se colaba un falso verde).
+      // ENTRADA UNICA — INVERTIDA el 2026-09-16, no aflojada.
+      //
+      // Esta regla exigia que el owner fuera a multicoach.html por TODAS sus
+      // puertas, y cerraba diciendo: "si algun dia se activa el dominio propio,
+      // esta regla se actualiza a la vez que el redirect — no antes". Es hoy:
+      // pathwayplatforms.com sirve MultiCoach desde el 2026-09-13 (deploy
+      // verificado, buildId = commit). El destino del dueño paso a ser el
+      // producto React, y el aserto se invierte con el cambio, en el mismo
+      // commit.
+      //
+      // Lo que se comprueba ahora es lo CONTRARIO y es mas estrecho: que
+      // ninguna de las dos paginas mande al dueño a multicoach.html. Que SI
+      // llegue a MultiCoach, y por las cinco puertas, lo cubren las reglas
+      // "owner → MultiCoach" del final de este fichero — que ademas vigilan las
+      // tres que esta nunca miro (auth-callback y los dos registro).
+      //
+      // Se comparan las lineas SIN comentarios: una mencion dentro de un
+      // comentario no es una redireccion (asi se colaba un falso verde).
       const sinComentarios = (s) => s.replace(/^\s*\/\/.*$/gm, "").replace(/\/\*[\s\S]*?\*\//g, "");
       for (const f of ["login.html", "login-en.html"]) {
         const raw = read(f);
         if (!raw) continue;
         const lg = sinComentarios(raw);
-        if (!/rol\s*===\s*['"]owner['"][\s\S]{0,400}multicoach\.html/.test(lg))
-          return f + ": el owner ya no se rutea a multicoach.html (entrada unica de la red).";
-        if (/pathwayplatforms\.com/.test(lg))
-          return f + ": vuelve a redirigir a pathwayplatforms.com. Ese dominio no esta activado (docs/PATHWAYPLATFORMS_SETUP.md) y el dueno acaba fuera del producto.";
+        if (/multicoach\.html/.test(lg))
+          return f + ": vuelve a mandar al dueño a multicoach.html. Su destino es MultiCoach (pw-multicoach.js).";
+        if (!/PW_MULTICOACH\.esDueno\(/.test(lg))
+          return f + ": ya no decide el destino del dueño con PW_MULTICOACH.esDueno.";
       }
       // Y las otras dos puertas del dueno: tras pagar y desde el panel de coach.
       const pl = read("pago-listo.html");
@@ -6607,6 +6615,131 @@ const RULES = [
         return "multicoach.html: mcMapCli ya no mapea la nota desde `notas_privadas`.";
       if (mc && /select=[^'\`"]*(,|=)updated_at/.test(mc))
         return "multicoach.html: algun SELECT directo a candidatos volvio a pedir `updated_at` (no existe).";
+      return null;
+    },
+  },
+  {
+    name: "owner → MultiCoach: un solo destino, cargado por las cinco puertas",
+    bug: "El destino del dueño estaba decidido en SIETE sitios y los siete no " +
+         "coincidian: login/login-en mandaban a /multicoach.html (email y Google " +
+         "nativo), y auth-callback + registro + registro-en NO TENIAN rama de owner, " +
+         "asi que el dueño caia en /panel-v2.html — el panel del coach. Como la " +
+         "mayoria entra con Google, y Google vuelve por auth-callback y no por " +
+         "login.html, ese era el camino real de casi todos. Ahora la regla vive " +
+         "SOLO en pw-multicoach.js y las cinco paginas lo cargan.",
+    why: "Siete puertas al mismo sitio se comprueban las siete, y una regla " +
+         "replicada en siete ficheros se desalinea sin que nada avise.",
+    check() {
+      const mod = read("pw-multicoach.js");
+      if (!mod) return "falta pw-multicoach.js — la fuente unica del destino del dueño.";
+      if (!/var ORIGIN = 'https:\/\/pathwayplatforms\.com'/.test(mod))
+        return "pw-multicoach.js: ORIGIN ya no apunta a pathwayplatforms.com.";
+      if (!/functions\/v1\/pathway-handoff/.test(mod))
+        return "pw-multicoach.js: se perdio el handoff. MultiCoach esta en OTRO origen: sin canje el dueño llega sin sesion.";
+      if (!/function esDueno\(/.test(mod) || !/function urlDeEntrada\(/.test(mod))
+        return "pw-multicoach.js: falta esDueno() o urlDeEntrada().";
+      const offenders = [];
+      for (const f of ["login.html", "login-en.html", "auth-callback.html", "registro.html", "registro-en.html"]) {
+        const t = read(f);
+        if (!t) { offenders.push(f + " (no existe)"); continue; }
+        // La ETIQUETA, no la mencion: una regla que casa con el comentario que
+        // nombra el fichero aprueba una pagina que no lo carga.
+        if (!/<script src="\/pw-multicoach\.js"><\/script>/.test(t)) offenders.push(f + " no carga pw-multicoach.js");
+        if (!/PW_MULTICOACH\.esDueno\(/.test(t)) offenders.push(f + " no pregunta PW_MULTICOACH.esDueno");
+      }
+      return offenders.length ? offenders.join("; ") : null;
+    },
+  },
+  {
+    name: "owner → MultiCoach: ninguna puerta escribe el destino a mano",
+    bug: "El destino se escribia a mano en cada pagina. Cuando el 09-09 se cambio " +
+         "a /multicoach.html, cuatro sitios cambiaron y tres se quedaron atras — " +
+         "y nadie lo vio hasta que un dueño no llego nunca a su producto.",
+    check() {
+      const offenders = [];
+      for (const f of ["login.html", "login-en.html", "auth-callback.html", "registro.html", "registro-en.html"]) {
+        const t = read(f);
+        if (!t) continue;
+        // Un destino es una CADENA, no una mencion. Se busca el dominio DENTRO
+        // de un literal entrecomillado y no "en el fichero": el primer intento
+        // tiraba los comentarios con /\/\/[^\n]*/ y eso se comia el "//" de
+        // "https://", asi que aprobaba una pagina con la URL escrita a mano.
+        // Lo caza la mutacion, no la lectura.
+        if (/['"`][^'"`\n]*pathwayplatforms\.com/.test(t)) offenders.push(f + " escribe pathwayplatforms.com a mano");
+        if (/['"`][^'"`\n]*multicoach\.html/.test(t)) offenders.push(f + " manda a multicoach.html");
+      }
+      return offenders.length ? offenders.join("; ") : null;
+    },
+  },
+  {
+    name: "registrar-coach: activar una cuenta NO cambia el rol de quien invito",
+    bug: "commonFields lleva rol:'coach' porque el alta normal crea coaches, y el " +
+         "PATCH de activacion lo mandaba tal cual. Un owner invitado por " +
+         "crear-multicoach (rol='owner' + org_id + su red ya creada) activaba su " +
+         "cuenta y salia COACH: perdia su red y el login lo mandaba a panel-v2. " +
+         "No habia fallado nada, asi que ninguna pantalla podia explicarselo. Es " +
+         "la misma leccion que member_role, una COLUMNA mas alla.",
+    why: "La lista es BLANCA: activar nunca puede conceder 'admin'.",
+    check() {
+      const s = read("supabase/functions/registrar-coach/index.ts");
+      if (!s) return "falta registrar-coach/index.ts";
+      if (!/ROLES_QUE_SE_CONSERVAN/.test(s))
+        return "registrar-coach: se perdio la conservacion del rol al activar (ROLES_QUE_SE_CONSERVAN).";
+      const lista = s.match(/ROLES_QUE_SE_CONSERVAN\s*=\s*\[([^\]]*)\]/);
+      if (!lista) return "registrar-coach: ROLES_QUE_SE_CONSERVAN ya no es una lista literal.";
+      if (/admin/.test(lista[1]))
+        return "registrar-coach: 'admin' entro en ROLES_QUE_SE_CONSERVAN — activar una cuenta podria conceder admin.";
+      if (!/rol: rolFinal/.test(s))
+        return "registrar-coach: el PATCH de activacion ya no manda rolFinal (vuelve a degradar al owner).";
+      return null;
+    },
+  },
+  {
+    name: "registro: el rol de la sesion sale de la fila, no del formulario",
+    bug: "registro.html guardaba mj_user con rol:'coach' fijo. Un owner que " +
+         "activaba su cuenta quedaba como coach en su propia sesion aunque la " +
+         "base dijera otra cosa, y el destino se decidia con ese dato.",
+    check() {
+      const offenders = [];
+      for (const f of ["registro.html", "registro-en.html"]) {
+        const t = read(f);
+        if (!t) continue;
+        if (/mj_user['"]\s*,\s*JSON\.stringify\(\{[\s\S]{0,200}?rol:\s*['"]coach['"]/.test(t))
+          offenders.push(f + " fija rol:'coach' en mj_user");
+        if (!/var _rolReal = \(coach && coach\.rol\)/.test(t))
+          offenders.push(f + " ya no lee el rol de la fila (_rolReal)");
+      }
+      return offenders.length ? offenders.join("; ") : null;
+    },
+  },
+  {
+    name: "pathway-handoff: el codigo de sesion NO sale de Math.random (S1)",
+    bug: "El codigo del handoff es una CREDENCIAL AL PORTADOR: quien lo tenga " +
+         "obtiene una sesion completa, con el rol y la organizacion de su dueno, " +
+         "sin contrasena. Se generaba con Math.random(), que en V8 es " +
+         "xorshift128+: el estado interno se reconstruye observando unas pocas " +
+         "salidas. Los 32 caracteres daban una falsa sensacion de fuerza — la " +
+         "entropia era la del generador, no la del alfabeto. Y las instancias de " +
+         "Deno se reutilizan, asi que ese estado persiste entre peticiones de " +
+         "usuarios DISTINTOS. Dejo de ser deuda dormida el dia que el dueño paso " +
+         "a entrar a MultiCoach por handoff: es su unica puerta.",
+    why: "Se mira el codigo EJECUTABLE, no el fichero: el comentario que explica " +
+         "el arreglo nombra Math.random, y una regla que grepea a lo bruto se " +
+         "pondria roja por la propia explicacion (o peor, aprobaria por mencion).",
+    check() {
+      const f = "supabase/functions/pathway-handoff/index.ts";
+      const raw = read(f);
+      if (!raw) return "falta " + f;
+      const codigo = raw
+        .replace(/\/\*[\s\S]*?\*\//g, "")
+        .replace(/^\s*\/\/.*$/gm, "");
+      if (/Math\.random/.test(codigo))
+        return f + ": vuelve a generar el codigo de sesion con Math.random (S1).";
+      if (!/crypto\.getRandomValues/.test(codigo))
+        return f + ": generateCode ya no usa crypto.getRandomValues.";
+      // El formato que `multicoach-exchange-handoff` espera: 32 bytes en hex.
+      if (!/new Uint8Array\(32\)/.test(codigo) || !/toString\(16\)/.test(codigo))
+        return f + ": el codigo dejo de ser 32 bytes en hexadecimal (64 caracteres).";
       return null;
     },
   },
