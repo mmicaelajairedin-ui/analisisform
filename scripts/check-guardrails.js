@@ -3405,9 +3405,15 @@ const RULES = [
         return "pw-pixel.js: el hook de Lead dejó de cubrir la Edge Function contacto-coach (la ficha del directorio vuelve a no medirse).";
       // Y las páginas donde el embudo TERMINA tienen que cargarlo, o el escalón
       // se mide en cero para siempre.
+      // Se exige la ETIQUETA, no la cadena: el comentario que hay encima del
+      // include nombra el fichero, asi que un `/pw-pixel\.js/` a secas aprueba
+      // con el <script> ya retirado. Es exactamente lo que paso en INC-073 con
+      // pw-auth.js, y volvio a pasar aqui al mutar (R-102).
+      const cargaPixel = (s) => /<script[^>]+src=["'][^"']*pw-pixel\.js[^"']*["']/.test(s);
       for (const f of ["coach.html", "reservar.html", "pago-listo.html"]) {
-        if (read(f) && !/pw-pixel\.js/.test(read(f)))
-          return f + " ya no incluye pw-pixel.js (ese escalon del embudo deja de medirse).";
+        const h = read(f);
+        if (h && !cargaPixel(h))
+          return f + " ya no carga pw-pixel.js (ese escalon del embudo deja de medirse).";
       }
       // La compra se cuenta una vez por pestaña, no en cada recarga.
       const pl = read("pago-listo.html");
