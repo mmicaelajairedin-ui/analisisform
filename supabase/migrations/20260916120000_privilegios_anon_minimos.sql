@@ -1,0 +1,89 @@
+-- ============================================================================
+-- R-55 · cuarta vez · Los cuatro privilegios que ninguna ruta usa, fuera de
+--                     anon y authenticated en TODO el esquema public
+-- ============================================================================
+--
+-- QUE ARREGLA
+-- Las tablas de public nacieron con la baraja ENTERA de privilegios para
+-- 'anon' y 'authenticated' —DELETE, INSERT, MAINTAIN, REFERENCES, SELECT,
+-- TRIGGER, TRUNCATE, UPDATE— heredada de pg_default_acl y no concedida por
+-- ninguna migracion.
+--
+-- Y NO SON OCHO TABLAS. Medido contra produccion el 2026-09-16, solo lectura,
+-- sobre las 59 tablas de public:
+--
+--   privilegio    anon      authenticated
+--   TRUNCATE      49 / 59   52 / 59
+--   REFERENCES    53 / 59   54 / 59
+--   TRIGGER       53 / 59   54 / 59
+--   MAINTAIN      54 / 59   55 / 59
+--
+-- La auditoria previa nombro ocho —informes, cv_publicados, candidatos, leads,
+-- solicitudes, client_errors, reviews, handoff_codes— porque son las que se
+-- miraron, no porque fueran las afectadas. Una migracion que listara esas ocho
+-- se leeria como completa y dejaria 41 tablas igual. Por eso esto va por
+-- esquema y no por lista: es a la vez MENOS codigo y MAS cobertura.
+--
+-- POR QUE IMPORTA, Y POR QUE NO ES UNA PUERTA ABIERTA HOY
+-- PostgreSQL NO evalua RLS en un TRUNCATE: la RLS filtra filas y TRUNCATE no
+-- mira filas, asi que el privilegio vale mas que todas las politicas juntas.
+-- PERO no se alcanza desde fuera, y se comprobo ANTES de tocar nada:
+--
+--   1. PostgREST solo emite SELECT/INSERT/UPDATE/DELETE sobre tablas y vistas
+--      y SELECT/CALL sobre funciones. No expone el verbo.
+--   2. Ninguna funcion de NINGUN esquema no-sistema lo ejecuta por dentro: se
+--      recorrio pg_proc entero (prokind='f') buscando el verbo como palabra en
+--      prosrc. Resultado: 0 funciones.
+--   3. Las unicas funciones con SQL dinamico ejecutables por anon son de stock
+--      de Supabase (extensions, realtime, storage); ninguna es SECURITY
+--      DEFINER y ninguna vive en un esquema que PostgREST exponga.
+--
+-- Asi que esto NO cierra un agujero explotable: cierra la defensa en
+-- profundidad que faltaba, para que el dia que alguien escriba una funcion
+-- SECURITY DEFINER con SQL dinamico el privilegio ya no este debajo.
+--
+-- QUE NO TOCA, Y ES DELIBERADO
+-- SELECT, INSERT, UPDATE y DELETE se quedan EXACTAMENTE como estan. De ellos
+-- cuelgan el formulario de intake, el logger de errores, el alta de leads y el
+-- resto del producto, y quien acota que fila ve cada uno es la RLS, no el
+-- privilegio. Retirar un verbo DML aqui romperia producto y no es de lo que
+-- trata esta migracion.
+--
+-- Se retiran los cuatro que ninguna ruta de aplicacion usa:
+--   TRUNCATE   · no lo evalua RLS, y PostgREST no lo emite
+--   REFERENCES · crear claves foraneas es DDL, lo hace postgres
+--   TRIGGER    · crear triggers es DDL, lo hace postgres
+--   MAINTAIN   · VACUUM/ANALYZE/REINDEX/REFRESH, tarea del servidor
+--
+-- ALCANCE DE "ALL TABLES", COMPROBADO Y NO SUPUESTO
+-- En public hay 59 tablas, 5 vistas, 0 vistas materializadas y 0 tablas
+-- foraneas. REVOKE ... ON ALL TABLES alcanza tablas y vistas; sobre una vista
+-- estos cuatro no significan nada y el REVOKE es un no-op. No hay ninguna
+-- vista materializada cuyo REFRESH pudiera depender de MAINTAIN, y ninguna
+-- funcion de public contiene REFRESH.
+--
+-- CAUSA RAIZ, MEDIDA Y MEDIO CERRADA
+--   pg_default_acl de 'postgres' sobre public, para TABLAS, ya es SELECT y
+--     nada mas (endurecimiento E1 del 2026-09-02, verificado hoy). Una tabla
+--     nueva creada por postgres ya no hereda esto.
+--   pg_default_acl de 'supabase_admin' sobre public conserva la baraja entera.
+--     'postgres' no es miembro suyo y no puede alterarlo: residuo declarado.
+--     Una tabla recreada actuando como supabase_admin vuelve a heredarlo, y
+--     entonces hay que volver a ejecutar esta migracion.
+--   Aparte, y NO se toca aqui: el default de 'postgres' para FUNCIONES sigue
+--     concediendo EXECUTE a anon y authenticated, asi que toda funcion nueva
+--     de public nace invocable por cualquiera con la clave publica. Cerrarlo
+--     es otra decision, con otro alcance, y rompe RPCs si se hace a ciegas.
+--
+-- IDEMPOTENTE: REVOKE sobre lo ya revocado es un no-op.
+-- REPETIBLE: hay que volver a ejecutarla despues de crear tablas nuevas si
+--            alguna vez vuelven a heredar la baraja.
+-- VERIFICA:  scripts/verificar-fase2-seguridad.sql (falla cerrado)
+-- ROLLBACK:  GRANT TRUNCATE, REFERENCES, TRIGGER, MAINTAIN
+--              ON ALL TABLES IN SCHEMA public TO anon, authenticated;
+--            No deberia hacer falta nunca: ninguna ruta de aplicacion los usa.
+-- ============================================================================
+
+REVOKE TRUNCATE, REFERENCES, TRIGGER, MAINTAIN
+  ON ALL TABLES IN SCHEMA public
+  FROM anon, authenticated;

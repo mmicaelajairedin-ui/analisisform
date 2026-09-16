@@ -6743,6 +6743,113 @@ const RULES = [
       return null;
     },
   },
+  {
+    name: "superficies privadas: todas llevan <meta name=robots> con noindex",
+    bug: "El 2026-09-16 se auditaron las superficies privadas contra produccion y " +
+         "cuatro no tenian ninguna marca de indexacion: owner-coach-detail.html no " +
+         "tenia ni noindex ni Disallow, y app.html, pathway-fit-cliente.html y " +
+         "pathway-life-cliente.html estaban en Disallow SIN noindex, que no es lo " +
+         "mismo: Disallow impide rastrear, no indexar, y ademas impide que el bot " +
+         "LEA un noindex que estuviera dentro. c.html, que es una conversacion " +
+         "privada por link magico, tampoco lo tenia.",
+    why: "La marca se ANADE y no se retira. Si alguien quita este meta 'porque ya " +
+         "esta en robots.txt', la pagina vuelve a poder indexarse por cualquier bot " +
+         "que entre igual — los de vista previa de enlaces no miran robots.txt.",
+    check() {
+      const privadas = [
+        "c.html", "owner-coach-detail.html", "app.html",
+        "pathway-fit-cliente.html", "pathway-life-cliente.html",
+        "panel-v2.html", "cliente.html", "cv.html",
+      ];
+      const offenders = [];
+      for (const f of privadas) {
+        const s = read(f);
+        if (!s) { offenders.push(f + " (no existe)"); continue; }
+        const m = s.match(/<meta[^>]*name=["']robots["'][^>]*>/i);
+        if (!m) offenders.push(f + " (sin meta robots)");
+        else if (!/noindex/i.test(m[0])) offenders.push(f + " (meta robots sin noindex)");
+      }
+      return offenders.length ? offenders.join(", ") : null;
+    },
+  },
+  {
+    name: "robots.txt: el grupo de bots de IA tiene la MISMA lista privada que el grupo *",
+    bug: "Cada bot de IA tenia su propio grupo con 'Allow: /' y ninguna linea " +
+         "Disallow. Un bot obedece UN SOLO grupo —el mas especifico que casa con su " +
+         "nombre— y deja de mirar el de '*', asi que los veinte tenian permiso " +
+         "explicito sobre /panel-v2.html, /cliente.html, los portales de cliente, " +
+         "/leads/ y /supabase/. Los 24 Disallow de arriba no les aplicaban.",
+    why: "Son dos copias de la misma lista y robots.txt no tiene forma de evitarlo. " +
+         "Dos copias de una regla se desalinean y nada avisa (R-61): esta regla es " +
+         "el aviso. Quien anada una superficie privada la anade en las DOS.",
+    check() {
+      const s = read("robots.txt");
+      if (!s) return "falta robots.txt";
+      const grupos = [];
+      let actual = null;
+      for (const linea of s.split("\n")) {
+        const ua = linea.match(/^User-agent:\s*(.+?)\s*$/);
+        if (ua) {
+          if (!actual || actual.cerrado) { actual = { agentes: [], disallow: [], cerrado: false }; grupos.push(actual); }
+          actual.agentes.push(ua[1]);
+          continue;
+        }
+        const di = linea.match(/^Disallow:\s*(.+?)\s*$/);
+        if (di && actual) { actual.disallow.push(di[1]); actual.cerrado = true; continue; }
+        if (/^Allow:/.test(linea) && actual) actual.cerrado = true;
+      }
+      const generico = grupos.find(g => g.agentes.includes("*"));
+      const ia = grupos.find(g => g.agentes.includes("GPTBot"));
+      if (!generico) return "robots.txt: no hay grupo 'User-agent: *'";
+      if (!ia) return "robots.txt: no hay grupo que incluya GPTBot";
+      if (!generico.disallow.length) return "robots.txt: el grupo '*' se quedo sin ninguna linea Disallow";
+      const a = new Set(generico.disallow), b = new Set(ia.disallow);
+      const faltan = [...a].filter(x => !b.has(x));
+      const sobran = [...b].filter(x => !a.has(x));
+      if (faltan.length) return "el grupo de bots de IA NO bloquea: " + faltan.join(", ");
+      if (sobran.length) return "el grupo de bots de IA bloquea de mas: " + sobran.join(", ");
+      return null;
+    },
+  },
+  {
+    name: "pw_tiene_pass: el EXECUTE de anon no vuelve sin decidirlo",
+    bug: "pw_tiene_pass(p_email) es SECURITY DEFINER, vive en public —o sea que " +
+         "PostgREST la expone como /rest/v1/rpc/pw_tiene_pass— y no tiene ninguna " +
+         "guarda: contesta si ese email tiene cuenta, para cualquier email. Con la " +
+         "clave publica se podia recorrer una lista y saber quien esta en Pathway. " +
+         "Se le retiro el EXECUTE a anon el 2026-09-16, que es literalmente la linea " +
+         "de ROLLBACK que su propia migracion habia dejado escrita.",
+    why: "El grant se concedio con el motivo 'lo usa registro.html', cierto como " +
+         "intencion y falso en ejecucion: esa llamada esta dentro de una rama que " +
+         "exige que un GET a usuarios haya devuelto filas, y anon no tiene SELECT " +
+         "sobre usuarios. Un motivo escrito envejece y se lee como comprobado (R-81).",
+    check() {
+      let files = [];
+      try { files = fs.readdirSync("supabase/migrations"); } catch (e) { return "no se puede leer supabase/migrations"; }
+      const cuerpo = (f) => read("supabase/migrations/" + f).replace(/^\s*--.*$/gm, "");
+      const concede = files.filter(f => /GRANT\s+EXECUTE\s+ON\s+FUNCTION\s+public\.pw_tiene_pass/i.test(cuerpo(f)));
+      const revoca  = files.filter(f => /REVOKE\s+EXECUTE\s+ON\s+FUNCTION\s+public\.pw_tiene_pass\(text\)\s+FROM\s+anon/i.test(cuerpo(f)));
+      if (!revoca.length)
+        return "no queda ninguna migracion que revoque EXECUTE a anon sobre pw_tiene_pass: la enumeracion de cuentas vuelve a estar abierta";
+      // El orden que manda es el de la VERSION (el prefijo <timestamp>_ que usa
+      // `supabase db push`), no el alfabetico del nombre: los ficheros legacy sin
+      // prefijo se aplicaron a mano antes de que existiera el versionado, asi que
+      // nunca pueden ser "posteriores" a uno versionado.
+      const version = (f) => { const m = f.match(/^(\d{8,14})_/); return m ? m[1] : "0"; };
+      if (concede.length) {
+        const ultimoConcede = concede.map(version).sort().pop();
+        const ultimoRevoca = revoca.map(version).sort().pop();
+        if (ultimoConcede > ultimoRevoca)
+          return "una migracion concede EXECUTE a anon (version " + ultimoConcede +
+                 ") DESPUES de la que lo revoca (version " + ultimoRevoca +
+                 "): gana la ultima y el oraculo queda abierto";
+      }
+      if (!read("scripts/verificar-fase2-seguridad.sql"))
+        return "falta scripts/verificar-fase2-seguridad.sql, que es lo unico que mide el estado EFECTIVO";
+      return null;
+    },
+  },
+
 ];
 
 

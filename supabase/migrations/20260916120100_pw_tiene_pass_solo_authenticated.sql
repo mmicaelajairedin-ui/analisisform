@@ -1,0 +1,77 @@
+-- ============================================================================
+-- pw_tiene_pass(text) deja de ser un oraculo de enumeracion para 'anon'
+-- ============================================================================
+--
+-- QUE ES
+--   public.pw_tiene_pass(p_email text) RETURNS boolean
+--     SECURITY DEFINER · search_path=public
+--   SELECT EXISTS (SELECT 1 FROM usuarios
+--                  WHERE lower(email)=lower(p_email)
+--                    AND password_hash IS NOT NULL AND password_hash <> '');
+--
+-- Vive en public, o sea que PostgREST la expone como
+-- POST /rest/v1/rpc/pw_tiene_pass, y tenia EXECUTE concedido a 'anon'.
+-- Es SECURITY DEFINER: se salta la RLS de usuarios por diseno.
+--
+-- QUE PERMITE INFERIR, EXACTAMENTE
+--   Para CUALQUIER email, si existe una cuenta con contrasena. Nada mas: no
+--   devuelve el hash, ni el nombre, ni el rol. Revela EXISTENCIA, no contenido.
+--   Pero con la anon key —que va en el bundle y es publica por diseno (R-06)—
+--   se puede recorrer una lista de correos y saber quien esta en Pathway.
+--
+-- POR QUE ERA EL UNICO ORACULO, Y NO UNO DE DOS
+--   Se comprobo si el GET directo a /rest/v1/usuarios?email=eq.X servia para lo
+--   mismo —lo intentan registro.html:484 y activar-empleado.html:106—. NO
+--   sirve, y por partida doble, medido contra produccion el 2026-09-16:
+--     · anon NO tiene el privilegio SELECT sobre usuarios
+--       (has_table_privilege('anon','public.usuarios','SELECT') = false);
+--     · y aunque lo tuviera, usuarios lleva RLS activa y las dos unicas
+--       politicas de SELECT que alcanzan a anon son
+--           user_self_select        USING (auth_id = auth.uid())
+--           usuario_ve_solo_su_fila USING (email = auth.jwt()->>'email')
+--       que sin JWT valen NULL: cero filas.
+--
+-- POR QUE RETIRAR EL GRANT NO ROMPE NINGUN FLUJO LEGITIMO
+--   Los tres consumidores que llaman con la anon key tienen la llamada DENTRO
+--   de la rama que exige que ese GET haya devuelto filas:
+--     registro.html:492         dentro de  if (existing.length > 0)
+--     registro-en.html:491      idem
+--     activar-empleado.html:113 despues de if (!rows.length) return
+--   Como anon nunca recibe filas, esa rama no se ejecuta nunca: hoy las tres
+--   llamadas son CODIGO INALCANZABLE. El motivo escrito en la migracion que
+--   concedio el grant —"lo usa registro.html"— era cierto como intencion y
+--   falso en ejecucion (R-81, R-84).
+--   El unico consumidor que SI la ejecuta es panel-v2.html:14429, que llama con
+--   _hdr() —o sea con el JWT del usuario, rol 'authenticated'— y conserva el
+--   privilegio intacto.
+--
+-- POR QUE NO ES INC-006
+--   Ninguna politica de RLS de la base invoca pw_tiene_pass: se revisaron las
+--   11 politicas de usuarios y ninguna la nombra. Revocar EXECUTE aqui no puede
+--   dejar una politica sin poder evaluarse. Y no se toca PUBLIC, que ya no
+--   tiene EXECUTE (se lo quito usuarios_protect_password.sql).
+--
+-- ESTA MIGRACION ES, LITERALMENTE, EL ROLLBACK QUE SU PROPIA MIGRACION ESCRIBIO
+--   supabase/migrations/usuarios_pw_tiene_pass_anon.sql:17
+--     -- ROLLBACK: REVOKE EXECUTE ON FUNCTION public.pw_tiene_pass(text) FROM anon;
+--   No se inventa nada: se ejecuta lo que ya estaba previsto.
+--
+-- SI ALGUN DIA SE ARREGLA LA LECTURA DE anon SOBRE usuarios
+--   Ese arreglo volveria a hacer alcanzables las tres llamadas de arriba, que
+--   entonces devolverian 403. Quien lo haga tiene que decidir A PROPOSITO si
+--   reabre este grant —y con el, el oraculo— o si mueve la comprobacion detras
+--   de una Edge Function que exija prueba de humanidad. No se reabre por
+--   inercia: hay un guardarrail que compara las versiones de las migraciones y
+--   se pone rojo si una posterior vuelve a conceder.
+--
+-- RESIDUO DECLARADO
+--   Un usuario AUTENTICADO sigue pudiendo enumerar. Es una poblacion mucho
+--   menor —exige cuenta— y quitarselo romperia panel-v2.html, que lo usa para
+--   decirle al coach si su cliente ya tiene acceso. No se toca.
+--
+-- IDEMPOTENTE: REVOKE sobre lo ya revocado es un no-op.
+-- VERIFICA:   scripts/verificar-fase2-seguridad.sql (falla cerrado)
+-- ROLLBACK:   GRANT EXECUTE ON FUNCTION public.pw_tiene_pass(text) TO anon;
+-- ============================================================================
+
+REVOKE EXECUTE ON FUNCTION public.pw_tiene_pass(text) FROM anon;
