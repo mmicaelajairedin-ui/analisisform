@@ -257,11 +257,32 @@ Deno.serve(async (req: Request) => {
       if (prev[k] !== undefined) merged[k] = prev[k];
     }
     if (prev.pendiente_activacion) merged.pendiente_activacion = false;
+
+    // ⚠️ EL ROL — lo decidió quien INVITÓ, no este formulario.
+    //
+    // `commonFields` lleva `rol:"coach"` porque el alta normal crea coaches.
+    // Pero aquí la fila YA existe y su rol lo puso un alta privilegiada:
+    // `crear-multicoach` invita OWNERS (`rol:"owner"` + `org_id` + su red ya
+    // creada). Mandar `rol:"coach"` en este PATCH lo DEGRADABA en el momento
+    // exacto de activar su cuenta: el dueño perdía su red, el login lo mandaba
+    // a panel-v2.html, y ninguna pantalla podía explicárselo porque nada había
+    // fallado.
+    //
+    // Es la misma lección del bloque de arriba (`member_role`) una COLUMNA más
+    // allá: lo que decidió quien invitó manda sobre lo que traiga el
+    // formulario. `org_id` se salva solo — el PATCH no lo menciona.
+    //
+    // La lista es BLANCA a propósito: activar una cuenta invitada nunca puede
+    // conceder `admin`, pase lo que pase con la fila.
+    const ROLES_QUE_SE_CONSERVAN = ["coach", "owner"];
+    const rolPrevio = (existing && typeof existing.rol === "string") ? existing.rol : "";
+    const rolFinal = ROLES_QUE_SE_CONSERVAN.indexOf(rolPrevio) >= 0 ? rolPrevio : "coach";
+
     try {
       const r = await fetch(
         `${SB_URL}/rest/v1/usuarios?id=eq.${encodeURIComponent(existing.id)}&select=id,email,rol,nombre,activo,configuracion`,
         { method: "PATCH", headers: { ...svc, "Content-Type": "application/json", Prefer: "return=representation" },
-          body: JSON.stringify({ ...commonFields, configuracion: merged }) },
+          body: JSON.stringify({ ...commonFields, rol: rolFinal, configuracion: merged }) },
       );
       if (!r.ok) return json({ error: "activate_failed", status: r.status }, 502);
       const out = await r.json();

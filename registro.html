@@ -9,6 +9,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <script src="pw-app.js"></script>
 <script src="pw-observe.js"></script>
+<script src="/pw-multicoach.js"></script>
 <script src="/pw-consent.js"></script>
 <script src="/pw-pixel.js"></script>
 <link rel="icon" href="/favicon-app.svg?v=6" type="image/svg+xml">
@@ -664,10 +665,13 @@ async function registrar(){
     // primera. Si aun así fallara, seguimos al panel: el peor caso es el estado
     // anterior, y login.html sabe recuperarlo.
     var _authOk = false;
+    var _authToken = null;
     try {
       var _sbReg = window.supabase.createClient(SB, KEY);
       var _si = await _sbReg.auth.signInWithPassword({email: email, password: password});
       _authOk = !!(_si && _si.data && _si.data.session);
+      // El token hace falta para el handoff si quien activa es un DUEÑO.
+      _authToken = _authOk ? (_si.data.session.access_token || null) : null;
     } catch(_e){ _authOk = false; }
 
     // Eventos de conversión a Meta: registro completo + arranque del trial gratis.
@@ -675,10 +679,14 @@ async function registrar(){
     try { if(window.pwTrackReg) pwTrackReg(); if(window.pwTrackTrial) pwTrackTrial(); } catch(e){}
 
     // Guardar sesión
+    // El rol lo decide la FILA, no este formulario: `crear-multicoach` invita
+    // OWNERS, y escribir 'coach' aqui los degradaba en la sesion local aunque
+    // la base dijera otra cosa.
+    var _rolReal = (coach && coach.rol) || 'coach';
     localStorage.setItem('mj_user', JSON.stringify({
       id: coach.id,
       email: email,
-      rol: 'coach',
+      rol: _rolReal,
       nombre: nombre,
       auth_id: coach.auth_id || null,
       configuracion: coach.configuracion || configuracion
@@ -891,6 +899,16 @@ async function registrar(){
     // Si la sesión no llegó a crearse, el panel no podría escribir: lo mandamos
     // a login.html, que es el camino que sabe reparar la identidad. No es un
     // fallback decorativo — es la ruta real de recuperación.
+    // Quien acaba de activar una cuenta de DUEÑO va a MultiCoach, no al panel
+    // del coach. Antes esto mandaba SIEMPRE a panel-v2.html, asi que un owner
+    // creado por `crear-multicoach` activaba su cuenta y aterrizaba en el
+    // producto equivocado, sin ver nunca su red.
+    if(_authOk && PW_MULTICOACH.esDueno(_rolReal, false)){
+      PW_MULTICOACH.urlDeEntrada(SB, _authToken).then(function(u){
+        setTimeout(function(){ window.location.href = u; }, 1200);
+      });
+      return;
+    }
     var primerLogin = _authOk
       ? 'panel-v2.html?welcome=1'
       : ('login.html?email=' + encodeURIComponent(email) + '&nuevo=1');
