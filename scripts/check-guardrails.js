@@ -6712,6 +6712,37 @@ const RULES = [
       return offenders.length ? offenders.join("; ") : null;
     },
   },
+  {
+    name: "pathway-handoff: el codigo de sesion NO sale de Math.random (S1)",
+    bug: "El codigo del handoff es una CREDENCIAL AL PORTADOR: quien lo tenga " +
+         "obtiene una sesion completa, con el rol y la organizacion de su dueno, " +
+         "sin contrasena. Se generaba con Math.random(), que en V8 es " +
+         "xorshift128+: el estado interno se reconstruye observando unas pocas " +
+         "salidas. Los 32 caracteres daban una falsa sensacion de fuerza — la " +
+         "entropia era la del generador, no la del alfabeto. Y las instancias de " +
+         "Deno se reutilizan, asi que ese estado persiste entre peticiones de " +
+         "usuarios DISTINTOS. Dejo de ser deuda dormida el dia que el dueño paso " +
+         "a entrar a MultiCoach por handoff: es su unica puerta.",
+    why: "Se mira el codigo EJECUTABLE, no el fichero: el comentario que explica " +
+         "el arreglo nombra Math.random, y una regla que grepea a lo bruto se " +
+         "pondria roja por la propia explicacion (o peor, aprobaria por mencion).",
+    check() {
+      const f = "supabase/functions/pathway-handoff/index.ts";
+      const raw = read(f);
+      if (!raw) return "falta " + f;
+      const codigo = raw
+        .replace(/\/\*[\s\S]*?\*\//g, "")
+        .replace(/^\s*\/\/.*$/gm, "");
+      if (/Math\.random/.test(codigo))
+        return f + ": vuelve a generar el codigo de sesion con Math.random (S1).";
+      if (!/crypto\.getRandomValues/.test(codigo))
+        return f + ": generateCode ya no usa crypto.getRandomValues.";
+      // El formato que `multicoach-exchange-handoff` espera: 32 bytes en hex.
+      if (!/new Uint8Array\(32\)/.test(codigo) || !/toString\(16\)/.test(codigo))
+        return f + ": el codigo dejo de ser 32 bytes en hexadecimal (64 caracteres).";
+      return null;
+    },
+  },
 ];
 
 
