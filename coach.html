@@ -9,6 +9,22 @@
 <link rel="icon" href="/favicon-app.svg?v=6" type="image/svg+xml">
 <title>Coach · Pathway</title>
 <meta name="description" content="Perfil publico de coach en Pathway Career Coach.">
+<!-- SEO del directorio · las cuatro ranuras las rellena _applySEO() con los datos
+     del coach. Nacen VACIAS a proposito: sin datos no hay nada cierto que poner, y
+     una etiqueta con valor por defecto se comparte como si fuera del coach.
+     La canonica es SIEMPRE /coach/<slug> — la limpia. Esta pagina se sirve TAMBIEN
+     en /coach.html?slug=<slug>, asi que sin canonica son dos URL con el mismo
+     contenido. -->
+<link rel="canonical" id="ld-canonical" href="https://pathwaycareercoach.com/coaches.html">
+<meta property="og:type" content="profile">
+<meta property="og:site_name" content="Pathway">
+<meta property="og:title" id="og-title" content="">
+<meta property="og:description" id="og-desc" content="">
+<meta property="og:url" id="og-url" content="">
+<meta property="og:image" id="og-image" content="">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:title" id="tw-title" content="">
+<meta name="twitter:description" id="tw-desc" content="">
 <meta name="theme-color" content="#2D6A4F">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -440,7 +456,13 @@ img{max-width:100%;display:block;}
     if(!s){var m=window.location.pathname.match(/\/coach\/([a-z0-9][a-z0-9-]{0,80})\/?$/i);if(m)s=m[1];}
     return s.trim().toLowerCase();
   }
-  function show(id){var e=document.getElementById(id);if(e)e.hidden=false;}
+  function show(id){
+    // Un perfil que no existe, o que su duenio apago, NO se indexa: la pagina
+    // de "no encontrado" es la misma URL para cualquier slug inventado, asi que
+    // sin esto un buscador acaba con N copias del mismo texto vacio. Se marca
+    // aqui, en la unica puerta por la que se enciende ese bloque.
+    if(id==='not-found') _marcarNoIndexable();
+    var e=document.getElementById(id);if(e)e.hidden=false;}
   function hide(id){var e=document.getElementById(id);if(e)e.hidden=true;}
   function setText(id,v){var e=document.getElementById(id);if(e)e.textContent=v||'';}
   function safeUrl(u){if(!u)return '';if(!/^https?:\/\//i.test(u))return '';return u;}
@@ -505,6 +527,37 @@ img{max-width:100%;display:block;}
     }catch(e){}
     return '';
   }
+  // ¿Este perfil merece estar en el indice? Un perfil vacio, inactivo o con
+  // cuatro palabras de bio no ayuda a nadie que llegue desde un buscador, y
+  // diluye a los que si estan hechos. Medido contra produccion el 2026-09-16:
+  // de los 6 perfiles publicos, DOS tienen bio de 5 y de 35 caracteres. No es
+  // hipotetico: es un tercio del directorio.
+  //
+  // Esta funcion decide, y la MISMA decide lo que entra en sitemap.xml. Si se
+  // resuelve en dos sitios, un dia discrepan y el sitemap acaba anunciando lo
+  // que la pagina pide no indexar.
+  var BIO_MINIMA = 120;   // una bio real pasa de largo; "Coach" o una linea, no.
+  function _perfilIndexable(c){
+    if(!c || !c.slug) return false;
+    var bio  = (''+(c.bio||'')).trim();
+    var reco = (''+(c.recomendacion_ia||'')).trim();
+    var prof = (''+(c.titulo_profesional||'')).trim();
+    // Basta con que tenga profesion Y algo sustancial que leer.
+    return !!(prof && (bio.length >= BIO_MINIMA || reco.length >= BIO_MINIMA));
+  }
+  // El sentido de la marca importa, y es al reves de lo intuitivo: la pagina
+  // nace INDEXABLE y el JS anade `noindex` a lo thin, NO al reves.
+  //
+  // Un `noindex` en el HTML inicial que el JS retira despues es una trampa:
+  // Googlebot puede LEERLO Y NO RENDERIZAR, asi que la retirada no ocurre nunca
+  // y el directorio entero se cae del indice. El coste de equivocarse en cada
+  // direccion no es simetrico — de mas: se cuela un perfil flojo; de menos: se
+  // desindexan todos—, asi que se falla hacia el lado barato.
+  function _marcarNoIndexable(){
+    var m=document.querySelector('meta[name="robots"]');
+    if(!m){ m=document.createElement('meta'); m.setAttribute('name','robots'); document.head.appendChild(m); }
+    m.setAttribute('content','noindex, follow');   // follow: los enlaces internos siguen valiendo
+  }
   // SEO automático desde los datos del coach: title + description + keywords +
   // schema Person (rich results). Sin escribir nada a mano — todo derivado.
   function _applySEO(c){
@@ -540,7 +593,26 @@ img{max-width:100%;display:block;}
       if(esp.length) ld.knowsAbout=esp;
       if(pais) ld.areaServed=pais;
       if(c.foto_perfil_url) ld.image=c.foto_perfil_url;
-      if(c.slug) ld.url='https://pathwaycareercoach.com/coach.html?slug='+encodeURIComponent(c.slug);
+      // La canonica y la url del schema son la MISMA y son la limpia. Antes el
+      // schema declaraba /coach.html?slug=… — la variante que no queremos que
+      // nadie comparta ni indexe.
+      var urlLimpia = c.slug ? ('https://pathwaycareercoach.com/coach/'+encodeURIComponent(c.slug)) : '';
+      if(urlLimpia){
+        ld.url = urlLimpia;
+        var can=document.getElementById('ld-canonical'); if(can) can.setAttribute('href', urlLimpia);
+        var ou=document.getElementById('og-url'); if(ou) ou.setAttribute('content', urlLimpia);
+      }
+      var _ogT = name+(prof?(' — '+prof):'')+' | Pathway';
+      var _ogD = desc.slice(0,200);
+      [['og-title',_ogT],['tw-title',_ogT],['og-desc',_ogD],['tw-desc',_ogD]].forEach(function(par){
+        var e=document.getElementById(par[0]); if(e) e.setAttribute('content', par[1]);
+      });
+      // Sin foto NO se inventa una imagen de marca: una tarjeta compartida con
+      // el logo de Pathway donde deberia ir la cara del coach confunde de quien
+      // es el perfil. Se retira la etiqueta y el sitio decide el resumen.
+      var oi=document.getElementById('og-image');
+      if(oi){ if(c.foto_perfil_url) oi.setAttribute('content', c.foto_perfil_url); else oi.parentNode.removeChild(oi); }
+      if(!_perfilIndexable(c)) _marcarNoIndexable();
       ld.worksFor={"@type":"Organization","name":"Pathway","url":"https://pathwaycareercoach.com"};
       var s=document.getElementById('ld-coach');
       if(!s){ s=document.createElement('script'); s.type='application/ld+json'; s.id='ld-coach'; document.head.appendChild(s); }
@@ -672,7 +744,9 @@ img{max-width:100%;display:block;}
     _loadFechas(c);
     _loadCasos(c);
     _loadPorque(c);
-    document.title=(c.nombre||'Coach')+' · Pathway';
+    // El <title> y la description los pone _applySEO() mas abajo, y SOLO el.
+    // Aqui habia una segunda asignacion que ponia un titulo peor (sin la
+    // profesion) y que solo era inofensiva porque _applySEO corre despues.
     var meta=document.querySelector('meta[name="description"]');
     var _tg=pickLang(c.tagline,c.tagline_en); if(meta && _tg)meta.setAttribute('content',_tg);
 
