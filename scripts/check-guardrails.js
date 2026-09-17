@@ -3371,6 +3371,92 @@ const RULES = [
     },
   },
   {
+    name: "analitica: pw-analytics.js apagable, y SIEMPRE detras del consentimiento",
+    bug: "GA4 y Clarity miden lo que el pixel de Meta no puede: de donde viene el " +
+         "trafico que NO es de anuncios (busqueda organica) y como se reparte por " +
+         "seccion. Dos cosas no pueden romperse. Una: que la carga deje de estar " +
+         "detras de su identificador, porque entonces vaciar la constante ya no " +
+         "apaga nada. Y la que de verdad importa: que deje de consultar el " +
+         "consentimiento. Clarity GRABA LA SESION, asi que cargarlo sin permiso no " +
+         "es un descuido de metrica, es un problema legal. Se usa la MISMA puerta " +
+         "que pw-pixel.js (window.pwConsent / pwOnConsent), no una doctrina nueva.",
+    check() {
+      const an = read("pw-analytics.js");
+      if (!an) return "falta pw-analytics.js (GA4 + Clarity).";
+      if (!/PW_GA4_ID/.test(an) || !/PW_CLARITY_ID/.test(an))
+        return "pw-analytics.js perdio alguna de las dos constantes de configuracion.";
+      // Cada script de terceros, DENTRO de su guarda: si se sale, vaciar la
+      // constante deja de apagarlo y se carga contra un identificador invalido.
+      const gGa = an.indexOf("GA4_OK");
+      const gCl = an.indexOf("CLARITY_OK");
+      if (gGa < 0 || gCl < 0) return "pw-analytics.js ya no valida la forma de los identificadores.";
+      if (an.indexOf("googletagmanager.com") < gGa)
+        return "pw-analytics.js inyecta GA4 fuera de su guarda (vaciar la constante ya no lo apaga).";
+      if (an.indexOf("clarity.ms") < gCl)
+        return "pw-analytics.js inyecta Clarity fuera de su guarda.";
+      // La puerta de consentimiento, que es la mitad no negociable.
+      const cod = noComments(an);
+      if (!/window\.pwConsent/.test(cod) || !/pwOnConsent/.test(cod))
+        return "pw-analytics.js ya no consulta el consentimiento (GA4 y Clarity cargarian sin permiso).";
+      if (!/pw-consent-change/.test(cod))
+        return "pw-analytics.js perdio el respaldo conservador: sin sistema de consentimiento cargado mediria igual.";
+      // UNA sola puerta: ningun HTML puede traerse su propio GA4 o su propio
+      // Clarity por su cuenta. Es R-05 aplicada aqui — una segunda fuente de
+      // verdad para la medicion se desalinea sin que nada avise.
+      for (const f of fs.readdirSync(".").filter((x) => x.endsWith(".html"))) {
+        const h = noComments(read(f));
+        if (/googletagmanager\.com\/gtag|www\.clarity\.ms\/tag/.test(h))
+          return f + " carga GA4 o Clarity por su cuenta: la medicion tiene que entrar por pw-analytics.js.";
+      }
+      return null;
+    },
+  },
+  {
+    name: "analitica: el conjunto medido se DERIVA, y consentimiento antes que medicion",
+    bug: "El conjunto de paginas que miden no se escribe a mano: es el sitemap " +
+         "(todo lo indexable) mas el embudo (las que ya cargan el pixel) mas " +
+         "verify.html, que es el escalon de ACTIVATION descrito en " +
+         "docs/FASE4-MEDICION.md. Escrito a mano, una pagina nueva del sitemap " +
+         "nace sin medir y nadie se entera: el sintoma de una pagina sin medir es " +
+         "un cero, que se lee igual que 'no pasa nada'. " +
+         "Y el ORDEN importa: pw-consent.js define window.pwConsent, asi que sin " +
+         "el cargado la medicion cae al respaldo conservador y NO mide. Le paso " +
+         "exactamente a coach.html, reservar.html y pago-listo.html: se les puso " +
+         "el pixel el 2026-09-16 y no el consentimiento, o sea instrumento puesto " +
+         "que no podia dispararse nunca (R-85).",
+    check() {
+      const sm = read("sitemap.xml");
+      if (!sm) return "falta sitemap.xml: no se puede derivar que paginas miden.";
+      const tag = (s, n) =>
+        new RegExp('<script[^>]+src=["\'][^"\']*' + n.replace(".", "\\.")).test(s);
+      const paginas = new Set(["verify.html"]);
+      for (const m of sm.matchAll(/<loc>([^<]+)<\/loc>/g)) {
+        const ruta = m[1].split("pathwaycareercoach.com")[1] || "/";
+        if (ruta === "/" || ruta === "") { paginas.add("index.html"); continue; }
+        if (ruta.startsWith("/coach/")) { paginas.add("coach.html"); continue; }
+        const f = ruta.replace(/^\/+|\/+$/g, "");
+        paginas.add(/\.html$/.test(f) ? f : f + ".html");
+      }
+      const htmls = fs.readdirSync(".").filter((x) => x.endsWith(".html"));
+      for (const f of htmls) if (tag(read(f), "pw-pixel.js")) paginas.add(f);
+
+      for (const f of [...paginas].sort()) {
+        const h = read(f);
+        if (!h) return f + " esta en el conjunto medido y no existe como fichero.";
+        // Se exige la ETIQUETA, no la cadena: el comentario que hay encima del
+        // include nombra el fichero, asi que buscar el nombre a secas aprueba
+        // con el <script> ya retirado (INC-073, y R-102 otra vez).
+        if (!tag(h, "pw-analytics.js")) return f + " no carga pw-analytics.js: esa pagina no mide.";
+        if (!tag(h, "pw-consent.js"))
+          return f + " carga la medicion sin pw-consent.js: el respaldo conservador la deja SIN medir.";
+        const iC = h.search(/<script[^>]+src=["'][^"']*pw-consent\.js/);
+        const iA = h.search(/<script[^>]+src=["'][^"']*pw-analytics\.js/);
+        if (iC > iA) return f + " carga pw-analytics.js antes que pw-consent.js (el orden lo dice el propio fichero).";
+      }
+      return null;
+    },
+  },
+  {
     name: "tracking de anuncios: pw-pixel.js presente, incluido y capturando origen",
     bug: "pw-pixel.js carga el Meta Pixel y captura de qué anuncio/campaña vino cada " +
          "visitante (window.pwAttr, first-touch). Si se borra el archivo, se saca de " +
