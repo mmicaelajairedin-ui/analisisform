@@ -7,6 +7,78 @@ verificado por DNS— se declara como no verificable, no como ausente.
 
 ---
 
+## 0 · ACTUALIZACIÓN DEL 2026-09-17 — las cuatro altas están hechas, y al cablear apareció que lo anterior estaba INERTE
+
+Micaela creó las cuatro cuentas y dio los identificadores, así que el cuello de
+botella del §5 —«ninguno de los cinco cortes se puede hacer hoy»— deja de
+existir:
+
+| | Career Coach | Platforms |
+|---|---|---|
+| **GA4** | `G-58YWJ242GW` | `G-DXH3T9RERF` |
+| **Clarity** | `yjs66fo80e` | `yjs6oqgx90` |
+| **Search Console** | verificada | verificada |
+| **Bing Webmaster** | importada | importada |
+
+### El hallazgo, y es el que importa de esta segunda vuelta
+
+**La entrega del 16 estaba puesta y no podía dispararse.** `pw-pixel.js` consulta
+`window.pwConsent`, que lo define `pw-consent.js`, y si no está cargado cae a su
+respaldo conservador: no carga el pixel y se queda esperando un evento
+`pw-consent-change` que en esa página no va a emitir nadie. Las **tres** páginas
+que este frente instrumentó —`coach.html`, `reservar.html`, `pago-listo.html`—
+**no cargaban `pw-consent.js`**.
+
+O sea que el 16 se escribió «el directorio ya se mide» y no se medía; «la reserva
+ya se mide» y no se medía; y `pwTrackPurchase()` llegaba a `track()`, que hace
+`if (window.fbq)` — falso sin pixel— así que **PAID seguía en cero por
+construcción**, exactamente lo que el §2 decía que venía a cerrar.
+
+Es **R-85 dos veces seguidas en el mismo frente**: la primera fue un instrumento
+sin llamantes; la segunda, llamantes sin la condición que los habilita. Y lo
+tenía escrito delante: la cabecera de `pw-consent.js` dice desde siempre «**Debe
+incluirse ANTES de pw-pixel.js**».
+
+Medido, no deducido: `window.pwConsent` lo define **un solo fichero** (`grep` de
+`window.pwConsent *=` → `pw-consent.js` y nada más), y `coach.html` cargaba
+`pw-icons.js`, `pw-pixel.js` y `testimonios.js`. Ninguno más.
+
+### Qué se ha hecho
+
+1. **`pw-analytics.js`** — GA4 + Clarity, una sola puerta, con la misma doctrina
+   que el pixel: constante vacía ⇒ **no se inyecta ningún script, no se abre
+   ninguna conexión y no se pone ninguna cookie**. Y la misma puerta de
+   consentimiento, sin excepción: **Clarity graba la sesión**, así que esto no es
+   una decisión de métrica, es un permiso.
+2. **El conjunto de páginas que miden se DERIVA, no se escribe a mano**:
+   sitemap (todo lo indexable) **∪** embudo (las que ya cargan el pixel) **∪**
+   `verify.html`, que es el escalón de ACTIVATION del §E. Son **58**.
+3. **43 de esas 58 no tenían `pw-consent.js`** — entre ellas las tres de arriba y
+   el clúster de contenido entero. Se añade, antes de la medición.
+4. **Dos guardarraíles** (295 → 297), con **seis mutaciones, cada una roja por su
+   propia aserción**: que la carga siga detrás de su identificador y de su
+   consentimiento, y que el conjunto medido se derive y en el orden correcto.
+
+### Consecuencia asumida, y se dice en vez de esconderse
+
+El banner de cookies pasa a verse también en el blog, las calculadoras, la ficha
+del directorio y las dos páginas transaccionales. **No es una doctrina nueva** —es
+la que el sitio ya aplica en sus landings— y la decisión se guarda por visitante
+en `localStorage`, así que quien ya aceptó no vuelve a verlo. La alternativa era
+medir sin permiso, con grabación de sesión incluida, y eso no se hace.
+
+### Lo que sigue SIN cablear, a propósito
+
+**ACTIVATION y la reserva**, con la definición exacta del §E de este mismo
+documento: las dos necesitan que alguien las NOMBRE y las dé de alta en Meta
+Events Manager antes de existir en el código. Lo que sí cambia es que ahora
+`verify.html` y `reservar.html` **cargan la medición**, así que los dos escalones
+se ven como PÁGINA en GA4 aunque todavía no existan como evento nombrado.
+
+Lo que sigue debajo es la auditoría del 2026-09-16, que no se toca.
+
+---
+
 ## 1 · Qué existe de verdad
 
 | Herramienta | Career Coach (`analisisform`) | Platforms (`multicoach`) |
