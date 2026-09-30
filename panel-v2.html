@@ -6225,7 +6225,7 @@ function viewClienteDetalle(c){
           "<span style='width:46px;height:46px;border-radius:50%;background:var(--pw-niebla-2);display:inline-flex;align-items:center;justify-content:center;color:var(--pw-bosque)'>"+svg("<rect x='3' y='11' width='18' height='11' rx='2'/><path d='M7 11V7a5 5 0 0 1 10 0v4'/>",20)+"</span>"+
           "<div style='font-family:var(--pw-serif);font-size:19px;font-weight:500;color:var(--pw-carbon);letter-spacing:-.4px'>Mensajería es una función Pro</div>"+
           "<p style='font-size:13px;color:var(--pw-text-soft);max-width:420px;line-height:1.55'>El envío de emails y plantillas al cliente desde el panel está disponible en el plan Pro (USD $59/mes). En Basic gestionas el contacto por fuera.</p>"+
-          "<button class='cp-btn cp-btn-primary' style='margin-top:6px' data-act='open' data-url='"+esc(UPGRADE_URL)+"'>Ver planes →</button></div></div>"
+          "<button class='cp-btn cp-btn-primary' style='margin-top:6px' onclick='_purchasePlan(\"pro\")'>Ver planes →</button></div></div>"
       : "<div class='cp-card'><div class='cp-card-hd'><h3 class='cp-card-title'>Mensajes<span class='dot'>.</span></h3>"+
       "<span class='cp-eyebrow'>Plantillas para "+esc(fn)+"</span></div><div class='cp-card-pad' style='display:flex;flex-direction:column;gap:12px'>"+mc+"</div></div>";
     var _thread=(c.chat&&c.chat.length?c.chat:[]).map(function(m){
@@ -7577,7 +7577,7 @@ function cfgBrand(){
           svg("<rect x='3' y='11' width='18' height='11' rx='2'/><path d='M7 11V7a5 5 0 0 1 10 0v4'/>",20)+"</span>"+
         "<div style='font-family:var(--pw-serif);font-size:19px;font-weight:500;color:var(--pw-carbon);letter-spacing:-.4px'>Una función del plan Pro</div>"+
         "<p style='font-size:13px;color:var(--pw-text-soft);max-width:420px;line-height:1.55'>Personaliza el color de acento y el logo del portal de tus clientes y de tu página pública. Se activa al mejorar al plan Pro.</p>"+
-        "<button class='cp-btn cp-btn-primary' style='margin-top:6px' data-act='open' data-url='"+esc(UPGRADE_URL)+"'>Mejorar a Pro · USD $59/mes</button></div></div>";
+        "<button class='cp-btn cp-btn-primary' style='margin-top:6px' onclick='_purchasePlan(\"pro\")'>Mejorar a Pro · USD $59/mes</button></div></div>";
   }
   // Paleta de PRIMARIOS variada para que cada coach se diferencie (antes eran
   // 3 verdes casi iguales). Un verde + espectro: teal, azul, índigo, violeta,
@@ -7820,7 +7820,7 @@ function cfgPlan(){
       "<div class='cp-plan-meta'>Próximo cobro <strong style='color:rgba(255,255,255,.92)'>el 1 jun 2026</strong> · "+planLimit+"</div></div>"+
       "<div class='cp-plan-actions'>"+
         (isPro ? "<button class='cp-plan-btn-up' data-act='open' data-url='"+esc(supportMail("Cambiar de plan — Pathway"))+"'>Cambiar de plan</button>"
-               : "<button class='cp-plan-btn-up' data-act='open' data-url='"+esc(stripeUrl("pro"))+"'>Mejorar a Pro · USD $59/mes</button>")+
+               : "<button class='cp-plan-btn-up' onclick='_purchasePlan(\"pro\")'>Mejorar a Pro · USD $59/mes</button>")+
       "<button class='cp-plan-btn-mng' data-act='open' data-url='"+esc(supportMail("Cancelar suscripción — Pathway"))+"'>Cancelar suscripción</button></div></div>"+
     trialCard+
     "<div class='cp-card'><div class='cp-card-hd'><h3 class='cp-card-title'>Método de pago<span class='dot'>.</span></h3>"+
@@ -15946,6 +15946,50 @@ function _busyOn(){ _genBusy = true; try{ if(_genBusyTimer) clearTimeout(_genBus
 function _busyOff(){ _genBusy = false; try{ if(_genBusyTimer){ clearTimeout(_genBusyTimer); _genBusyTimer = null; } }catch(e){} }
 var UPGRADE_URL="https://pathwaycareercoach.com/upgrade.html";
 var STRIPE_PORTAL="https://billing.stripe.com/p/login/fZu3cv9aE2py6b20f98AE00";
+
+/**
+ * Purchase plan handler: iOS via @capgo/native-purchases, web via Stripe
+ * @param {string} plan - 'basic' or 'pro'
+ */
+function _purchasePlan(plan){
+  if(_genBusy) return;
+
+  // iOS app: use native IAP via Capacitor
+  if(window.PW_IN_APP && window.PW_CAPGO_IAP){
+    _busyOn();
+    var productId = plan==='pro' ? 'coach.plan.pro.monthly' : 'coach.plan.basic.monthly';
+    var appAccountToken = localStorage.getItem('mj_app_account_token');
+
+    if(!appAccountToken){
+      console.warn('[_purchasePlan] No appAccountToken available');
+      _busyOff();
+      try{ toast('Error: account token not found. Try refreshing the app.'); }catch(e){}
+      return;
+    }
+
+    console.log('[_purchasePlan] Initiating purchase:', productId, appAccountToken);
+    window.PW_CAPGO_IAP.purchaseProduct(productId, appAccountToken).then(function(result){
+      _busyOff();
+      if(result.success){
+        console.log('[_purchasePlan] Purchase successful:', result.subscription);
+        try{ toast('✅ Plan upgraded! Refreshing...'); }catch(e){}
+        setTimeout(function(){ location.reload(); }, 1500);
+      } else {
+        console.error('[_purchasePlan] Purchase failed:', result.error);
+        try{ toast('Purchase failed: '+(result.error||'unknown error')); }catch(e){}
+      }
+    }).catch(function(err){
+      _busyOff();
+      console.error('[_purchasePlan] Purchase error:', err);
+      try{ toast('Error: '+err.message); }catch(e){}
+    });
+    return;
+  }
+
+  // Web: open Stripe (existing behavior)
+  var stripeUrl = plan==='pro' ? stripeUrl("pro") : "https://pathwaycareercoach.com/upgrade.html";
+  try{ window.open(stripeUrl, '_blank'); }catch(e){}
+}
 function rawOf(id){ var c=CLIENTS.filter(function(x){return String(x.id)===String(id);})[0]; return (c&&c.raw)||null; }
 // Una seccion puede estar GUARDADA y a la vez OCULTA para el cliente
 // (candidatos.visibilidad). Sin esto, el panel prometia "el cliente la ve"
