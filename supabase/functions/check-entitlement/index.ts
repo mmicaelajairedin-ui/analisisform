@@ -1,32 +1,26 @@
-// check-entitlement — Verify Apple IAP subscription and grant access
+// check-entitlement — Verify Apple IAP subscription with App Store Server API
 //
 // Flow:
-// 1. Receive originalTransactionId from client
-// 2. Verify subscription state via Apple App Store Server API (authoritative)
-// 3. Extract subscription state from Apple response
-// 4. Determine access level based on state
-// 5. Update usuarios_suscripciones_iap table
-// 6. Return entitlement (access: true/false, plan: basic/pro)
-//
-// Source of truth: Apple App Store Server API (not client claims)
-// Must have APPLE_ISSUER_ID, APPLE_KEY_ID, APPLE_PRIVATE_KEY_P8 as environment variables
+// 1. Validate environment (fail closed if credentials missing)
+// 2. Get authenticated user from JWT
+// 3. Call Apple App Store Server API to verify subscription state
+// 4. Update database with Apple's authoritative state
+// 5. Return entitlement (access: true/false)
 
 import { createClient } from "jsr:@supabase/supabase-js@2";
 import { Buffer } from "jsr:@std/encoding";
 
 interface CheckRequest {
-  app_account_token: string;
-  original_transaction_id: string; // Apple's unique ID
-  product_id: string; // coach.plan.basic.monthly | coach.plan.pro.monthly
-  // In production: receipt (JWT from Apple), signedDate, etc.
+  originalTransactionId: string;
+  productId: string;
 }
 
 interface CheckResponse {
   ok: boolean;
-  access: boolean; // true = grant access
-  plan?: string; // basic | pro
+  access: boolean;
+  plan?: string;
+  state?: string;
   message?: string;
-  state?: string; // subscription state
 }
 
 const PRODUCT_TO_PLAN = {
@@ -34,69 +28,102 @@ const PRODUCT_TO_PLAN = {
   "coach.plan.pro.monthly": "pro",
 };
 
-// States that grant access
 const STATES_WITH_ACCESS = ["active", "grace_period"];
-// States that deny access
-const STATES_NO_ACCESS = ["expired", "revoked", "refunded", "billing_retry"];
+
+/**
+ * Base64url encode for JWT
+ */
+function base64urlEncode(data: Uint8Array): string {
+  return btoa(String.fromCharCode(...data))
+    .replace(/\+/g, "-")
+    .replace(/\//g, "_")
+    .replace(/=/g, "");
+}
 
 /**
  * Create JWT for Apple App Store Server API authentication
- * Signed with APPLE_PRIVATE_KEY_P8 (private key from App Store Connect)
- *
- * Required environment variables:
- * - APPLE_ISSUER_ID: your App Store Connect Issuer ID (UUID format)
- * - APPLE_KEY_ID: your private key ID from App Store Connect
- * - APPLE_PRIVATE_KEY_P8: private key in PKCS#8 format (from App Store Connect)
- * - APPLE_BUNDLE_ID: your app's bundle ID (e.g., com.pathway.coach)
+ * Uses ES256 with APPLE_PRIVATE_KEY_P8
  */
-async function createAppleJWT(issuerId: string, keyId: string, privateKeyP8: string): Promise<string> {
-  // JWT header
-  const header = {
-    alg: "ES256",
-    kid: keyId,
-    typ: "JWT",
-  };
+async function createAppleJWT(
+  issuerId: string,
+  keyId: string,
+  privateKeyP8: string,
+  bundleId: string
+): Promise<string | null> {
+  try {
+    // JWT header
+    const header = {
+      alg: "ES256",
+      kid: keyId,
+      typ: "JWT",
+    };
 
-  // JWT payload (claims)
-  const now = Math.floor(Date.now() / 1000);
-  const payload = {
-    iss: issuerId,
-    iat: now,
-    exp: now + 3600, // 1 hour expiry
-    aud: "appstoreconnect-v1",
-  };
+    // JWT payload
+    const now = Math.floor(Date.now() / 1000);
+    const payload = {
+      iss: issuerId,
+      iat: now,
+      exp: now + 3600, // 1 hour expiry
+      aud: "appstoreconnect-v1",
+    };
 
-  // Encode header and payload
-  const headerStr = btoa(JSON.stringify(header));
-  const payloadStr = btoa(JSON.stringify(payload));
-  const message = `${headerStr}.${payloadStr}`;
+    // Encode header and payload
+    const headerEncoded = base64urlEncode(
+      new TextEncoder().encode(JSON.stringify(header))
+    );
+    const payloadEncoded = base64urlEncode(
+      new TextEncoder().encode(JSON.stringify(payload))
+    );
+    const message = `${headerEncoded}.${payloadEncoded}`;
 
-  // TODO: Sign with ES256 using APPLE_PRIVATE_KEY_P8
-  // This requires crypto.subtle.sign() with the private key
-  // For now: return placeholder (production must implement proper signing)
-  console.warn("[check-entitlement] JWT signing not yet implemented");
+    // Import private key from PKCS#8 format
+    const keyLines = privateKeyP8
+      .replace(/-----BEGIN PRIVATE KEY-----/, "")
+      .replace(/-----END PRIVATE KEY-----/, "")
+      .replace(/\s/g, "");
 
-  // Return unsigned JWT (development only)
-  return message + ".placeholder_signature";
+    const keyData = new Uint8Array(Buffer.from(keyLines, "base64"));
+
+    const privateKey = await crypto.subtle.importKey(
+      "pkcs8",
+      keyData,
+      {
+        name: "ECDSA",
+        namedCurve: "P-256",
+      },
+      false,
+      ["sign"]
+    );
+
+    // Sign the JWT
+    const signatureBuffer = await crypto.subtle.sign(
+      "ECDSA",
+      privateKey,
+      new TextEncoder().encode(message)
+    );
+
+    const signatureEncoded = base64urlEncode(new Uint8Array(signatureBuffer));
+
+    return `${message}.${signatureEncoded}`;
+  } catch (e) {
+    console.error("[check-entitlement] JWT signing failed:", e);
+    return null;
+  }
 }
 
 /**
  * Call Apple App Store Server API to verify subscription
- * Endpoint: GET /inapp/v1/subscriptions/{originalTransactionId}
- *
- * Requires valid JWT token from createAppleJWT()
  */
 async function verifyAppleSubscription(
   originalTransactionId: string,
-  jwt: string
+  jwt: string,
+  isProduction: boolean
 ): Promise<{ state: string; expiresAt: string } | null> {
-  const bundleId = Deno.env.get("APPLE_BUNDLE_ID") || "";
-  if (!bundleId) {
-    console.error("[check-entitlement] APPLE_BUNDLE_ID not configured");
-    return null;
-  }
+  const baseUrl = isProduction
+    ? "https://api.storekit.itunes.apple.com"
+    : "https://api.storekit-sandbox.itunes.apple.com";
 
-  const url = `https://api.storekit.itunes.apple.com/inapp/v1/subscriptions/${originalTransactionId}`;
+  const url = `${baseUrl}/inapp/v1/subscriptions/${originalTransactionId}`;
 
   try {
     const response = await fetch(url, {
@@ -116,14 +143,26 @@ async function verifyAppleSubscription(
 
     const data = await response.json();
 
-    // Extract subscription state from Apple's response
+    // Extract state from Apple's response
     // Spec: https://developer.apple.com/documentation/appstoreserverapi/subscriptiongroupidentifieritem
-    const state = data.lastTransactions?.[0]?.status || "expired";
-    const expiresAt = data.lastTransactions?.[0]?.expiresDate
-      ? new Date(data.lastTransactions[0].expiresDate).toISOString()
+    const lastTxn = data.data?.[0];
+    if (!lastTxn) {
+      console.error("[check-entitlement] No transaction data from Apple");
+      return null;
+    }
+
+    // Apple states: active, grace_period, billing_retry, expired, revoked, refunded
+    const state = lastTxn.lastTransactions?.[0]?.status || "expired";
+
+    // Expiration date (milliseconds from Apple)
+    const expiresAtMs = lastTxn.lastTransactions?.[0]?.expiresDate;
+    const expiresAt = expiresAtMs
+      ? new Date(expiresAtMs).toISOString()
       : new Date().toISOString();
 
-    console.log(`[check-entitlement] Apple verification: ${originalTransactionId} -> ${state}`);
+    console.log(
+      `[check-entitlement] Apple verification: ${originalTransactionId} -> ${state}`
+    );
 
     return { state, expiresAt };
   } catch (error) {
@@ -148,22 +187,23 @@ Deno.serve(async (req) => {
     const bundleId = Deno.env.get("APPLE_BUNDLE_ID");
 
     if (!issuerId || !keyId || !privateKeyP8 || !bundleId) {
-      console.error("[check-entitlement] CRITICAL: Apple credentials not configured");
+      console.error(
+        "[check-entitlement] CRITICAL: Apple credentials not configured"
+      );
       return new Response(
         JSON.stringify({
           ok: false,
           access: false,
-          message: "Service configuration error (credentials missing)",
+          message: "Service configuration error",
         }),
         { status: 500, headers: { "Content-Type": "application/json" } }
       );
     }
 
     const body: CheckRequest = await req.json();
-    const { app_account_token, original_transaction_id, product_id } = body;
+    const { originalTransactionId, productId } = body;
 
-    // Validate inputs
-    if (!app_account_token || !original_transaction_id || !product_id) {
+    if (!originalTransactionId || !productId) {
       return new Response(
         JSON.stringify({
           ok: false,
@@ -223,15 +263,41 @@ Deno.serve(async (req) => {
       );
     }
 
-    const user_id = user.id;
+    const userId = user.id;
 
-    // STEP 1: Verify subscription with Apple App Store Server API (source of truth)
-    const appleJWT = await createAppleJWT(issuerId, keyId, privateKeyP8);
-    const appleResult = await verifyAppleSubscription(original_transaction_id, appleJWT);
+    // STEP 1: Create Apple JWT for API authentication
+    const appleJWT = await createAppleJWT(
+      issuerId,
+      keyId,
+      privateKeyP8,
+      bundleId
+    );
+
+    if (!appleJWT) {
+      console.error("[check-entitlement] Failed to create Apple JWT");
+      return new Response(
+        JSON.stringify({
+          ok: false,
+          access: false,
+          message: "Cannot authenticate with Apple",
+        }),
+        { status: 500, headers: { "Content-Type": "application/json" } }
+      );
+    }
+
+    // STEP 2: Verify subscription with Apple (production by default, sandbox for testing)
+    const isProduction = Deno.env.get("APPLE_ENVIRONMENT") !== "sandbox";
+    const appleResult = await verifyAppleSubscription(
+      originalTransactionId,
+      appleJWT,
+      isProduction
+    );
 
     if (!appleResult) {
-      console.error("[check-entitlement] Apple verification failed for", original_transaction_id);
-      // Fail closed: cannot verify with Apple = deny access
+      console.error(
+        "[check-entitlement] Apple verification failed for",
+        originalTransactionId
+      );
       return new Response(
         JSON.stringify({
           ok: false,
@@ -242,105 +308,63 @@ Deno.serve(async (req) => {
       );
     }
 
-    const subscription_state = appleResult.state;
-    const expires_at = appleResult.expiresAt;
-
-    // STEP 2: Determine access based on Apple's state
-    const has_access = STATES_WITH_ACCESS.includes(subscription_state);
-    const plan = PRODUCT_TO_PLAN[product_id] || "basic";
+    const subscriptionState = appleResult.state;
+    const expiresAt = appleResult.expiresAt;
+    const hasAccess = STATES_WITH_ACCESS.includes(subscriptionState);
+    const plan = PRODUCT_TO_PLAN[productId] || "basic";
 
     // STEP 3: Store/update in usuarios_suscripciones_iap
-    const {
-      data: existing,
-      error: queryError,
-    } = await serviceClient
+    const { data: existing } = await serviceClient
       .from("usuarios_suscripciones_iap")
       .select("id")
-      .eq("original_transaction_id", original_transaction_id)
+      .eq("original_transaction_id", originalTransactionId)
       .single();
 
-    if (queryError && queryError.code !== "PGRST116") {
-      // PGRST116 = not found (expected on first purchase)
-      console.error("[check-entitlement] Query error:", queryError);
-    }
-
     if (existing) {
-      // Update existing
-      const { error: updateError } = await serviceClient
+      await serviceClient
         .from("usuarios_suscripciones_iap")
         .update({
-          state: subscription_state,
-          expires_at: expires_at,
-          renewal_date: expires_at,
+          state: subscriptionState,
+          expires_at: expiresAt,
+          renewal_date: expiresAt,
           updated_at: new Date().toISOString(),
         })
-        .eq("original_transaction_id", original_transaction_id);
-
-      if (updateError) {
-        console.error("[check-entitlement] Update error:", updateError);
-        return new Response(
-          JSON.stringify({
-            ok: false,
-            access: false,
-            message: "Failed to update subscription",
-          }),
-          { status: 500, headers: { "Content-Type": "application/json" } }
-        );
-      }
+        .eq("original_transaction_id", originalTransactionId);
     } else {
-      // Create new
-      const { error: insertError } = await serviceClient
+      await serviceClient
         .from("usuarios_suscripciones_iap")
         .insert({
-          usuario_id: user_id,
-          app_account_token,
-          original_transaction_id,
-          product_id,
-          state: subscription_state,
-          expires_at: expires_at,
-          renewal_date: expires_at,
-          environment: "production",
+          usuario_id: userId,
+          original_transaction_id: originalTransactionId,
+          product_id: productId,
+          state: subscriptionState,
+          expires_at: expiresAt,
+          renewal_date: expiresAt,
+          environment: isProduction ? "production" : "sandbox",
           auto_renew_status: true,
           billing_cycle: "monthly",
           price_usd: plan === "pro" ? 59.99 : 29.99,
         });
-
-      if (insertError) {
-        console.error("[check-entitlement] Insert error:", insertError);
-        return new Response(
-          JSON.stringify({
-            ok: false,
-            access: false,
-            message: "Failed to save subscription",
-          }),
-          { status: 500, headers: { "Content-Type": "application/json" } }
-        );
-      }
     }
 
-    // STEP 4: Update usuarios.plan as a projection (not authority)
-    if (has_access) {
-      const { error: updateUserError } = await serviceClient
+    // STEP 4: Update usuarios.plan projection
+    if (hasAccess) {
+      await serviceClient
         .from("usuarios")
         .update({
           plan: plan,
           updated_at: new Date().toISOString(),
         })
-        .eq("id", user_id);
-
-      if (updateUserError) {
-        console.error("[check-entitlement] User update error:", updateUserError);
-        // Don't fail; continue - the subscription is recorded
-      }
+        .eq("id", userId);
     }
 
-    // STEP 5: Return entitlement (Apple's state is authoritative)
+    // STEP 5: Return entitlement
     const response: CheckResponse = {
       ok: true,
-      access: has_access,
+      access: hasAccess,
       plan: plan,
-      state: subscription_state,
-      message: has_access ? "Access granted" : "No access",
+      state: subscriptionState,
+      message: hasAccess ? "Access granted" : "No access",
     };
 
     return new Response(JSON.stringify(response), {
