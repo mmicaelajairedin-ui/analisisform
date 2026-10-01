@@ -44,18 +44,21 @@ function base64urlToBuffer(str: string): Uint8Array {
 
 /**
  * Extract public key from DER-encoded X.509 certificate
+ * Uses @peculiar/x509 to parse the certificate and extract the SPKI
  */
 async function extractPublicKeyFromCertDER(
   certDER: Uint8Array
 ): Promise<CryptoKey | null> {
   try {
-    const publicKey = await crypto.subtle.importKey(
-      "spki",
-      certDER,
-      { name: "ECDSA", namedCurve: "P-256" },
-      false,
-      ["verify"]
-    );
+    const X509 = await getX509Library();
+    if (!X509) {
+      console.error("[JWS] @peculiar/x509 not available for key extraction");
+      return null;
+    }
+
+    const cert = new X509(certDER);
+    // Use publicKey property which returns the CryptoKey directly
+    const publicKey = cert.publicKey;
     return publicKey;
   } catch (e) {
     console.error("[JWS] Failed to extract public key:", e);
@@ -64,9 +67,9 @@ async function extractPublicKeyFromCertDER(
 }
 
 /**
- * Check if certificate contains Apple identifier (basic hex scan)
+ * Check if certificate contains Apple identifier or test identifier (basic hex scan)
  */
-function isAppleCertificate(certDER: Uint8Array): boolean {
+function isAppleCertificate(certDER: Uint8Array, allowTest?: boolean): boolean {
   const certHex = Array.from(certDER)
     .map((b) => b.toString(16).padStart(2, "0"))
     .join("");
@@ -77,7 +80,15 @@ function isAppleCertificate(certDER: Uint8Array): boolean {
   const hasApple = certHex.includes("4170706c65");
   const hasAppleOID = certHex.includes("2a8648");  // 1.2.840.113635 prefix in DER
 
-  return hasApple || hasAppleOID;
+  if (hasApple || hasAppleOID) return true;
+
+  // In test mode, allow "TEST" identifier for test certificates
+  if (allowTest) {
+    const hasTEST = certHex.includes("54455354"); // "TEST" in hex
+    if (hasTEST) return true;
+  }
+
+  return false;
 }
 
 /**
@@ -156,14 +167,16 @@ async function isWithinValidityPeriod(certDER: Uint8Array): Promise<boolean> {
  * STRICT x5c certificate chain validation:
  *
  * REQUIREMENTS (all must pass, else REJECT):
- * 1. Chain MUST terminate at pinned Apple Root CA G3 (byte-for-byte DER match)
- * 2. All certificates MUST contain Apple identifiers
+ * 1. Chain MUST terminate at pinned root CA (byte-for-byte DER match)
+ * 2. All certificates MUST contain Apple identifiers (or test identifiers if testRootDER provided)
  * 3. Verify each cert is signed by the next (cryptographic chain verification with @peculiar/x509)
  * 4. Check temporal validity (notBefore <= now <= notAfter) for all certs
  *
  * Returns true ONLY if all checks pass. Any failure returns false (REJECT).
+ *
+ * @param testRootDER - Optional test root certificate for testing. Only used in test mode.
  */
-async function validateCertificateChain(x5c: string[]): Promise<boolean> {
+async function validateCertificateChain(x5c: string[], testRootDER?: Uint8Array): Promise<boolean> {
   if (!x5c || x5c.length === 0) {
     console.error("[JWS] Certificate chain empty: REJECT");
     return false;
@@ -173,8 +186,8 @@ async function validateCertificateChain(x5c: string[]): Promise<boolean> {
     // Convert all certs from base64 to DER
     const certs = x5c.map((cert) => new Uint8Array(Buffer.from(cert, "base64")));
 
-    // REQUIREMENT 1: Chain must terminate at pinned Apple Root CA G3
-    const pinnedRootDER = new Uint8Array(
+    // REQUIREMENT 1: Chain must terminate at pinned root CA (Apple or test)
+    const pinnedRootDER = testRootDER || new Uint8Array(
       Buffer.from(APPLE_ROOT_CA_G3_DER_BASE64, "base64")
     );
 
@@ -185,24 +198,26 @@ async function validateCertificateChain(x5c: string[]): Promise<boolean> {
 
     if (!rootMatches) {
       console.error(
-        "[JWS] SECURITY GATE: Root certificate does NOT match pinned Apple Root CA G3: REJECT"
+        "[JWS] SECURITY GATE: Root certificate does NOT match pinned root CA: REJECT"
       );
       return false;
     }
 
-    console.log("[JWS] ✓ Gate 1: Root certificate matches pinned Apple Root CA G3");
+    const rootType = testRootDER ? "test root" : "Apple Root CA G3";
+    console.log(`[JWS] ✓ Gate 1: Root certificate matches pinned ${rootType}`);
 
-    // REQUIREMENT 2: All certificates must have Apple identifiers
+    // REQUIREMENT 2: All certificates must have Apple identifiers (or TEST if test mode)
+    const isTestMode = !!testRootDER;
     for (let i = 0; i < certs.length; i++) {
-      if (!isAppleCertificate(certs[i])) {
+      if (!isAppleCertificate(certs[i], isTestMode)) {
         console.error(
-          `[JWS] SECURITY GATE: Certificate ${i} is NOT from Apple: REJECT`
+          `[JWS] SECURITY GATE: Certificate ${i} is NOT from Apple or TEST: REJECT`
         );
         return false;
       }
     }
 
-    console.log("[JWS] ✓ Gate 2: All certificates are from Apple");
+    console.log("[JWS] ✓ Gate 2: All certificates are from Apple" + (isTestMode ? " (or TEST)" : ""));
 
     // REQUIREMENT 3: Cryptographic chain verification
     // Verify that each certificate is signed by the previous one
@@ -364,4 +379,14 @@ export async function validateJWS(jws: string): Promise<JWSValidationResult> {
  */
 export async function validateNestedJWS(jws: string): Promise<JWSValidationResult> {
   return validateJWS(jws);
+}
+
+/**
+ * Export for testing: allow tests to validate chains with custom root
+ */
+export async function validateCertificateChainForTest(
+  x5c: string[],
+  testRootDER: Uint8Array
+): Promise<boolean> {
+  return validateCertificateChain(x5c, testRootDER);
 }

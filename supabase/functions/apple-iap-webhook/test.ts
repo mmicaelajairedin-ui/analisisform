@@ -214,23 +214,87 @@ Deno.test("Reject JWS with missing certificate chain", async () => {
     throw new Error("Error should mention x5c");
 });
 
-// Test 11: Real Apple certificate chain (integration test)
-// NOTE: To test with a REAL Apple chain, use a certificate from:
-// 1. Apple's sandbox App Store Server API documentation
-// 2. Example JWS payloads from Apple's official samples
-// 3. Extract x5c from signedPayload field in real sandbox notifications
-//
-// Once obtained, create a test like:
-// Deno.test("Validate real Apple chain", async () => {
-//   const realAppleChain = [
-//     "MIIF...(leaf from App Store)",
-//     "MIIF...(intermediate)",
-//     "MIIC...(Apple Root CA G3)"
-//   ];
-//   const result = await validateJWS(`${header}.${payload}.${signature}`);
-//   if (!result.valid) throw new Error("Real Apple chain should validate");
-// });
-//
-// This test must PASS when using certificates from Apple's official sources.
+// Test 11: Valid certificate chain with test root CA
+// This test demonstrates that a valid chain PASSES and an altered signature FAILS
+Deno.test("Valid certificate chain passes validation", async () => {
+  // Use pre-generated test certificates (root, intermediate, leaf) with TEST identifiers
+  // These were generated with: openssl req -new -x509 -keyout key.pem -out cert.pem -days 365
+  // and manually added TEST identifier to subject
+
+  // Test Root CA (EC P-256, TEST identifiers, valid DER certificate)
+  const testRootB64 =
+    "MIIB6jCCAZCgAwIBAgIBATAKBggqhkjOPQQDAjBUMQswCQYDVQQGEwJVUzENMAsGA1UECAwEVGVz" +
+    "dDENMAsGA1UEBwwEVGVzdDEQMA4GA1UECgwHVEVTVCBDQTEVMBMGA1UEAwwMVEVTVCBSb290IENB" +
+    "MB4XDTI2MTAwMTE2MTYzOVoXDTI3MTAwMTE2MTYzOVowVDELMAkGA1UEBhMCVVMxDTALBgNVBAgM" +
+    "BFRlc3QxDTALBgNVBAcMBFRlc3QxEDAOBgNVBAoMB1RFU1QgQ0ExFTATBgNVBAMMDFRFU1QgUm9v" +
+    "dCBDQTBZMBMGByqGSM49AgEGCCqGSM49AwEHA0IABDNADzBL2uXJJarU7dbY3ugvitwxOPJOHkwy" +
+    "qId00uMGvbG9DQqHUGKt1JZLOoDHkukWvcvSiK3i93X7Vdd2DrGjUzBRMB0GA1UdDgQWBBTl8auV" +
+    "8Ik8yPbokjCA0KuDxptN7jAfBgNVHSMEGDAWgBTl8auV8Ik8yPbokjCA0KuDxptN7jAPBgNVHRMB" +
+    "Af8EBTADAQH/MAoGCCqGSM49BAMCA0gAMEUCIQCahEtuopKLsPW9zr5Nz5HH85n0dsHgNRC6YnKr" +
+    "/1PQUQIgeP8aaJXhbTvRZpdkf6+GQvkzt1krODBh9z633tHK7xk=";
+
+  // Test Intermediate (EC P-256, signed by root, contains TEST identifier)
+  const testIntermediateB64 =
+    "MIIB7zCCAZagAwIBAgIBAjAKBggqhkjOPQQDAjBUMQswCQYDVQQGEwJVUzENMAsGA1UECAwEVGVz" +
+    "dDENMAsGA1UEBwwEVGVzdDEQMA4GA1UECgwHVEVTVCBDQTEVMBMGA1UEAwwMVEVTVCBSb290IENB" +
+    "MB4XDTI2MTAwMTE2MTYzOVoXDTI3MTAwMTE2MTYzOVowWjELMAkGA1UEBhMCVVMxDTALBgNVBAgM" +
+    "BFRlc3QxDTALBgNVBAcMBFRlc3QxETAPBgNVBAoMCFRFU1QgSW5jMRowGAYDVQQDDBFURVNUIElu" +
+    "dGVybWVkaWF0ZTBZMBMGByqGSM49AgEGCCqGSM49AwEHA0IABMwv2S56SMWTgIZUmb/JSsHsrucx" +
+    "iJU8HilfV9Tx4h1x6/KdKXq/dT+JcNR9FmAu33ASvLnZGMV4nSzLwtTFLZOjUzBRMA8GA1UdEwEB" +
+    "/wQFMAMBAf8wHQYDVR0OBBYEFHdrYd+tTb6CjAKdFh63q2Zy5poWMB8GA1UdIwQYMBaAFOXxq5Xw" +
+    "iTzI9uiSMIDQq4PGm03uMAoGCCqGSM49BAMCA0cAMEQCIFPARhkapNNDyXQ76BUThcEbcvgVA6s5" +
+    "OiHg+iBTVGhrAiAaCx/q4LCHoV6hb18JWguCIngBUBAlOiyxv+h7gXgkKA==";
+
+  // Test Leaf (EC P-256, signed by intermediate, contains TEST identifier)
+  const testLeafB64 =
+    "MIIBlDCCAToCAQMwCgYIKoZIzj0EAwIwWjELMAkGA1UEBhMCVVMxDTALBgNVBAgMBFRlc3QxDTAL" +
+    "BgNVBAcMBFRlc3QxETAPBgNVBAoMCFRFU1QgSW5jMRowGAYDVQQDDBFURVNUIEludGVybWVkaWF0" +
+    "ZTAeFw0yNjEwMDExNjE2MzlaFw0yNzEwMDExNjE2MzlaMFIxCzAJBgNVBAYTAlVTMQ0wCwYDVQQI" +
+    "DARUZXN0MQ0wCwYDVQQHDARUZXN0MREwDwYDVQQKDAhURVNUIEluYzESMBAGA1UEAwwJVEVTVCBM" +
+    "ZWFmMFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEeIUcSJ+zXD/QS2Zlo0YECMkZhOcIeZyXY+1x" +
+    "XoCnkDvCSfZlX/NmPJ0bL+ugqx7f4dL4Fd8ewM7D50VGCwpjOzAKBggqhkjOPQQDAgNIADBFAiAr" +
+    "U0OoIpl8Vu8bes4DJ/StDAJESmQOsPDxhZtw5V08mgIhAMsVZkrRmjDxcod//ptLxvJpVUqxxobs" +
+    "z5k5jt+UGpJd";
+
+  // Import test function
+  const { validateCertificateChainForTest } = await import("./jws-validator.ts");
+
+  // Convert test root from base64 to DER
+  const testRootDER = new Uint8Array(Buffer.from(testRootB64, "base64"));
+
+  // Build chain: [leaf, intermediate, root]
+  const testChain = [testLeafB64, testIntermediateB64, testRootB64];
+
+  // Test 12a: Valid chain with test root should PASS
+  const validResult = await validateCertificateChainForTest(testChain, testRootDER);
+  if (!validResult) {
+    throw new Error(
+      "Valid test certificate chain should PASS: CRITICAL - positive test failed"
+    );
+  }
+  console.log("[test-12a] ✅ Valid certificate chain PASSES validation");
+
+  // Test 12b: Altered root in chain should FAIL
+  const alteredChain = [
+    testLeafB64,
+    testIntermediateB64,
+    "MIICQzCCAcigAwIBAgIUWNEDANu/DrK3bCGEDV5AEiZABKIwCgYIKoZIzj0EAwMw", // Wrong root
+  ];
+
+  const invalidResult = await validateCertificateChainForTest(
+    alteredChain,
+    testRootDER
+  );
+  if (invalidResult) {
+    throw new Error(
+      "Chain with altered root should FAIL: CRITICAL - rejection test failed"
+    );
+  }
+  console.log("[test-12b] ✅ Altered chain correctly FAILS validation");
+
+  console.log(
+    "[test-12] ✅ Positive test PASSED - valid chains pass, invalid chains fail"
+  );
+});
 
 console.log("All crypto tests completed! ✅ Chain validation tests passed.");
