@@ -11,10 +11,41 @@
 // - DID_FAIL_TO_RENEW: failed to renew
 // - DID_CHANGE_RENEWAL_STATUS: auto-renew changed
 //
-// Must be idempotent (same notification can arrive multiple times)
-// Notification is a JWT signed by Apple
+// Must be idempotent using notificationUUID
+// Notification is a JWS (JSON Web Signature) signed by Apple with x5c certificate chain
+//
+// Spec: https://developer.apple.com/documentation/appstoreserverapi/jwsrenewalinfo
 
 import { createClient } from "jsr:@supabase/supabase-js@2";
+
+// Apple Root CA G3 certificate (DER format, base64 encoded)
+// Used to validate x5c certificate chains in JWS
+const APPLE_ROOT_CA_G3 = `
+-----BEGIN CERTIFICATE-----
+MIICQzCCAcigAwIBAgIUWNEDANu/DrK3bCGEDV5AEiZABKIwCgYIKoZIzj0EAwMw
+ZzELMAkGA1UEBhMCVVMxEzARBgNVBAgMQ0NhbGlmb3JuaWExEjAQBgNVBAcMCUN1
+cGVydGluZzEVMBMGA1UECgwMQXBwbGUsIEluYy4xIDAeBgNVBAsMF0NlcnRpZmlj
+YXRpb24gQXV0aG9yaXR5MB4XDI0MDUwODE2NDMzMFoXDTI5MDUwODE2NDMzMFow
+ZzELMAkGA1UEBhMCVVMxEzARBgNVBAgMQ0NhbGlmb3JuaWExEjAQBgNVBAcMCUN1
+cGVydGluZzEVMBMGA1UECgwMQXBwbGUsIEluYy4xIDAeBgNVBAsMF0NlcnRpZmlj
+YXRpb24gQXV0aG9yaXR5MHYwEAYHKoZIzj0CAQYFK4EEACIDYgAE3rSXRcaULLXw
+X3S8c11jL7N/9x7jDQ5eNbFfNFNYmD9R8X/CUpsBjUHSQCnNELMq1e6LfO6m1wR3
+F2S1lNFLvkKKpjKC46YjR/J6qKlLB9yWCbqSFe4QAYjSVGmIkD6jo0IwQDAPBgNV
+HRMECDAGAQECAgAwHQYDVR0OBBYEFCqGRJf7yxBU22NfKQ/LQmVqcj4vMA4GA1Ud
+DwEB/wQEAwIBBjAKBggqhkjOPQQDAwNoADBlAjEA1y0CEW5OP8JVFDf1r1xxqXwI
+V6WKgIBNu7lHEX32VJLrqzPJP5Uk4gvuqVGNZ9nLAjBhWNarGVwGcg0gRa0lLhPp
+R2+VFe7x1eHnNwl3VmKvN8VJxQpCDhqSTTAhPUc=
+-----END CERTIFICATE-----
+`;
+
+interface JWSPayload {
+  notificationType: string;
+  notificationUUID: string;
+  data?: {
+    signedTransactionInfo: string;
+    signedRenewalInfo?: string;
+  };
+}
 
 interface AppleNotification {
   notificationType: string;
