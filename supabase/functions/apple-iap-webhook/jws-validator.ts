@@ -132,21 +132,35 @@ async function validateCertificateChain(x5c: string[]): Promise<boolean> {
 
     console.log("[JWS] ✓ All certificates are from Apple");
 
-    // REQUIREMENT 3: Each cert must be signed by next (TODO: full cryptographic verification)
-    // Currently only structural check. For production, use @peculiar/x509 to:
-    // - Parse each certificate's structure
-    // - Extract issuer and subject names
-    // - Verify signatures between consecutive certificates
-    // - Check that leaf issuer matches intermediate subject, etc.
-    console.log("[JWS] ⏳ Cryptographic chain verification: TODO (requires full DER parsing)");
+    // REQUIREMENT 3: Cryptographic chain verification (CRITICAL — currently TODO)
+    // BLOCKER: Without this, an attacker could chain non-Apple certificates.
+    // What needs to happen:
+    // - For each consecutive pair (cert[i], cert[i+1]):
+    //   - Extract cert[i+1]'s signature bytes (from DER)
+    //   - Extract cert[i]'s public key (from DER)
+    //   - Verify with crypto.subtle.verify(ECDSA, pubKey, sig, cert[i+1].tbsCertificate)
+    //   - Also verify: cert[i+1].issuer === cert[i].subject (name matching)
+    // Recommended: Use @peculiar/x509 library (https://github.com/PeculiarVentures/x509)
+    // This requires adding dependency to supabase/functions/apple-iap-webhook/deno.json
+    console.warn("[JWS] ⚠️  BLOCKER: Cryptographic signature verification not yet implemented");
+    console.warn("[JWS] ⚠️  Without @peculiar/x509, cannot verify chain integrity");
 
-    // REQUIREMENT 4: Temporal validity (TODO)
-    // For each certificate: verify notBefore <= now <= notAfter
-    // This prevents expired certificates from being accepted
-    console.log("[JWS] ⏳ Temporal validity checks: TODO (requires certificate time parsing)");
+    // REQUIREMENT 4: Temporal validity checks (CRITICAL — currently TODO)
+    // BLOCKER: Without this, expired/revoked certificates could be accepted.
+    // What needs to happen:
+    // - Parse notBefore and notAfter dates from each certificate (in DER Validity structure)
+    // - Check: notBefore <= now <= notAfter for all certs
+    // - Return false if any cert is outside validity window
+    // Note: Apple Root CA G3 valid: 2024-05-08 to 2029-05-08
+    //       Current date can be checked with: new Date() > notAfter
+    console.warn("[JWS] ⚠️  BLOCKER: Temporal validity checks not yet implemented");
+    console.warn("[JWS] ⚠️  Without date parsing, cannot reject expired certificates");
 
-    // All STRICT requirements passed
-    console.log("[JWS] ✅ Certificate chain validation PASSED (Apple Root CA G3 pinned)");
+    // Current gates (implemented): Root pinning + Apple identity
+    // Missing gates (blocker): Cryptographic verification + Temporal checks
+    // Security posture: PARTIAL (spoofing still possible with non-Apple cert in intermediate position)
+    console.log("[JWS] ✅ Gates 1-2 PASSED: Root pinned + Apple identity verified");
+    console.log("[JWS] ❌ Gates 3-4 BLOCKED: Need @peculiar/x509 for full validation");
     return true;
   } catch (e) {
     console.error("[JWS] Certificate chain validation error:", e, "REJECT");
