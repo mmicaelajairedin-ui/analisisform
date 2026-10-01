@@ -17,26 +17,7 @@
 // Spec: https://developer.apple.com/documentation/appstoreserverapi/jwsrenewalinfo
 
 import { createClient } from "jsr:@supabase/supabase-js@2";
-
-// Apple Root CA G3 certificate (DER format, base64 encoded)
-// Used to validate x5c certificate chains in JWS
-const APPLE_ROOT_CA_G3 = `
------BEGIN CERTIFICATE-----
-MIICQzCCAcigAwIBAgIUWNEDANu/DrK3bCGEDV5AEiZABKIwCgYIKoZIzj0EAwMw
-ZzELMAkGA1UEBhMCVVMxEzARBgNVBAgMQ0NhbGlmb3JuaWExEjAQBgNVBAcMCUN1
-cGVydGluZzEVMBMGA1UECgwMQXBwbGUsIEluYy4xIDAeBgNVBAsMF0NlcnRpZmlj
-YXRpb24gQXV0aG9yaXR5MB4XDI0MDUwODE2NDMzMFoXDTI5MDUwODE2NDMzMFow
-ZzELMAkGA1UEBhMCVVMxEzARBgNVBAgMQ0NhbGlmb3JuaWExEjAQBgNVBAcMCUN1
-cGVydGluZzEVMBMGA1UECgwMQXBwbGUsIEluYy4xIDAeBgNVBAsMF0NlcnRpZmlj
-YXRpb24gQXV0aG9yaXR5MHYwEAYHKoZIzj0CAQYFK4EEACIDYgAE3rSXRcaULLXw
-X3S8c11jL7N/9x7jDQ5eNbFfNFNYmD9R8X/CUpsBjUHSQCnNELMq1e6LfO6m1wR3
-F2S1lNFLvkKKpjKC46YjR/J6qKlLB9yWCbqSFe4QAYjSVGmIkD6jo0IwQDAPBgNV
-HRMECDAGAQECAgAwHQYDVR0OBBYEFCqGRJf7yxBU22NfKQ/LQmVqcj4vMA4GA1Ud
-DwEB/wQEAwIBBjAKBggqhkjOPQQDAwNoADBlAjEA1y0CEW5OP8JVFDf1r1xxqXwI
-V6WKgIBNu7lHEX32VJLrqzPJP5Uk4gvuqVGNZ9nLAjBhWNarGVwGcg0gRa0lLhPp
-R2+VFe7x1eHnNwl3VmKvN8VJxQpCDhqSTTAhPUc=
------END CERTIFICATE-----
-`;
+import { validateJWS, validateNestedJWS } from "./jws-validator.ts";
 
 interface JWSPayload {
   notificationType: string;
@@ -111,33 +92,42 @@ Deno.serve(async (req) => {
 
     if (!notification && signedPayload) {
       try {
-        const parts = signedPayload.split(".");
-        if (parts.length !== 3) throw new Error("Invalid JWS format (must have 3 parts)");
+        // Validate JWS signature (x5c chain + ES256 verification)
+        const validation = await validateJWS(signedPayload);
 
-        // Parse header and payload
-        const header = JSON.parse(atob(parts[0]));
-        const payload = JSON.parse(atob(parts[1]));
-
-        if (!payload || !header) {
-          throw new Error("Invalid JWS payload or header");
+        if (!validation.valid) {
+          console.error("[webhook] JWS validation failed:", validation.error);
+          return new Response(
+            JSON.stringify({ ok: false, error: `JWS validation failed: ${validation.error}` }),
+            { status: 400, headers: { "Content-Type": "application/json" } }
+          );
         }
 
-        // TODO: Verify JWS signature
-        // CRITICAL: This prevents unauthorized notifications. Required:
-        // 1. Extract x5c certificate chain from header
-        // 2. Validate chain against Apple Root CA G3 (already have cert above)
-        // 3. Verify ES256 signature using leaf certificate public key
-        // 4. Validate iss, aud, exp claims
-        // Also: parse signedTransactionInfo and signedRenewalInfo as nested JWS
-        // and verify their signatures before trusting transaction data.
+        notification = validation.payload as AppleNotification;
 
-        console.warn(
-          `[webhook] SECURITY: JWS signature verification not yet implemented. ` +
-          `Accepting notification ${payload.notificationUUID} without cert validation. ` +
-          `This is temporary for integration testing only.`
-        );
+        // If signedTransactionInfo exists, validate it as nested JWS
+        if (notification.data?.signedTransactionInfo) {
+          const txnValidation = await validateNestedJWS(notification.data.signedTransactionInfo);
+          if (!txnValidation.valid) {
+            console.error("[webhook] signedTransactionInfo validation failed:", txnValidation.error);
+            return new Response(
+              JSON.stringify({ ok: false, error: "Transaction info validation failed" }),
+              { status: 400, headers: { "Content-Type": "application/json" } }
+            );
+          }
+        }
 
-        notification = payload;
+        // If signedRenewalInfo exists, validate it as nested JWS
+        if (notification.data?.signedRenewalInfo) {
+          const renewalValidation = await validateNestedJWS(notification.data.signedRenewalInfo);
+          if (!renewalValidation.valid) {
+            console.error("[webhook] signedRenewalInfo validation failed:", renewalValidation.error);
+            return new Response(
+              JSON.stringify({ ok: false, error: "Renewal info validation failed" }),
+              { status: 400, headers: { "Content-Type": "application/json" } }
+            );
+          }
+        }
       } catch (e) {
         console.error("[webhook] JWS parse error:", e);
         return new Response(JSON.stringify({ ok: false, error: "Invalid JWS" }), {
