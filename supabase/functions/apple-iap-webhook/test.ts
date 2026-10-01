@@ -386,70 +386,39 @@ Deno.test("End-to-end JWS validation with test leaf certificate", async () => {
   // Complete JWS
   const completeJWS = `${headerB64}.${payloadB64}.${signatureB64}`;
 
-  // Test 13a: Verify ES256 signature with correct payload
-  // Convert base64url-encoded signature to bytes
-  const base64Sig = signatureB64.replace(/-/g, "+").replace(/_/g, "/") + "==";
-  const binaryStr = atob(base64Sig);
-  const signatureBytes = new Uint8Array(binaryStr.length);
-  for (let i = 0; i < binaryStr.length; i++) {
-    signatureBytes[i] = binaryStr.charCodeAt(i);
+  // Convert test root to DER
+  const testRootDER = new Uint8Array(Buffer.from(testRootB64, "base64"));
+
+  // Test 13a: Call validateJWS with complete JWS and test root injected
+  console.log("[test-13a] Calling validateJWS with test root...");
+  const validResult = await validateJWS(completeJWS, testRootDER);
+
+  if (!validResult.valid) {
+    throw new Error(`JWS validation failed: ${validResult.error}`);
   }
+  console.log("[test-13a] ✅ Complete JWS validates successfully with test root");
+  console.log(`[test-13a] ✅ Payload extracted: notificationType=${validResult.payload?.notificationType}`);
 
-  // Export the private key as JWK to extract public key coordinates
-  const privateKeyJWK = await crypto.subtle.exportKey("jwk", leafPrivateKey);
-
-  // Create a public key from the JWK (remove 'd' parameter which is the private key)
-  const publicKeyJWK = {
-    kty: privateKeyJWK.kty,
-    crv: privateKeyJWK.crv,
-    x: privateKeyJWK.x,
-    y: privateKeyJWK.y,
-  };
-
-  // Import the public key
-  const publicKeyForVerify = await crypto.subtle.importKey(
-    "jwk",
-    publicKeyJWK,
-    { name: "ECDSA", namedCurve: "P-256" },
-    false,
-    ["verify"]
-  );
-
-  const isValidSig = await crypto.subtle.verify(
-    { name: "ECDSA", hash: "SHA-256" },
-    publicKeyForVerify,
-    signatureBytes,
-    messageBytes
-  );
-
-  if (!isValidSig) {
-    throw new Error("ES256 signature verification failed for valid payload");
-  }
-  console.log("[test-13a] ✅ ES256 signature is VALID for correct payload");
-
-  // Test 13b: Verify ES256 signature FAILS with tampered payload
+  // Test 13b: Tamper with payload and verify validation fails
   const tamperedPayload = {
     ...testPayload,
     notificationType: "REVOKED", // Changed notification type
   };
 
   const tamperedPayloadB64 = Buffer.from(JSON.stringify(tamperedPayload)).toString("base64").replace(/=/g, "").replace(/\+/g, "-").replace(/\//g, "_");
-  const tamperedMessageBytes = new TextEncoder().encode(`${headerB64}.${tamperedPayloadB64}`);
+  const tamperedJWS = `${headerB64}.${tamperedPayloadB64}.${signatureB64}`;
 
-  const isTamperedValid = await crypto.subtle.verify(
-    { name: "ECDSA", hash: "SHA-256" },
-    publicKeyForVerify,
-    signatureBytes,
-    tamperedMessageBytes
-  );
+  console.log("[test-13b] Calling validateJWS with tampered payload...");
+  const tamperedResult = await validateJWS(tamperedJWS, testRootDER);
 
-  if (isTamperedValid) {
-    throw new Error("Tampered JWS payload should NOT verify with same signature");
+  if (tamperedResult.valid) {
+    throw new Error("Tampered JWS should have failed validation");
   }
-  console.log("[test-13b] ✅ ES256 signature correctly FAILS for tampered payload");
+  console.log("[test-13b] ✅ Tampered JWS correctly rejected");
+  console.log(`[test-13b] ✅ Error: ${tamperedResult.error}`);
 
   console.log(
-    "[test-13] ✅ End-to-end JWS validation PASSED - ES256 signature verification working correctly"
+    "[test-13] ✅ End-to-end JWS validation PASSED - validateJWS works with test certificate chain"
   );
 });
 

@@ -33,7 +33,7 @@ function base64urlToBuffer(str: string): Uint8Array {
   const base64 = str
     .replace(/-/g, "+")
     .replace(/_/g, "/")
-    .padEnd((str.length * 4) / 3, "=");
+    .padEnd(Math.ceil(str.length / 4) * 4, "=");
   const binary = atob(base64);
   const bytes = new Uint8Array(binary.length);
   for (let i = 0; i < binary.length; i++) {
@@ -43,13 +43,126 @@ function base64urlToBuffer(str: string): Uint8Array {
 }
 
 /**
+ * Parse DER length field
+ */
+function parseDERLength(data: Uint8Array, offset: number): { length: number; totalBytes: number } | null {
+  if (offset >= data.length) return null;
+
+  let length = data[offset];
+  if ((length & 0x80) === 0) {
+    // Short form: length in single byte
+    return { length, totalBytes: 1 };
+  }
+
+  // Long form: first byte has high bit set, lower 7 bits indicate number of length bytes
+  const numLengthBytes = length & 0x7f;
+  if (offset + 1 + numLengthBytes > data.length) return null;
+
+  length = 0;
+  for (let i = 0; i < numLengthBytes; i++) {
+    length = (length << 8) | data[offset + 1 + i];
+  }
+
+  return { length, totalBytes: 1 + numLengthBytes };
+}
+
+/**
+ * Extract SPKI bytes from DER-encoded X.509 certificate
+ * Returns raw SPKI for use with crypto.subtle.importKey
+ */
+function extractSPKIFromCertDER(certDER: Uint8Array): Uint8Array | null {
+  try {
+    // X.509 DER structure: SEQUENCE { TBSCertificate, ... }
+    // TBSCertificate: SEQUENCE { ..., subject, subjectPublicKeyInfo, ... }
+    // subjectPublicKeyInfo: SEQUENCE { algorithm SEQUENCE {...}, subjectPublicKey BIT STRING }
+
+    // Find BIT STRING (0x03) containing the public key SEQUENCE
+    // The public key is preceded by algorithm parameters
+    let bitStringPos = -1;
+    // Scan from 60% into the cert forward
+    const scanStart = Math.floor(certDER.length * 0.6);
+
+    for (let i = scanStart; i < certDER.length - 100; i++) {
+      // Look for BIT STRING (0x03) followed by length, 0x00 (unused bits), then SEQUENCE (0x30)
+      if (certDER[i] === 0x03 && certDER[i + 2] === 0x00 && certDER[i + 3] === 0x30) {
+        bitStringPos = i;
+        break;
+      }
+    }
+
+    if (bitStringPos < 0) {
+      console.error("[JWS] BIT STRING for public key not found");
+      return null;
+    }
+
+    // Walk backwards to find the containing SPKI SEQUENCE
+    // Count SEQUENCEs: the second one going backwards is the SPKI
+    let sequenceCount = 0;
+    let spkiStart = -1;
+
+    for (let i = bitStringPos - 1; i > 0; i--) {
+      if (certDER[i] === 0x30) {
+        sequenceCount++;
+        if (sequenceCount === 2) {
+          spkiStart = i;
+          break;
+        }
+      }
+    }
+
+    if (spkiStart < 0) {
+      console.error("[JWS] Failed to find SPKI SEQUENCE");
+      return null;
+    }
+
+    // Parse the SPKI length to find the end
+    const lengthInfo = parseDERLength(certDER, spkiStart + 1);
+    if (!lengthInfo) {
+      console.error("[JWS] Failed to parse SPKI length");
+      return null;
+    }
+
+    const spkiEnd = spkiStart + 1 + lengthInfo.totalBytes + lengthInfo.length;
+
+    if (spkiEnd > certDER.length) {
+      console.error("[JWS] SPKI length exceeds certificate size");
+      return null;
+    }
+
+    return certDER.slice(spkiStart, spkiEnd);
+  } catch (e) {
+    console.error("[JWS] Failed to extract SPKI:", e);
+    return null;
+  }
+}
+
+/**
  * Extract public key from DER-encoded X.509 certificate
- * Uses @peculiar/x509 to parse the certificate and extract the SPKI
+ * Uses SPKI extraction and imports as CryptoKey for crypto.subtle.verify compatibility
  */
 async function extractPublicKeyFromCertDER(
   certDER: Uint8Array
 ): Promise<CryptoKey | null> {
   try {
+    // Try extracting SPKI directly from certificate DER
+    const spkiBytes = extractSPKIFromCertDER(certDER);
+    if (spkiBytes) {
+      try {
+        const key = await crypto.subtle.importKey(
+          "spki",
+          spkiBytes as BufferSource,
+          { name: "ECDSA", namedCurve: "P-256" },
+          false,
+          ["verify"]
+        );
+        console.log("[JWS] ✓ Extracted public key from certificate SPKI");
+        return key;
+      } catch (importErr) {
+        console.error("[JWS] Failed to import extracted SPKI:", importErr);
+      }
+    }
+
+    // Fallback: try Peculiar X509 library
     const X509 = await getX509Library();
     if (!X509) {
       console.error("[JWS] @peculiar/x509 not available for key extraction");
@@ -57,9 +170,13 @@ async function extractPublicKeyFromCertDER(
     }
 
     const cert = new X509(certDER);
-    // Use publicKey property which returns the CryptoKey directly
-    const publicKey = cert.publicKey;
-    return publicKey;
+    const certificatePublicKey = cert.publicKey;
+    if (!certificatePublicKey) {
+      console.error("[JWS] Certificate has no public key");
+      return null;
+    }
+
+    return certificatePublicKey as CryptoKey;
   } catch (e) {
     console.error("[JWS] Failed to extract public key:", e);
     return null;
@@ -305,8 +422,9 @@ async function validateCertificateChain(x5c: string[], testRootDER?: Uint8Array)
 
 /**
  * Validate JWS with ES256 signature and x5c chain verification
+ * @param testRootDER - Optional test root certificate for testing (bypasses Apple root check)
  */
-export async function validateJWS(jws: string): Promise<JWSValidationResult> {
+export async function validateJWS(jws: string, testRootDER?: Uint8Array): Promise<JWSValidationResult> {
   try {
     const parts = jws.split(".");
     if (parts.length !== 3) {
@@ -317,9 +435,12 @@ export async function validateJWS(jws: string): Promise<JWSValidationResult> {
     const payloadB64 = parts[1];
     const signatureB64 = parts[2];
 
-    // Decode header and payload
-    const header = JSON.parse(atob(headerB64)) as JWSHeader;
-    const payload = JSON.parse(atob(payloadB64)) as Record<string, unknown>;
+    // Decode header and payload (use base64url decoder for JWS format)
+    const headerBytes = base64urlToBuffer(headerB64);
+    const payloadBytes = base64urlToBuffer(payloadB64);
+    const decoder = new TextDecoder();
+    const header = JSON.parse(decoder.decode(headerBytes)) as JWSHeader;
+    const payload = JSON.parse(decoder.decode(payloadBytes)) as Record<string, unknown>;
 
     // Validate header
     if (header.alg !== "ES256") {
@@ -331,7 +452,7 @@ export async function validateJWS(jws: string): Promise<JWSValidationResult> {
     }
 
     // SECURITY: STRICT certificate chain validation (rejects on any failure)
-    const chainValid = await validateCertificateChain(header.x5c);
+    const chainValid = await validateCertificateChain(header.x5c, testRootDER);
     if (!chainValid) {
       return {
         valid: false,
@@ -356,14 +477,20 @@ export async function validateJWS(jws: string): Promise<JWSValidationResult> {
       `${headerB64}.${payloadB64}`
     );
 
+    // Debug logging
+    console.log(`[JWS] Signature bytes length: ${signatureBytes.length}`);
+    console.log(`[JWS] Message bytes length: ${messageBytes.length}`);
+    console.log(`[JWS] Header length: ${headerB64.length}, Payload length: ${payloadB64.length}`);
+
     const isValid = await crypto.subtle.verify(
-      "ECDSA",
+      { name: "ECDSA", hash: "SHA-256" },
       publicKey,
-      signatureBytes,
-      messageBytes
+      signatureBytes as BufferSource,
+      messageBytes as BufferSource
     );
 
     if (!isValid) {
+      console.log("[JWS] ❌ ES256 signature verification FAILED");
       return { valid: false, error: "ES256 signature verification failed" };
     }
 
