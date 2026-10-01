@@ -1,7 +1,7 @@
 // ===================================================================
 // editar-coach-red — el DUEÑO de una red edita un miembro (coach/colaborador):
 // - member_role: 'coach' (da clases) ↔ 'colaborador' (sin clases)
-// - nombre, email, especialidad (campos usuarios)
+// - nombre, email, especialidad, capacity (COLUMNAS de usuarios)
 // - servicios, permisos (campos configuracion)
 // - mc_permisos (campo configuracion, de MultiCoach — ver mas abajo)
 //
@@ -9,9 +9,30 @@
 // La distinción vive en usuarios.configuracion.member_role. PostgREST no hace
 // merge de un JSONB, así que leemos la configuracion actual, mergeamos y reescribimos.
 //
-// Body:   { coach_id, member_role?, nombre?, email?, especialidad?, servicios?, permisos?, mc_permisos? }
+// Body:   { coach_id, member_role?, nombre?, email?, especialidad?, capacity?, servicios?, permisos?, mc_permisos? }
 // Header: Authorization: Bearer <JWT del owner logueado>
-// Resp:   { ok, member_role?, nombre?, email?, especialidad?, servicios?, mc_permisos? } | { error }
+// Resp:   { ok, member_role?, nombre?, email?, especialidad?, capacity?, servicios?, mc_permisos? } | { error }
+//
+// ── ESPECIALIDAD Y CAPACIDAD: LA COLUMNA, NO `configuracion` (2026-10-01) ──
+//
+// Esta función escribía `especialidad` en `configuracion.especialidad`, y su
+// propia cabecera decía «campos usuarios». Los datos dan la razón a la
+// cabecera: la COLUMNA `usuarios.especialidad` tiene filas y
+// `configuracion.especialidad` tiene CERO en toda la base. O sea que esa rama
+// no se había ejercido nunca, y por eso el cambio no migra nada.
+//
+// `capacity` no la escribía NINGUNA función desplegada: la columna existe en
+// las 89 filas (con su `default`) y solo se leía. Ahora el dueño puede fijarla.
+//
+// Quién lee qué, para que el cambio no sorprenda: `get-team-members` lee las
+// dos COLUMNAS, así que MultiCoach ve el valor nuevo de inmediato.
+// `multicoach.html` lee `cfg.especialidad` y NO la escribe nunca — hoy ya
+// muestra vacío, porque esa clave no tiene filas, y seguirá igual. No se toca:
+// es legacy y está congelado.
+//
+// Para BORRAR un valor se manda `null` explícito. Una cadena vacía, igual que
+// antes, se ignora: un formulario que mande `""` en los campos que no tocó no
+// puede vaciar lo que ya había.
 //
 // Deploy: supabase functions deploy editar-coach-red --no-verify-jwt
 // ===================================================================
@@ -65,7 +86,7 @@ Deno.serve(async (req: Request) => {
   const orgId = await ownerOrg(email);
   if (!orgId) return json({ error: "not_owner" }, 403);
 
-  let body: { coach_id?: string; member_role?: string; nombre?: string; email?: string; especialidad?: string; servicios?: unknown; permisos?: unknown; mc_permisos?: unknown };
+  let body: { coach_id?: string; member_role?: string; nombre?: string; email?: string; especialidad?: string | null; capacity?: number | string | null; servicios?: unknown; permisos?: unknown; mc_permisos?: unknown };
   try { body = await req.json(); } catch { return json({ error: "bad_json" }, 400); }
   const coachId = (body.coach_id || "").toString().trim();
   if (!coachId) return json({ error: "missing_coach" }, 400);
@@ -73,11 +94,28 @@ Deno.serve(async (req: Request) => {
   const hasRole = typeof body.member_role === "string" && body.member_role.length > 0;
   const hasNombre = typeof body.nombre === "string" && body.nombre.trim().length > 0;
   const hasEmail = typeof body.email === "string" && body.email.trim().length > 0;
+  // Poner un valor, o BORRARLO con `null` explícito. Una cadena vacía se
+  // ignora, igual que antes: es lo que manda un formulario en los campos que
+  // no se tocaron, y vaciar por eso sería perder datos sin pedirlo.
   const hasEsp = typeof body.especialidad === "string" && body.especialidad.trim().length > 0;
+  const borrarEsp = body.especialidad === null;
+  const hasCap = body.capacity !== undefined && body.capacity !== null && String(body.capacity).trim() !== "";
+  const borrarCap = body.capacity === null;
   const hasSvcs = Array.isArray(body.servicios);
   const hasPerms = !!body.permisos && typeof body.permisos === "object" && !Array.isArray(body.permisos);
   const hasMcPerms = body.mc_permisos !== undefined;
-  if (!hasRole && !hasNombre && !hasEmail && !hasEsp && !hasSvcs && !hasPerms && !hasMcPerms) return json({ error: "nothing_to_update" }, 400);
+  if (!hasRole && !hasNombre && !hasEmail && !hasEsp && !borrarEsp && !hasCap && !borrarCap && !hasSvcs && !hasPerms && !hasMcPerms) return json({ error: "nothing_to_update" }, 400);
+
+  // La capacidad es un entero de clientes. Se valida ANTES de tocar nada: un
+  // `capacity: "muchos"` que llegue como NaN dejaría la columna en null y la
+  // pantalla diría «guardado».
+  let capacidad = 0;
+  if (hasCap) {
+    capacidad = Math.trunc(Number(body.capacity));
+    if (!Number.isFinite(capacidad) || capacidad < 0 || capacidad > 10000) {
+      return json({ error: "capacity_invalida" }, 400);
+    }
+  }
 
   // El target tiene que ser de ESTA org, o el propio dueño (que también ofrece
   // servicios). Leemos su configuracion para mergear.
@@ -182,7 +220,14 @@ Deno.serve(async (req: Request) => {
     if (!EMAIL_RE.test(em)) return json({ error: "invalid_email" }, 400);
     usuariosUpdate.email = em;
   }
-  if (hasEsp) cfg.especialidad = body.especialidad!.trim().slice(0, 200);
+  // A LA COLUMNA, que es donde viven los datos y de donde lee
+  // `get-team-members`. Antes esto hacía `cfg.especialidad = ...`, contra lo
+  // que decía su propia cabecera.
+  if (hasEsp) usuariosUpdate.especialidad = (body.especialidad as string).trim().slice(0, 200);
+  else if (borrarEsp) usuariosUpdate.especialidad = null;
+
+  if (hasCap) usuariosUpdate.capacity = capacidad;
+  else if (borrarCap) usuariosUpdate.capacity = null;
 
   try {
     const r = await fetch(
@@ -197,7 +242,12 @@ Deno.serve(async (req: Request) => {
     member_role: memberRole || undefined,
     nombre: hasNombre ? usuariosUpdate.nombre : undefined,
     email: hasEmail ? usuariosUpdate.email : undefined,
-    especialidad: hasEsp ? cfg.especialidad : undefined,
+    // Se responde lo que se ESCRIBIÓ, no lo que quedó en `cfg`: MultiCoach lo
+    // compara para saber si se guardó de verdad (R-23), y releer el objeto se
+    // cae en cuanto una asignación futura sea condicional. Es la misma lección
+    // que dejó el recuento de `mc_permisos`.
+    especialidad: (hasEsp || borrarEsp) ? (usuariosUpdate.especialidad ?? null) : undefined,
+    capacity: (hasCap || borrarCap) ? (usuariosUpdate.capacity ?? null) : undefined,
     servicios: hasSvcs ? (cfg.servicios as unknown[]).length : undefined,
     mc_permisos: mcGrants
   });
