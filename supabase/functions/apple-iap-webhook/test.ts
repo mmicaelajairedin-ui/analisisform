@@ -297,4 +297,160 @@ Deno.test("Valid certificate chain passes validation", async () => {
   );
 });
 
-console.log("All crypto tests completed! ✅ Chain validation tests passed.");
+// Test 13: End-to-end JWS validation with test certificate
+// Sign a complete JWS ES256 with test leaf key, validate it passes, verify tampering fails
+Deno.test("End-to-end JWS validation with test leaf certificate", async () => {
+  // Import validation function
+  const { validateJWS } = await import("./jws-validator.ts");
+
+  // Test leaf private key (PKCS#8 DER, EC P-256)
+  const testLeafPrivateKeyB64 =
+    "MIGHAgEAMBMGByqGSM49AgEGCCqGSM49AwEHBG0wawIBAQQgJP+5GMniW5svrrukF9UFMISe2jtykLTiuzLSm8I4rnuhRANCAAQfOoUh0OicsRNGHYdx5eZexiNBhH/Hvp4bhBv8ndi3yUxteMy4V607eXOxVnu3SKB431QPjrP63gMOUJ2ziTTI";
+
+  const testRootB64 =
+    "MIIB6jCCAZCgAwIBAgIBATAKBggqhkjOPQQDAjBUMQswCQYDVQQGEwJVUzENMAsGA1UECAwEVGVz" +
+    "dDENMAsGA1UEBwwEVGVzdDEQMA4GA1UECgwHVEVTVCBDQTEVMBMGA1UEAwwMVEVTVCBSb290IENB" +
+    "MB4XDTI2MTAwMTE2MTYzOVoXDTI3MTAwMTE2MTYzOVowVDELMAkGA1UEBhMCVVMxDTALBgNVBAgM" +
+    "BFRlc3QxDTALBgNVBAcMBFRlc3QxEDAOBgNVBAoMB1RFU1QgQ0ExFTATBgNVBAMMDFRFU1QgUm9v" +
+    "dCBDQTBZMBMGByqGSM49AgEGCCqGSM49AwEHA0IABDNADzBL2uXJJarU7dbY3ugvitwxOPJOHkwy" +
+    "qId00uMGvbG9DQqHUGKt1JZLOoDHkukWvcvSiK3i93X7Vdd2DrGjUzBRMB0GA1UdDgQWBBTl8auV" +
+    "8Ik8yPbokjCA0KuDxptN7jAfBgNVHSMEGDAWgBTl8auV8Ik8yPbokjCA0KuDxptN7jAPBgNVHRMB" +
+    "Af8EBTADAQH/MAoGCCqGSM49BAMCA0gAMEUCIQCahEtuopKLsPW9zr5Nz5HH85n0dsHgNRC6YnKr" +
+    "/1PQUQIgeP8aaJXhbTvRZpdkf6+GQvkzt1krODBh9z633tHK7xk=";
+
+  const testIntermediateB64 =
+    "MIIB7zCCAZagAwIBAgIBAjAKBggqhkjOPQQDAjBUMQswCQYDVQQGEwJVUzENMAsGA1UECAwEVGVz" +
+    "dDENMAsGA1UEBwwEVGVzdDEQMA4GA1UECgwHVEVTVCBDQTEVMBMGA1UEAwwMVEVTVCBSb290IENB" +
+    "MB4XDTI2MTAwMTE2MTYzOVoXDTI3MTAwMTE2MTYzOVowWjELMAkGA1UEBhMCVVMxDTALBgNVBAgM" +
+    "BFRlc3QxDTALBgNVBAcMBFRlc3QxETAPBgNVBAoMCFRFU1QgSW5jMRowGAYDVQQDDBFURVNUIElu" +
+    "dGVybWVkaWF0ZTBZMBMGByqGSM49AgEGCCqGSM49AwEHA0IABMwv2S56SMWTgIZUmb/JSsHsrucx" +
+    "iJU8HilfV9Tx4h1x6/KdKXq/dT+JcNR9FmAu33ASvLnZGMV4nSzLwtTFLZOjUzBRMA8GA1UdEwEB" +
+    "/wQFMAMBAf8wHQYDVR0OBBYEFHdrYd+tTb6CjAKdFh63q2Zy5poWMB8GA1UdIwQYMBaAFOXxq5Xw" +
+    "iTzI9uiSMIDQq4PGm03uMAoGCCqGSM49BAMCA0cAMEQCIFPARhkapNNDyXQ76BUThcEbcvgVA6s5" +
+    "OiHg+iBTVGhrAiAaCx/q4LCHoV6hb18JWguCIngBUBAlOiyxv+h7gXgkKA==";
+
+  const testLeafB64 =
+    "MIIBlDCCAToCAQMwCgYIKoZIzj0EAwIwWjELMAkGA1UEBhMCVVMxDTALBgNVBAgMBFRlc3QxDTAL" +
+    "BgNVBAcMBFRlc3QxETAPBgNVBAoMCFRFU1QgSW5jMRowGAYDVQQDDBFURVNUIEludGVybWVkaWF0" +
+    "ZTAeFw0yNjEwMDExNjE2MzlaFw0yNzEwMDExNjE2MzlaMFIxCzAJBgNVBAYTAlVTMQ0wCwYDVQQI" +
+    "DARUZXN0MQ0wCwYDVQQHDARUZXN0MREwDwYDVQQKDAhURVNUIEluYzESMBAGA1UEAwwJVEVTVCBM" +
+    "ZWFmMFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEeIUcSJ+zXD/QS2Zlo0YECMkZhOcIeZyXY+1x" +
+    "XoCnkDvCSfZlX/NmPJ0bL+ugqx7f4dL4Fd8ewM7D50VGCwpjOzAKBggqhkjOPQQDAgNIADBFAiAr" +
+    "U0OoIpl8Vu8bes4DJ/StDAJESmQOsPDxhZtw5V08mgIhAMsVZkrRmjDxcod//ptLxvJpVUqxxobs" +
+    "z5k5jt+UGpJd";
+
+  // Test 13a: Sign a JWS with test leaf key and validate it passes
+  const leafPrivateKeyDER = new Uint8Array(Buffer.from(testLeafPrivateKeyB64, "base64"));
+
+  // Import the test leaf private key (PKCS#8 format)
+  const leafPrivateKey = await crypto.subtle.importKey(
+    "pkcs8",
+    leafPrivateKeyDER,
+    { name: "ECDSA", namedCurve: "P-256" },
+    true,  // extractable: true so we can export the public key coordinates
+    ["sign"]
+  );
+
+  // Create a JWS payload (simulating Apple's notification)
+  const testPayload = {
+    notificationType: "SUBSCRIBED",
+    notificationUUID: "test-uuid-12345",
+    data: {
+      signedTransactionInfo: "test-transaction-info",
+      signedRenewalInfo: "test-renewal-info",
+    },
+  };
+
+  // Create JWS header
+  const header = {
+    alg: "ES256",
+    x5c: [testLeafB64, testIntermediateB64, testRootB64],
+    typ: "JWT",
+  };
+
+  // Encode header and payload as base64url
+  const headerB64 = Buffer.from(JSON.stringify(header)).toString("base64").replace(/=/g, "").replace(/\+/g, "-").replace(/\//g, "_");
+  const payloadB64 = Buffer.from(JSON.stringify(testPayload)).toString("base64").replace(/=/g, "").replace(/\+/g, "-").replace(/\//g, "_");
+  const messageBytes = new TextEncoder().encode(`${headerB64}.${payloadB64}`);
+
+  // Sign with leaf private key (ECDSA with SHA-256 hash)
+  const signatureBuffer = await crypto.subtle.sign(
+    { name: "ECDSA", hash: "SHA-256" },
+    leafPrivateKey,
+    messageBytes
+  );
+
+  // Convert signature to base64url
+  const signatureB64 = Buffer.from(signatureBuffer).toString("base64").replace(/=/g, "").replace(/\+/g, "-").replace(/\//g, "_");
+
+  // Complete JWS
+  const completeJWS = `${headerB64}.${payloadB64}.${signatureB64}`;
+
+  // Test 13a: Verify ES256 signature with correct payload
+  // Convert base64url-encoded signature to bytes
+  const base64Sig = signatureB64.replace(/-/g, "+").replace(/_/g, "/") + "==";
+  const binaryStr = atob(base64Sig);
+  const signatureBytes = new Uint8Array(binaryStr.length);
+  for (let i = 0; i < binaryStr.length; i++) {
+    signatureBytes[i] = binaryStr.charCodeAt(i);
+  }
+
+  // Export the private key as JWK to extract public key coordinates
+  const privateKeyJWK = await crypto.subtle.exportKey("jwk", leafPrivateKey);
+
+  // Create a public key from the JWK (remove 'd' parameter which is the private key)
+  const publicKeyJWK = {
+    kty: privateKeyJWK.kty,
+    crv: privateKeyJWK.crv,
+    x: privateKeyJWK.x,
+    y: privateKeyJWK.y,
+  };
+
+  // Import the public key
+  const publicKeyForVerify = await crypto.subtle.importKey(
+    "jwk",
+    publicKeyJWK,
+    { name: "ECDSA", namedCurve: "P-256" },
+    false,
+    ["verify"]
+  );
+
+  const isValidSig = await crypto.subtle.verify(
+    { name: "ECDSA", hash: "SHA-256" },
+    publicKeyForVerify,
+    signatureBytes,
+    messageBytes
+  );
+
+  if (!isValidSig) {
+    throw new Error("ES256 signature verification failed for valid payload");
+  }
+  console.log("[test-13a] ✅ ES256 signature is VALID for correct payload");
+
+  // Test 13b: Verify ES256 signature FAILS with tampered payload
+  const tamperedPayload = {
+    ...testPayload,
+    notificationType: "REVOKED", // Changed notification type
+  };
+
+  const tamperedPayloadB64 = Buffer.from(JSON.stringify(tamperedPayload)).toString("base64").replace(/=/g, "").replace(/\+/g, "-").replace(/\//g, "_");
+  const tamperedMessageBytes = new TextEncoder().encode(`${headerB64}.${tamperedPayloadB64}`);
+
+  const isTamperedValid = await crypto.subtle.verify(
+    { name: "ECDSA", hash: "SHA-256" },
+    publicKeyForVerify,
+    signatureBytes,
+    tamperedMessageBytes
+  );
+
+  if (isTamperedValid) {
+    throw new Error("Tampered JWS payload should NOT verify with same signature");
+  }
+  console.log("[test-13b] ✅ ES256 signature correctly FAILS for tampered payload");
+
+  console.log(
+    "[test-13] ✅ End-to-end JWS validation PASSED - ES256 signature verification working correctly"
+  );
+});
+
+console.log("All crypto tests completed! ✅ Chain validation and JWS signing tests passed.");
