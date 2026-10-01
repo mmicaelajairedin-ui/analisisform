@@ -136,14 +136,16 @@ Deno.serve(async (req) => {
     }
 
     const config = usuarioData.configuracion || {};
-    const stripeStatus = config.stripe_status; // should be 'active', 'cancelled', 'expired', 'past_due', null
+    const estadoSub = config.estado_sub; // values: 'prueba', 'activa', 'cancelada', 'vencida'
 
     // Stripe mutual exclusivity: prevent Apple purchase if Stripe is currently active
-    if (
-      stripeStatus === "active" ||
-      (config.stripe_current_period_end &&
-        new Date(config.stripe_current_period_end) > new Date())
-    ) {
+    // A Stripe sub is active if: estado_sub === 'activa' AND fecha_fin_periodo is in the future
+    const hasActiveSub =
+      estadoSub === "activa" &&
+      config.fecha_fin_periodo &&
+      new Date(config.fecha_fin_periodo) > new Date();
+
+    if (hasActiveSub) {
       return new Response(
         JSON.stringify({
           ok: false,
