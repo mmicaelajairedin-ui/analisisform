@@ -2,7 +2,8 @@
 // Implements ES256 signature verification + x5c certificate chain validation
 // CRITICAL: Rejects (not warns) on ANY validation failure
 
-import { Buffer } from "jsr:@std/encoding";
+import "npm:reflect-metadata@0.1.13";
+import { Buffer } from "npm:buffer@6.0.3";
 
 interface JWSValidationResult {
   valid: boolean;
@@ -91,7 +92,7 @@ async function getX509Library() {
   x509LoadAttempted = true;
   try {
     // Import @peculiar/x509 from npm
-    const peculiar = await import("npm:@peculiar/x509@4.0.0");
+    const peculiar = await import("npm:@peculiar/x509@2.1.0");
     X509Certificate = peculiar.X509Certificate;
     console.log("[JWS] ✅ @peculiar/x509 loaded for cryptographic verification");
     return X509Certificate;
@@ -237,17 +238,17 @@ async function validateCertificateChain(x5c: string[]): Promise<boolean> {
           // @peculiar/x509 library should provide this, but as a safer approach,
           // we verify at the TBS (To-Be-Signed) level if available
           try {
-            // @peculiar/x509 v4 has a verify method
-            if (childCert.verify !== undefined) {
-              // Use library's built-in verification if available
-              const isValid = await childCert.verify({ publicKey: issuerPublicKey });
-              if (!isValid) {
-                console.error(`[JWS] Certificate ${i} signature verification failed: REJECT`);
-                return false;
-              }
-            } else {
-              // Fallback: issuer/subject match already confirms structural validity
-              console.log(`[JWS] Issuer/subject match verified for position ${i} (library verification unavailable)`);
+            // @peculiar/x509 MUST have a verify method for cryptographic verification
+            if (childCert.verify === undefined) {
+              console.error(`[JWS] Certificate ${i} verify method unavailable: REJECT`);
+              return false;
+            }
+
+            // Use library's built-in verification
+            const isValid = await childCert.verify({ publicKey: issuerPublicKey });
+            if (!isValid) {
+              console.error(`[JWS] Certificate ${i} signature verification failed: REJECT`);
+              return false;
             }
           } catch (verifyErr) {
             console.error(`[JWS] Certificate ${i} verification threw error: REJECT`, verifyErr);

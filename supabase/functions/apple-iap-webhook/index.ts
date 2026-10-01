@@ -202,8 +202,14 @@ Deno.serve(async (req) => {
     }
 
     if (!newState) {
-      console.warn(`[webhook] Unknown notification type: ${notificationType}`);
-      newState = "active"; // Default to active if unknown
+      // Unknown notification types are safe to ignore and acknowledge
+      // Apple may add new types and we should not update state for unknown types
+      // Responding 200 OK tells Apple we received it; Apple will retry 4xx
+      console.log(`[webhook] Unknown notification type (Apple may have added new type): ${notificationType}`);
+      return new Response(JSON.stringify({ ok: true, state: "unknown_type" }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
     }
 
     // Calculate expiration date
@@ -273,19 +279,22 @@ Deno.serve(async (req) => {
           .eq("id", existing.usuario_id);
       }
     } else {
-      console.warn(
-        `[webhook] Subscription not found: ${originalTransactionId} (new subscription?)`
+      // Subscription not found in database
+      // This is a legitimate edge case: check-entitlement may not have been called yet,
+      // or the purchase was made but the webhook arrived before the entitlement check.
+      // The transaction IS verified (JWS validation passed), but we have no record yet.
+      // We cannot create a subscription record without the user_id from check-entitlement,
+      // so we acknowledge to Apple (200 OK) and let check-entitlement create the record
+      // when it runs next.
+      console.log(
+        `[webhook] Subscription record not yet created: ${originalTransactionId}. ` +
+        `State not updated (will be created by check-entitlement). appAccountToken: ${appAccountToken || "none"}`
       );
-      // This can happen if check-entitlement hasn't been called yet
-      // Create a new record (if appAccountToken is provided, we can link to user)
-      if (appAccountToken) {
-        // Find user by matching records (this is a fallback; ideally we'd have the user_id from receipt)
-        console.warn(
-          `[webhook] Cannot create record without user_id. appAccountToken: ${appAccountToken}`
-        );
-        // In production, extract user_id from the appAccountToken or receipt
-        // For now, skip insertion
-      }
+      // Don't create or modify any records; let check-entitlement establish the user link first
+      return new Response(JSON.stringify({ ok: true, state: "record_not_found" }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
     }
 
     console.log(

@@ -101,18 +101,22 @@ Deno.test("Nested JWS validation - structure", async () => {
 // Test 7: Base64url encoding test for JWT components
 Deno.test("Base64url edge cases", async () => {
   // Test that base64url handles padding correctly
+  // Valid base64 test cases
   const testCases = [
-    { input: "test", shouldWork: true },
-    { input: "a", shouldWork: true },
-    { input: "ab", shouldWork: true },
+    { input: "dGVzdA", shouldWork: true }, // "test" in base64
+    { input: "YQ", shouldWork: true },     // "a" in base64
+    { input: "YWI", shouldWork: true },    // "ab" in base64
   ];
 
   for (const tc of testCases) {
-    // Just testing that atob doesn't throw for valid cases
     try {
-      atob(tc.input.padEnd((tc.input.length * 4) / 3, "="));
+      const padded = tc.input.padEnd(Math.ceil((tc.input.length * 4) / 3 / 4) * 4, "=");
+      const decoded = atob(padded);
+      if (!decoded && tc.shouldWork) {
+        throw new Error(`Failed to decode valid input: ${tc.input}`);
+      }
     } catch (e) {
-      if (tc.shouldWork) throw new Error(`Failed on valid input: ${tc.input}`);
+      if (tc.shouldWork) throw new Error(`Failed on valid input: ${tc.input}: ${e}`);
     }
   }
 });
