@@ -137,14 +137,117 @@ function extractSPKIFromCertDER(certDER: Uint8Array): Uint8Array | null {
 }
 
 /**
+ * Extract EC P-256 public key coordinates directly from certificate DER
+ * Finds the BIT STRING containing the EC point and extracts x/y coordinates
+ */
+function extractEC256CoordinatesFromCert(certDER: Uint8Array): { x: Uint8Array; y: Uint8Array } | null {
+  try {
+    // P-256 OID in DER: 06 08 2A 86 48 CE 3D 03 01 07
+    // This OID appears in SubjectPublicKeyInfo's AlgorithmIdentifier
+    const p256OID = [0x06, 0x08, 0x2a, 0x86, 0x48, 0xce, 0x3d, 0x03, 0x01, 0x07];
+
+    // Search for P-256 OID
+    let oidPos = -1;
+    for (let i = 0; i <= certDER.length - p256OID.length; i++) {
+      let found = true;
+      for (let j = 0; j < p256OID.length; j++) {
+        if (certDER[i + j] !== p256OID[j]) {
+          found = false;
+          break;
+        }
+      }
+      if (found) {
+        oidPos = i;
+        break;
+      }
+    }
+
+    if (oidPos < 0) {
+      console.log("[JWS] P-256 OID not found in certificate");
+      return null;
+    }
+
+    console.log(`[JWS] Found P-256 OID at offset ${oidPos}`);
+
+    // After P-256 OID, look for the BIT STRING containing the public key
+    // Scan forward from OID for 0x03 (BIT STRING)
+    for (let i = oidPos + p256OID.length; i < Math.min(oidPos + p256OID.length + 200, certDER.length); i++) {
+      if (certDER[i] === 0x03) {
+        // Found BIT STRING tag
+        const lengthResult = parseDERLength(certDER, i + 1);
+        if (!lengthResult) continue;
+
+        const contentStart = i + 1 + lengthResult.totalBytes;
+        const contentEnd = contentStart + lengthResult.length;
+
+        if (contentEnd > certDER.length) continue;
+
+        // BIT STRING content starts with unused bits indicator (should be 0x00)
+        if (contentStart < certDER.length && certDER[contentStart] === 0x00) {
+          // Next byte should be 0x04 (uncompressed EC point)
+          if (contentStart + 1 < certDER.length && certDER[contentStart + 1] === 0x04) {
+            // We should have 65 bytes: 0x04 + 32 bytes x + 32 bytes y
+            if (contentStart + 1 + 65 <= certDER.length) {
+              const pointStart = contentStart + 1;
+              const x = certDER.slice(pointStart + 1, pointStart + 33);
+              const y = certDER.slice(pointStart + 33, pointStart + 65);
+
+              if (x.length === 32 && y.length === 32) {
+                const fullPoint = certDER.slice(pointStart, pointStart + 65);
+                console.log(`[JWS] ✓ Extracted EC P-256: point=${Buffer.from(fullPoint).toString('hex')}`);
+                return { x, y };
+              }
+            }
+          }
+        }
+      }
+    }
+
+    return null;
+  } catch (e) {
+    console.error("[JWS] Failed to extract EC coordinates:", e);
+    return null;
+  }
+}
+
+/**
  * Extract public key from DER-encoded X.509 certificate
- * Uses SPKI extraction and imports as CryptoKey for crypto.subtle.verify compatibility
+ * Uses EC P-256 coordinate extraction and JWK import for crypto.subtle.verify compatibility
  */
 async function extractPublicKeyFromCertDER(
   certDER: Uint8Array
 ): Promise<CryptoKey | null> {
   try {
-    // Try extracting SPKI directly from certificate DER
+    // First try: direct EC P-256 coordinate extraction from DER
+    const coords = extractEC256CoordinatesFromCert(certDER);
+    if (coords) {
+      try {
+        // Convert coordinates to base64url for JWK
+        const xB64url = Buffer.from(coords.x).toString("base64").replace(/=/g, "").replace(/\+/g, "-").replace(/\//g, "_");
+        const yB64url = Buffer.from(coords.y).toString("base64").replace(/=/g, "").replace(/\+/g, "-").replace(/\//g, "_");
+
+        const jwk: JsonWebKey = {
+          kty: "EC",
+          crv: "P-256",
+          x: xB64url,
+          y: yB64url,
+        };
+
+        const key = await crypto.subtle.importKey(
+          "jwk",
+          jwk,
+          { name: "ECDSA", namedCurve: "P-256" },
+          false,
+          ["verify"]
+        );
+        console.log("[JWS] ✓ Imported EC P-256 public key from certificate coordinates");
+        return key;
+      } catch (err) {
+        console.error("[JWS] Failed to import EC coordinates as JWK:", err);
+      }
+    }
+
+    // Fallback: try extracting SPKI directly from certificate DER
     const spkiBytes = extractSPKIFromCertDER(certDER);
     if (spkiBytes) {
       try {
@@ -162,21 +265,8 @@ async function extractPublicKeyFromCertDER(
       }
     }
 
-    // Fallback: try Peculiar X509 library
-    const X509 = await getX509Library();
-    if (!X509) {
-      console.error("[JWS] @peculiar/x509 not available for key extraction");
-      return null;
-    }
-
-    const cert = new X509(certDER);
-    const certificatePublicKey = cert.publicKey;
-    if (!certificatePublicKey) {
-      console.error("[JWS] Certificate has no public key");
-      return null;
-    }
-
-    return certificatePublicKey as CryptoKey;
+    console.error("[JWS] Could not extract EC P-256 public key from certificate");
+    return null;
   } catch (e) {
     console.error("[JWS] Failed to extract public key:", e);
     return null;
@@ -481,16 +571,34 @@ export async function validateJWS(jws: string, testRootDER?: Uint8Array): Promis
     console.log(`[JWS] Signature bytes length: ${signatureBytes.length}`);
     console.log(`[JWS] Message bytes length: ${messageBytes.length}`);
     console.log(`[JWS] Header length: ${headerB64.length}, Payload length: ${payloadB64.length}`);
+    console.log(`[JWS] Public key extracted type: ${publicKey ? publicKey.constructor.name : 'null'}`);
+    console.log(`[JWS] Message (first 100 bytes): ${new TextDecoder().decode(messageBytes.slice(0, 100))}`);
+    console.log(`[JWS] Signature (hex): ${Array.from(signatureBytes).map(b => b.toString(16).padStart(2, '0')).join('')}`);
 
-    const isValid = await crypto.subtle.verify(
-      { name: "ECDSA", hash: "SHA-256" },
-      publicKey,
-      signatureBytes as BufferSource,
-      messageBytes as BufferSource
-    );
+    // Verify ES256 signature
+    let isValid = false;
+
+    try {
+      // Attempt crypto.subtle.verify with the extracted public key
+      isValid = await crypto.subtle.verify(
+        { name: "ECDSA", hash: "SHA-256" },
+        publicKey,
+        signatureBytes as BufferSource,
+        messageBytes as BufferSource
+      );
+
+      console.log(`[JWS] Signature verification result: ${isValid}`);
+      if (isValid) {
+        console.log("[JWS] ✅ Signature verified using crypto.subtle");
+      }
+    } catch (err) {
+      console.warn("[JWS] crypto.subtle.verify failed:", String(err));
+      return { valid: false, error: `ES256 signature verification failed: ${err}` };
+    }
 
     if (!isValid) {
       console.log("[JWS] ❌ ES256 signature verification FAILED");
+      console.log("[JWS] Possible causes: public key mismatch, signature format error, or tampered payload");
       return { valid: false, error: "ES256 signature verification failed" };
     }
 
