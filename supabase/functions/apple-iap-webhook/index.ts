@@ -103,40 +103,44 @@ Deno.serve(async (req) => {
       }
     }
 
-    // Verify JWT signature with Apple's public certificates
-    // Apple's cert endpoint: https://appleid.apple.com/auth/oauth2/keys
+    // Parse and validate JWS from Apple
+    // App Store Server Notifications V2 are JWS (JSON Web Signature) with x5c certificate chain
+    // Spec: https://developer.apple.com/documentation/appstoreserverapi/jwsrenewalinfo
 
     let notification = body.notification;
 
     if (!notification && signedPayload) {
-      // Decode and verify JWT signature
       try {
         const parts = signedPayload.split(".");
-        if (parts.length !== 3) throw new Error("Invalid JWT format");
+        if (parts.length !== 3) throw new Error("Invalid JWS format (must have 3 parts)");
 
-        // Parse header and payload (no verification yet)
+        // Parse header and payload
         const header = JSON.parse(atob(parts[0]));
         const payload = JSON.parse(atob(parts[1]));
-        const signature = parts[2];
-
-        // TODO (future): Implement full Apple certificate verification
-        // For now: basic validation that required fields exist
-        // Proper verification would:
-        // 1. Fetch Apple's public keys from https://appleid.apple.com/auth/oauth2/keys
-        // 2. Verify JWT signature using the key matching header.kid
-        // 3. Check iss, aud, and exp claims
 
         if (!payload || !header) {
-          throw new Error("Invalid JWT payload or header");
+          throw new Error("Invalid JWS payload or header");
         }
 
-        notification = payload;
+        // TODO: Verify JWS signature
+        // CRITICAL: This prevents unauthorized notifications. Required:
+        // 1. Extract x5c certificate chain from header
+        // 2. Validate chain against Apple Root CA G3 (already have cert above)
+        // 3. Verify ES256 signature using leaf certificate public key
+        // 4. Validate iss, aud, exp claims
+        // Also: parse signedTransactionInfo and signedRenewalInfo as nested JWS
+        // and verify their signatures before trusting transaction data.
 
-        // Log warning that signature verification is not yet implemented
-        console.warn("[webhook] Apple JWT signature verification not yet implemented - accepting payload as-is");
+        console.warn(
+          `[webhook] SECURITY: JWS signature verification not yet implemented. ` +
+          `Accepting notification ${payload.notificationUUID} without cert validation. ` +
+          `This is temporary for integration testing only.`
+        );
+
+        notification = payload;
       } catch (e) {
-        console.error("[webhook] JWT decode error:", e);
-        return new Response(JSON.stringify({ ok: false, error: "Invalid JWT" }), {
+        console.error("[webhook] JWS parse error:", e);
+        return new Response(JSON.stringify({ ok: false, error: "Invalid JWS" }), {
           status: 400,
           headers: { "Content-Type": "application/json" },
         });
@@ -153,10 +157,11 @@ Deno.serve(async (req) => {
     // Extract fields
     const notificationType = notification.notificationType || "";
     const originalTransactionId = notification.originalTransactionId || "";
+    const notificationUUID = notification.notificationUUID || "";
     const productId = notification.productId || "";
     const appAccountToken = notification.appAccountToken || "";
 
-    if (!originalTransactionId || !notificationType) {
+    if (!originalTransactionId || !notificationType || !notificationUUID) {
       return new Response(
         JSON.stringify({ ok: false, error: "Missing required fields" }),
         { status: 400, headers: { "Content-Type": "application/json" } }
@@ -176,22 +181,18 @@ Deno.serve(async (req) => {
 
     const client = createClient(url, serviceRoleKey);
 
-    // IDEMPOTENCY: Check if we've already processed this notification
-    // Use original_transaction_id + notification_type as key
+    // IDEMPOTENCY: Check if we've already processed this specific notification UUID
+    // Apple guarantees notificationUUID is unique per notification
     const { data: existingNotif } = await client
       .from("usuarios_suscripciones_iap")
-      .select("id, last_notification_type, notification_count")
+      .select("id, latest_notification_uuid")
       .eq("original_transaction_id", originalTransactionId)
       .single();
 
-    if (
-      existingNotif &&
-      existingNotif.last_notification_type === notificationType &&
-      existingNotif.notification_count > 0
-    ) {
+    if (existingNotif && existingNotif.latest_notification_uuid === notificationUUID) {
       // This is a duplicate; silently return OK (idempotent)
       console.log(
-        `[webhook] Duplicate notification: ${notificationType} for ${originalTransactionId}`
+        `[webhook] Duplicate notification: UUID ${notificationUUID} already processed`
       );
       return new Response(JSON.stringify({ ok: true, duplicate: true }), {
         status: 200,
@@ -245,6 +246,7 @@ Deno.serve(async (req) => {
         .update({
           state: newState,
           expires_at: expiresAt,
+          latest_notification_uuid: notificationUUID,
           last_notification_type: notificationType,
           last_notification_at: new Date().toISOString(),
           notification_count: (existingNotif?.notification_count || 0) + 1,

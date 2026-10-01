@@ -27,7 +27,8 @@ CREATE TABLE IF NOT EXISTS usuarios_suscripciones_iap (
   expires_at TIMESTAMPTZ NOT NULL,
   renewal_date TIMESTAMPTZ,
 
-  -- Apple notification tracking (idempotency)
+  -- Apple notification tracking (idempotency via notificationUUID)
+  latest_notification_uuid UUID,
   last_notification_type VARCHAR(100),
   last_notification_at TIMESTAMPTZ,
   notification_count INT DEFAULT 0,
