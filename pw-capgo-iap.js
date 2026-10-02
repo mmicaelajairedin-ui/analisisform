@@ -66,24 +66,26 @@ const PW_CAPGO_IAP = {
   /**
    * Initialize IAP: load products from App Store Connect
    * Called once on app startup
+   * Uses window.Capacitor.Plugins.NativePurchases (injected by Capacitor)
    */
   async init() {
     if (IAP_STATE.isInitialized) return;
-    
+
     try {
       IAP_STATE.isLoading = true;
       console.log('[PW_CAPGO_IAP] Initializing...');
-      
-      // Import @capgo/native-purchases dynamically
-      const { initCapacitorApp } = await import('@capgo/native-purchases');
-      await initCapacitorApp({ appId: 'com.pathwaycareercoach.twa' });
-      
+
+      // Capacitor injects NativePurchases plugin globally
+      if (!window.Capacitor || !window.Capacitor.Plugins || !window.Capacitor.Plugins.NativePurchases) {
+        throw new Error('NativePurchases plugin not available (not in Capacitor app)');
+      }
+
       console.log('[PW_CAPGO_IAP] ✅ Initialized');
       IAP_STATE.isInitialized = true;
-      
+
       // Auto-check entitlement on startup
       await this.checkCurrentEntitlement();
-      
+
     } catch (err) {
       IAP_STATE.lastError = err;
       console.error('[PW_CAPGO_IAP] Init error:', err);
@@ -98,12 +100,12 @@ const PW_CAPGO_IAP = {
    */
   async getProducts() {
     if (!IAP_STATE.isInitialized) await this.init();
-    
+
     try {
-      const { getProducts } = await import('@capgo/native-purchases');
+      const NativePurchases = window.Capacitor.Plugins.NativePurchases;
       const productIds = Object.values(CAPGO_CONFIG.products);
-      const products = await getProducts(productIds);
-      
+      const products = await NativePurchases.getProducts({ productIds });
+
       return products.map(p => ({
         id: p.id,
         title: p.title,
@@ -145,9 +147,10 @@ const PW_CAPGO_IAP = {
         throw new Error(validation.reason || 'Purchase not allowed (check Stripe status)');
       }
       
-      // Step 2: Show native purchase sheet (@capgo handles this)
-      const { purchaseProduct } = await import('@capgo/native-purchases');
-      const receipt = await purchaseProduct(productId, {
+      // Step 2: Show native purchase sheet (Capacitor handles this)
+      const NativePurchases = window.Capacitor.Plugins.NativePurchases;
+      const receipt = await NativePurchases.purchaseProduct({
+        productId: productId,
         appAccountToken: appAccountToken  // UUID, required for App Store
       });
       
