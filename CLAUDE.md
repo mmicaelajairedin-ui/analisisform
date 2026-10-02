@@ -44,6 +44,61 @@ Regresión — ✅ VERIFICADO EN NAVEGADOR
 
 ---
 
+---
+
+## 🧊 MULTICOACH — `multicoach.html` ES LEGACY (septiembre 2026)
+
+**Decisión de producto, tomada el 2026-09-14. Vale más que cualquier otra
+sección de este archivo sobre MultiCoach.**
+
+Hay DOS implementaciones de MultiCoach y no son dos ramas de lo mismo:
+
+| | A — legacy | B — definitiva |
+|---|---|---|
+| Dónde | `multicoach.html`, en este repo | repo `mmicaelajairedin-ui/multicoach` |
+| Se sirve en | `pathwaycareercoach.com/multicoach.html` | `pathwayplatforms.com` |
+| Cómo | HTML + JS inline, Cloudflare Pages | React + Vite + TS, Cloudflare Worker |
+
+**B es la implementación superviviente.** A se queda **en producción** porque
+hoy es lo que usa la coach, y se apagará cuando B alcance la paridad de la
+matriz. Hasta entonces:
+
+### Regla: A no recibe funcionalidad nueva
+
+- ❌ **NO** se añaden pantallas, secciones, pestañas ni capacidades nuevas a
+  `multicoach.html`. Lo nuevo se hace en B.
+- ✅ **SÍ** se arreglan fallos críticos de producción: algo que hoy está roto,
+  pierde datos, filtra datos de otra organización, o bloquea a la coach.
+- ✅ **SÍ** se toca A cuando el cambio es la propia retirada (redirects,
+  avisos, apagado) o un cambio de seguridad.
+
+**Cómo se declara un fix crítico.** El guardrail
+*"multicoach: A es legacy — no recibe funcionalidad nueva"* mide el tamaño del
+diff de `multicoach.html` contra `main`. Un cambio pequeño pasa solo. Uno
+grande exige que **el mensaje del commit** lleve una de estas marcas:
+
+```
+FIX-CRITICO-MULTICOACH: <qué estaba roto en producción>
+RETIRADA-MULTICOACH: <qué paso de la retirada es>
+```
+
+No es una puerta cerrada: es una firma. Escribir la marca es afirmar que esto
+es un arreglo y no una función nueva, y deja el motivo en el historial.
+
+### Desarrollo paralelo: congelado
+
+No se implementa la misma cosa dos veces. Si algo hace falta en MultiCoach,
+va a B. La matriz de paridad A → B (P0 / P1 / P2, orden de migración y
+criterios objetivos de retirada) es la hoja de ruta oficial.
+
+### Lo que NO cambia
+
+- `panel-v2.html`, `login.html`, el portal del cliente y las Edge Functions de
+  este repo **no son legacy**: son la plataforma, y B se apoya en ellas.
+  `login.html` sigue siendo el único enrutador por rol.
+- Las Edge Functions de `supabase/functions/` se siguen manteniendo y
+  desplegando con normalidad — B las consume.
+
 ## 🔐 CONFIGURACIÓN DE SUPABASE — URLs y Project Refs (CRÍTICO)
 
 **PROYECTO CORRECTO (PRODUCCIÓN):**
