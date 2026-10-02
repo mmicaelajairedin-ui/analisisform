@@ -15974,35 +15974,39 @@ var STRIPE_PORTAL="https://billing.stripe.com/p/login/fZu3cv9aE2py6b20f98AE00";
 function _purchasePlan(plan){
   if(_genBusy) return;
 
-  // iOS app: use native IAP via Capacitor
-  if(window.PW_IN_APP && window.PW_CAPGO_IAP){
+  // iOS app: Present native Coach Plans view (SwiftUI)
+  // CoachPlansView handles all StoreKit, purchase validation, and backend verification
+  if(window.PW_IN_APP && window.Capacitor && window.Capacitor.Plugins){
     _busyOn();
-    var productId = plan==='pro' ? 'coach.plan.pro.monthly' : 'coach.plan.basic.monthly';
-    var appAccountToken = localStorage.getItem('mj_app_account_token');
+    console.log('[_purchasePlan] Opening native Coach Plans view for:', plan);
 
-    if(!appAccountToken){
-      console.warn('[_purchasePlan] No appAccountToken available');
-      _busyOff();
-      try{ toast('Error: account token not found. Try refreshing the app.'); }catch(e){}
-      return;
+    // Emit Capacitor event to App.swift to present CoachPlansView
+    // Swift listener: NotificationCenter.default observer "showCoachPlans"
+    if(window.Capacitor.Plugins.App){
+      try {
+        window.Capacitor.Plugins.App.notifyListeners('showCoachPlans', { plan: plan });
+      } catch(e) {
+        console.warn('[_purchasePlan] Capacitor event failed:', e);
+      }
     }
 
-    console.log('[_purchasePlan] Initiating purchase:', productId, appAccountToken);
-    window.PW_CAPGO_IAP.purchaseProduct(productId, appAccountToken).then(function(result){
+    // Setup listener for purchase completion
+    var completionHandler = function(result){
       _busyOff();
-      if(result.success){
-        console.log('[_purchasePlan] Purchase successful:', result.subscription);
+      if(result && result.success){
+        console.log('[_purchasePlan] Purchase completed, refreshing...');
         try{ toast('✅ Plan upgraded! Refreshing...'); }catch(e){}
         setTimeout(function(){ location.reload(); }, 1500);
       } else {
-        console.error('[_purchasePlan] Purchase failed:', result.error);
-        try{ toast('Purchase failed: '+(result.error||'unknown error')); }catch(e){}
+        console.log('[_purchasePlan] View dismissed without purchase');
       }
-    }).catch(function(err){
-      _busyOff();
-      console.error('[_purchasePlan] Purchase error:', err);
-      try{ toast('Error: '+err.message); }catch(e){}
-    });
+    };
+
+    // Store handler for CoachPlansView to call after purchase
+    window._purchaseCompletionHandler = completionHandler;
+
+    // Auto-release busy after 5 minutes (failsafe)
+    setTimeout(function(){ _busyOff(); }, 300000);
     return;
   }
 
