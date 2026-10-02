@@ -592,7 +592,7 @@ var T={
     heroNutri:'Nutrición', subNutri:'Tu plan de comidas de la semana.',
     planSemana:'Plan de la semana', planSub:'Toca el ✎ de una comida si comiste algo distinto — tu coach lo ve.',
     planSubHtml:'Toca el <b>✎</b> de una comida si comiste algo distinto — tu coach lo ve.',
-    planVacio:'Tu coach todavía no cargó tu plan.', planVacioSpan:'Tu coach todavía no cargó tu plan.',
+    planVacio:'Tu coach todavía no cargó tu plan.', planVacioSpan:'Tu coach todavía no cargó tu plan.', planEnPautas:'Tu coach cargó las pautas de tu plan — las tienes justo abajo. Todavía no armó el día a día.',
     segHoy:'🍎 Seguimiento de hoy', segSub:'¿Comiste según tu plan hoy? Suma a tu calendario.',
     marcarCumplido:'Marcar como cumplido', cumplidoHoy:'✓ Cumplido hoy',
     listaSuper:'Lista del súper', listaSub:'Generada con IA de tu plan de la semana.',
@@ -745,7 +745,7 @@ var T={
     heroNutri:'Nutrition', subNutri:'Your meal plan for the week.',
     planSemana:"This week's plan", planSub:'Tap the ✎ on a meal if you ate something different — your coach sees it.',
     planSubHtml:'Tap the <b>✎</b> on a meal if you ate something different — your coach sees it.',
-    planVacio:"Your coach hasn't loaded your plan yet.", planVacioSpan:"Your coach hasn't loaded your plan yet.",
+    planVacio:"Your coach hasn't loaded your plan yet.", planVacioSpan:"Your coach hasn't loaded your plan yet.", planEnPautas:"Your coach loaded your plan guidelines — they're right below. The day-by-day isn't set up yet.",
     segHoy:"🍎 Today's tracking", segSub:'Did you eat according to your plan today? It adds to your calendar.',
     marcarCumplido:'Mark as done', cumplidoHoy:'✓ Done today',
     listaSuper:'Grocery list', listaSub:'AI-generated from your weekly plan.',
@@ -1036,22 +1036,26 @@ function toggleEx(el){
   // Persistir el ejercicio marcado (por fecha) → sobrevive la recarga y el coach lo ve.
   try{ var _k=el.getAttribute('data-exk'); if(_k){ if(el.classList.contains('done')) EXDONE[_k]=1; else delete EXDONE[_k]; _exSave(); } }catch(e){}
   var day=el.closest('.day'); if(!day) return; // sin contenedor .day no contamos
-  var t=day.querySelectorAll('.ex').length,d=day.querySelectorAll('.ex.done').length;
-  var pr=day.querySelector('.d-prog'); if(pr) pr.textContent=d+'/'+t;
+  // OJO: esta variable NO puede llamarse `t`: mas abajo se llama a t('...'),
+  // que es la funcion de traduccion global. Llamarla `t` la pisa dentro de
+  // toda la funcion y revienta al completar el dia (TypeError: t is not a
+  // function). Paso en produccion los dias 14 y 15 de septiembre de 2026.
+  var _tot=day.querySelectorAll('.ex').length,d=day.querySelectorAll('.ex.done').length;
+  var pr=day.querySelector('.d-prog'); if(pr) pr.textContent=d+'/'+_tot;
   // Micro-feedback al marcar cada ejercicio (se siente que "prende").
   if(el.classList.contains('done')){ try{ if(window.PWJ&&PWJ.sound) PWJ.sound('point'); }catch(e){} }
-  if(t>0 && d===t && !day.classList.contains('celebrated')){
+  if(_tot>0 && d===_tot && !day.classList.contains('celebrated')){
     day.classList.add('celebrated');
     // Día completo → marcar el día de GYM en fit_habitos (el coach lo ve en el
     // calendario 💪) y celebrar.
-    try{ var _td=_exToday(); if(_td && typeof WDATA==='object' && WDATA){ (WDATA[_td]=WDATA[_td]||{}).gym=true; if(typeof colorDay==='function') colorDay(_td); if(typeof renderFitCal==='function') renderFitCal(); if(CID) sbPatch('candidatos','id=eq.'+encodeURIComponent(CID),{fit_habitos:JSON.stringify(WDATA)}).catch(function(){}); } }catch(e){}
+    try{ var _td=_exToday(); if(_td && typeof WDATA==='object' && WDATA){ (WDATA[_td]=WDATA[_td]||{}).gym=true; if(typeof colorDay==='function') colorDay(_td); if(typeof renderFitCal==='function') renderFitCal(); if(CID) sbPatch('candidatos','id=eq.'+encodeURIComponent(CID),{fit_habitos:JSON.stringify(WDATA)}).then(_habGuardado).catch(_habGuardado); } }catch(e){}
     try{
       if(window.PWJ&&PWJ.celebrate){ PWJ.celebrate({kind:'logro',title:t('diaEntrenoTitle'),sub:t('diaEntrenoSub'),btn:t('seguir')}); }
       else { fireConfetti(); }
     }catch(e){ try{ fireConfetti(); }catch(_e){} }
     showToast(t('diaCompletoToast'));
   }
-  else if(d<t){ day.classList.remove('celebrated'); }
+  else if(d<_tot){ day.classList.remove('celebrated'); }
 }
 var EX={'Press de banca':['Acostate en el banco con los pies firmes.','Agarrá la barra un poco más ancho que los hombros.','Baja controlando hasta rozar el pecho.','Empujá sin bloquear de golpe los codos.'],'Remo con barra':['Incliná el torso con la espalda recta.','Deja colgar la barra con los brazos estirados.','Tirá hacia el ombligo apretando la espalda.','Baja despacio.'],'Press militar':['Barra a la altura de los hombros.','Empujá hasta estirar los brazos.','Baja controlando.'],'Fondos en paralelas':['Sostené tu peso con los brazos estirados.','Baja flexionando los codos.','Empujá hasta volver al inicio.'],'Curl de bíceps':['Mancuernas a los costados.','Sube flexionando el codo.','Baja despacio.'],'Sentadilla':['Pies al ancho de los hombros.','Baja llevando la cola atrás.','Muslos paralelos al piso.','Sube con los talones.'],'Peso muerto rumano':['Barra adelante de los muslos.','Baja pegada a las piernas flexionando la cadera.','Vuelve arriba.'],'Zancadas':['Paso largo adelante.','Baja hasta 90° ambas rodillas.','Cambiá de pierna.']};
 // ── Banco de ejercicios (free-exercise-db) — foto + pasos automáticos por
@@ -1135,6 +1139,32 @@ function renderPeso(data){
 <script src="pathway-juego.js?v=1"></script>
 <script src="pw-cabra-juego.js?v=1"></script>
 <script>
+// Un contenedor lleno de nada no es un dato: "[]", "{}" y el esqueleto de
+// nutricion {"dias":{"lun":"",...},"pautas":""} son cadenas NO vacias. Misma
+// regla que `_listaConContenido` del panel del coach — a proposito: si el
+// productor y el consumidor miden "cargado" distinto, el coach ve una cosa y el
+// cliente otra, y nadie puede verlo sin que llame el cliente (INC-082).
+function _conContenido(v){
+  if(!v) return false;
+  var s=(''+v).trim(); if(!s || s==='[]' || s==='{}' || s==='null') return false;
+  var c0=s.charAt(0);
+  if(c0!=='[' && c0!=='{') return true;
+  try{
+    var o=JSON.parse(s);
+    if(o==null) return false;
+    if(Object.prototype.toString.call(o)==='[object Array]'){
+      for(var i=0;i<o.length;i++){ var it=o[i];
+        if(it && typeof it==='object') return true;
+        if((''+(it==null?'':it)).trim()!=='') return true; }
+      return false;
+    }
+    for(var k in o){ if(o.hasOwnProperty(k)){
+      var vv=o[k];
+      if(vv && typeof vv==='object'){ if(_conContenido(JSON.stringify(vv))) return true; continue; }
+      if((''+(vv==null?'':vv)).trim()!=='') return true; } }
+    return false;
+  }catch(e){ return true; }
+}
 window.PW_IA_CFG={
   mode:"cliente",
   // Accesos directos por nicho (fitness): lleva directo a la sección + paso a paso.
@@ -1159,9 +1189,12 @@ window.PW_IA_CFG={
       if(c.dias) p.push("Días de entrenamiento/semana: "+c.dias);
       if(c.lesiones) p.push("Lesiones/cuidados: "+c.lesiones);
       if(c.semana_activa) p.push("Semana del programa: "+c.semana_activa+"/4");
-      p.push("Rutina: "+(c.fit_rutina?"cargada":"pendiente")+
-             ", Antropometría: "+(c.fit_antro?"cargada":"pendiente")+
-             ", Nutrición: "+((c.fit_nutricion||c.nutricion)?"cargada":"pendiente"));
+      // Contenido, NO presencia: "[]", "{}" y el esqueleto vacio de nutricion son
+      // cadenas NO vacias, asi que con `!!` el asistente le decia al cliente que su
+      // plan estaba "cargado" cuando no habia nada dentro (INC-082).
+      p.push("Rutina: "+(_conContenido(c.fit_rutina)?"cargada":"pendiente")+
+             ", Antropometría: "+(_conContenido(c.fit_antro)?"cargada":"pendiente")+
+             ", Nutrición: "+((_conContenido(c.fit_nutricion)||_conContenido(c.nutricion))?"cargada":"pendiente"));
       return { perfil:p.join("\n") };
     }catch(e){ return {}; }
   }
@@ -1205,6 +1238,16 @@ function _authExpired(){
 }
 function sbGet(t,q){ return fetch(SB+'/rest/v1/'+t+'?'+q,{headers:_hdr()}).then(function(r){ if(r.status===401||r.status===403){_authExpired();return [];} return r.json();}); }
 function sbPatch(t,q,d){ return fetch(SB+'/rest/v1/'+t+'?'+q,{method:'PATCH',headers:_hdr({'Content-Type':'application/json','Prefer':'return=representation'}),body:JSON.stringify(d)}).then(function(r){ if(r.status===401||r.status===403){_authExpired();return {ok:false,status:r.status,rows:0};} if(!r.ok)return {ok:false,status:r.status,rows:0}; return r.json().then(function(a){var n=(a&&a.length)||0;return {ok:n>=1,status:r.status,rows:n,json:function(){return Promise.resolve(a);}};},function(){return {ok:true,status:r.status,rows:1};}); }); }
+// Una escritura no confirmada no es una escritura. sbPatch pide
+// `return=representation` y pone ok=false cuando la RLS no casa ninguna fila —
+// un PATCH denegado devuelve 200 con lista vacia, no un error. Dos de los tres
+// guardados de fit_habitos miraban SOLO el error de red (uno con el catch
+// vacio), asi que el habito quedaba pintado en la pantalla del cliente y no
+// llegaba nunca al calendario del coach, sin un aviso. Todos pasan por aqui.
+function _habGuardado(r){
+  if(r && r.ok) return;
+  try{ if(typeof showToast==='function') showToast(t('noGuardoHabito')); }catch(e){}
+}
 function pwHoy(){ return new Date().toISOString().slice(0,10); }
 function esc(s){ return (''+(s==null?'':s)).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
 var COACH_CALENDLY='', COACH_ID='';
@@ -1529,7 +1572,14 @@ function _renderWeekPlan(){
         realBlock+
       '</div>';
   }).filter(Boolean).join('');
-  box.innerHTML=html||'<span style="color:var(--muted)">'+t('planVacioSpan')+'</span>';
+  if(html){ box.innerHTML=html; return; }
+  // Ningun dia con texto pero CON pautas: el plan existe, el coach lo escribio
+  // entero en "Pautas generales". Decir "tu coach todavia no cargo tu plan" con
+  // las pautas justo debajo es la pantalla contradiciendose sola (R-109: un
+  // contenedor lleno de nada no es un dato, y su reverso: un dato en OTRO campo
+  // no es la ausencia del dato).
+  var _hayPautas=((NUT&&NUT.pautas!=null)?(''+NUT.pautas):'').trim()!=='';
+  box.innerHTML='<span style="color:var(--muted)">'+t(_hayPautas?'planEnPautas':'planVacioSpan')+'</span>';
 }
 // Editor inline "lo que comiste distinto ese día" (un solo campo por día).
 function nutAdj(btn){
@@ -1635,7 +1685,7 @@ function toggleNutriHoy(){
   try{ if(typeof colorDay==='function') colorDay(hoy); }catch(e){}
   try{ if(typeof renderFitCal==='function') renderFitCal(); }catch(e){}
   if(!was){ try{ fireConfetti(); }catch(e){} showToast(t('toastNutriCumplida')); }
-  if(typeof CID!=='undefined'&&CID){ try{ sbPatch('candidatos','id=eq.'+encodeURIComponent(CID),{fit_habitos:JSON.stringify(WDATA)}).catch(function(){ if(typeof showToast==='function') showToast(t('saveErrConn')); }); }catch(e){} }
+  if(typeof CID!=='undefined'&&CID){ try{ sbPatch('candidatos','id=eq.'+encodeURIComponent(CID),{fit_habitos:JSON.stringify(WDATA)}).then(_habGuardado).catch(_habGuardado); }catch(e){} }
 }
 function _exOpenAttr(){ return 'onclick="event.stopPropagation();openEx(this.closest(\'.ex\').querySelector(\'.ex-name\').textContent)"'; }
 function _exPlaceholderHtml(){
@@ -2823,7 +2873,7 @@ async function toggleHabit(el){
   colorDay(SELDAY);
   renderFitCal();
   if(!CID) return;
-  try{ var _r=await sbPatch('candidatos','id=eq.'+encodeURIComponent(CID),{fit_habitos:JSON.stringify(WDATA)}); if(_r&&_r.ok===false) throw 0; }catch(e){ if(typeof showToast==='function') showToast('⚠️ No se pudo guardar el hábito. Revisa tu conexión.'); }
+  try{ var _r=await sbPatch('candidatos','id=eq.'+encodeURIComponent(CID),{fit_habitos:JSON.stringify(WDATA)}); if(_r&&_r.ok===false) throw 0; }catch(e){ _habGuardado(null); }
 }
 pwInit();
 window.addEventListener('load',function(){ [900,2600].forEach(function(t){ setTimeout(function(){ try{ renderNotifs(); }catch(e){} },t); }); });

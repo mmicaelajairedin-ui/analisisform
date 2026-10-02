@@ -5585,6 +5585,48 @@ function _avanceHtml(c, embed){
 // Próximo paso del coach CON este cliente (guía que se mueve sola). Devuelve la
 // pestaña destino + la etiqueta, o null cuando ya está encaminado. Aditiva: solo
 // resalta el paso natural, no oculta nada. Señales reales: reportState / cvState.
+// Un plan de nutricion CUENTA solo si tiene algo dentro. El esqueleto vacio
+// ({"dias":{"lun":"",...},"pautas":""}) es una cadena NO vacia, asi que con
+// !!c.raw.fit_nutricion daba "cargado" y la guia dejaba de pedirle al coach que
+// armara el plan — mientras el cliente veia su portal sin nada.
+// Un contenedor lleno de nada no es un dato. `"[]"` y `"{}"` son cadenas NO
+// vacias, asi que `!!c.raw.fit_antro` las daba por "cargada" y la guia dejaba de
+// pedirle al coach la primera medicion — con CERO mediciones dentro. Es el mismo
+// defecto que el plan de nutricion vacio (INC-082), en otros dos campos: borrar
+// el ultimo ejercicio deja fit_rutina en "[]" y borrar la ultima medicion deja
+// fit_antro en "[]". El portal del cliente SIEMPRE mira contenido (`.length>0`,
+// `length>2`), asi que sin esto el panel y el portal opinan distinto del mismo
+// cliente — que es justo lo que hace que suene el telefono.
+function _listaConContenido(v){
+  if(!v) return false;
+  var s=(""+v).trim(); if(!s || s==="[]" || s==="{}" || s==="null") return false;
+  var c0=s.charAt(0);
+  if(c0!=="[" && c0!=="{") return true;
+  try{
+    var o=JSON.parse(s);
+    if(o==null) return false;
+    if(Object.prototype.toString.call(o)==="[object Array]"){
+      for(var i=0;i<o.length;i++){ var it=o[i];
+        if(it && typeof it==="object") return true;
+        if((""+(it==null?"":it)).trim()!=="") return true; }
+      return false;
+    }
+    for(var k in o){ if(o.hasOwnProperty(k)){
+      var vv=o[k];
+      if(vv && typeof vv==="object"){ if(_listaConContenido(JSON.stringify(vv))) return true; continue; }
+      if((""+(vv==null?"":vv)).trim()!=="") return true; } }
+    return false;
+  }catch(e){ return true; }
+}
+function _nutConContenido(v){
+  if(!v) return false;
+  var s=(""+v).trim(); if(!s) return false;
+  if(s.charAt(0)!=="{") return true;
+  try{ var o=JSON.parse(s)||{}, d=o.dias||{};
+    for(var k in d){ if(d.hasOwnProperty(k) && (""+(d[k]||"")).trim()!=="") return true; }
+    return (""+(o.pautas||"")).trim()!=="";
+  }catch(e){ return true; }
+}
 function _cliNextStep(c, tipo){
   if(!c) return null;
   var pub=function(v){ return v==="published"; };
@@ -5593,9 +5635,9 @@ function _cliNextStep(c, tipo){
   if(!pub(c.reportState)) return { tab:"plan", label:(tipo==='carrera'?"Genera el diagnóstico en Análisis":"Genera el análisis del cliente") };
   // Del paso 2 en adelante, la guía sigue el mismo dominó de _CLI_CASCADE por nicho.
   if(tipo==='fitness'){
-    if(!has('fit_rutina')) return { tab:"fit_rutina", label:"Arma la rutina en Gym" };
-    if(!has('fit_antro'))  return { tab:"fit_antro",  label:"Carga la primera medición en Antropometría" };
-    if(!has('fit_nutricion') && !has('fit_nutri_log')) return { tab:"fit_nutri", label:"Arma el plan de nutrición" };
+    if(!_listaConContenido(c.raw&&c.raw.fit_rutina)) return { tab:"fit_rutina", label:"Arma la rutina en Gym" };
+    if(!_listaConContenido(c.raw&&c.raw.fit_antro))  return { tab:"fit_antro",  label:"Carga la primera medición en Antropometría" };
+    if(!_nutConContenido(c.raw&&c.raw.fit_nutricion) && !has('fit_nutri_log')) return { tab:"fit_nutri", label:"Arma el plan de nutrición" };
     return null;
   }
   if(tipo==='life'){
@@ -5620,9 +5662,14 @@ var _CLI_CASCADE = {
     { tab:"avance", data:function(c){ return !!(c.raw&&c.raw.etapas); } },
   ]},
   fitness: { base:{perfil:1,plan:1,sesiones:1}, chain:[
-    { tab:"fit_rutina", data:function(c){ return !!(c.raw&&c.raw.fit_rutina); } },
-    { tab:"fit_antro",  data:function(c){ return !!(c.raw&&c.raw.fit_antro); } },
-    { tab:"fit_nutri",  data:function(c){ return !!(c.raw&&(c.raw.fit_nutricion||c.raw.fit_nutri_log)); } },
+    { tab:"fit_rutina", data:function(c){ return _listaConContenido(c.raw&&c.raw.fit_rutina); } },
+    { tab:"fit_antro",  data:function(c){ return _listaConContenido(c.raw&&c.raw.fit_antro); } },
+    // PARALELO a Antropometria, no despues. Un plan de comidas no necesita
+    // mediciones: colgarlo de ellas dejaba al coach SIN la pestana de Nutricion
+    // para un cliente sin antropometria, mientras el cliente SI veia la seccion
+    // en su portal (vacia). El coach no tenia donde cargar lo que su cliente
+    // estaba mirando.
+    { tab:"fit_nutri",  paralelo:true, data:function(c){ return !!(c.raw&&(_nutConContenido(c.raw.fit_nutricion)||c.raw.fit_nutri_log)); } },
   ]},
   life: { base:{perfil:1,plan:1,sesiones:1}, chain:[
     { tab:"proceso", data:function(c){ return !!(c.raw&&(c.raw.proc_objetivos||c.raw.proc_seguimiento)); } },
@@ -5638,10 +5685,14 @@ function _cliVisibleTabs(c, tipo, allTabs){
   // cuando el anterior YA tiene datos. Candado: un eslabón con datos se muestra
   // siempre (aunque el hito no esté), así nunca se oculta algo con contenido.
   var open = (c.reportState==="published");
+  var puertaPrevia = open;
   cfg.chain.forEach(function(step){
+    // `paralelo`: este eslabon se abre CON el anterior, no DESPUES de el — usa
+    // su misma puerta y no consume su turno en el domino.
+    var puerta = step.paralelo ? puertaPrevia : open;
     var has=true; try{ has=!!step.data(c); }catch(e){ has=true; }  // ante error → mostrar (safe)
-    if(open || has) shown[step.tab]=true;
-    open = (open && has);                                          // el siguiente necesita ESTE con datos
+    if(puerta || has) shown[step.tab]=true;
+    if(!step.paralelo){ puertaPrevia = puerta; open = (puerta && has); } // el siguiente necesita ESTE con datos
   });
   return allTabs.filter(function(x){ return shown[x[0]]; });
 }
@@ -5707,8 +5758,14 @@ function viewClienteDetalle(c){
   // pestaña Gestión que repita todos los toggles juntos.
   var _cliVisMap={}; try{ _cliVisMap=JSON.parse((c.raw&&c.raw.visibilidad)||"{}")||{}; }catch(e){}
   var _cliVisOn=function(k){ return _cliVisMap[k]!==false; };
+  // El enlace de preview (?coach_view=) existia y vivia lejos, en Acciones
+  // rapidas. Va aqui porque es AQUI donde el coach decide que ve el cliente:
+  // enciende la seccion y la comprueba con sus ojos, sin esperar a que el
+  // cliente llame. Afirmar "el cliente la ve" y no dar como mirarlo es lo que
+  // hizo que este fallo durara meses (R-108).
   var _visBar=function(k,lbl){ var on=_cliVisOn(k); return "<div class='cp-card cp-card-pad' style='display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:14px'>"+
-    "<div style='font-size:12.5px;color:var(--pw-text-soft)'>"+esc(lbl)+" en el portal del cliente</div>"+
+    "<div style='font-size:12.5px;color:var(--pw-text-soft)'>"+esc(lbl)+" en el portal del cliente"+
+      (c.email?" · <a href='"+esc(portalUrl)+"' target='_blank' rel='noopener' style='color:var(--pw-brand,#2D6A4F);font-weight:600;text-decoration:underline'>ver su portal</a>":"")+"</div>"+
     "<span style='display:inline-flex;align-items:center;gap:8px;font-size:11px;font-weight:600;color:var(--pw-text-soft)'>"+(on?"El cliente la ve":"Oculta")+"<button class='cp-switch "+(on?"is-on":"")+"' data-act='clivis:"+k+"' data-id='"+esc(c.id)+"'><span></span></button></span>"+
   "</div>"; };
   var body;
@@ -5723,7 +5780,7 @@ function viewClienteDetalle(c){
       // perdían óseo, residual y pliegues. La acción "Borrar" va en el menú ⋮.
       var _mCol=function(lab,val,unit){ if(val==null||(""+val).trim()===""||(""+val)==="?") return ""; return "<div style='min-width:56px'><div style='font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.4px;color:var(--pw-text-soft)'>"+lab+"</div><div style='font-size:13.5px;font-weight:700;color:var(--pw-carbon);margin-top:1px;white-space:nowrap'>"+esc(""+val)+(unit?"<span style='font-size:10.5px;font-weight:500;color:var(--pw-text-soft)'> "+unit+"</span>":"")+"</div></div>"; };
       histA="<div class='cp-card cp-card-pad' style='margin-top:14px'><h3 class='cp-card-title'>Historial<span class='dot'>.</span></h3>"+
-        "<div class='cp-form-hint' style='margin:4px 0 12px'>El cliente ve esta evolución en su portal. Toca <strong>⋮</strong> para borrar una medición si te equivocaste.</div>"+
+        "<div class='cp-form-hint' style='margin:4px 0 12px'>"+(_cliVisOn('antropometria')?"El cliente ve esta evolución en su portal.":"⚠ OCULTA — el cliente NO ve esta evolución.")+" Toca <strong>⋮</strong> para borrar una medición si te equivocaste.</div>"+
         ANTRO.map(function(m,ix){
           var _mu=m.u||"kg";
           var cols=_mCol("Peso",m.peso,_mu)+_mCol("Grasa",m.grasa,_mu)+_mCol("Músculo",m.musculo,_mu)+_mCol("Óseo",m.oseo,_mu)+_mCol("Residual",m.residual,_mu)+_mCol("Σ Pliegues",m.pliegues,"mm")+_mCol("IMO",m.imo,"");
@@ -5741,7 +5798,7 @@ function viewClienteDetalle(c){
     }
     var _u=(state.fitUnit)||((ANTRO.length&&ANTRO[ANTRO.length-1].u)||"kg");
     body=_visBar('antropometria','Antropometría')+"<div class='cp-card cp-card-pad'><h3 class='cp-card-title'>Cargar medición<span class='dot'>.</span></h3>"+
-      "<div class='cp-form-hint' style='margin:4px 0 14px'>Lo que cargas aquí el cliente lo ve en su portal, en solo-lectura. Ideal una medición por mes.</div>"+
+      "<div class='cp-form-hint' style='margin:4px 0 14px'>"+(_cliVisOn('antropometria')?"Lo que cargas aquí el cliente lo ve en su portal, en solo-lectura.":"⚠ Antropometría está OCULTA: lo que cargues aquí NO lo ve el cliente hasta que prendas el interruptor de arriba.")+" Ideal una medición por mes.</div>"+
       "<div class='cp-form-row'><label class='cp-form-label'>Fecha</label><input id='fa-fecha' type='date' class='cp-form-input' value='"+_hoyA+"'></div>"+
       "<div class='cp-form-row' style='margin-top:12px'><label class='cp-form-label'>Unidad de peso</label><div class='cp-filters'><button class='cp-chip "+(_u==='kg'?'is-on':'')+"' data-act='fit-unit:kg'>kg</button><button class='cp-chip "+(_u==='lb'?'is-on':'')+"' data-act='fit-unit:lb'>lb (libras)</button></div></div>"+
       "<div class='cp-form-row-2' style='margin-top:12px'><div class='cp-form-row'><label class='cp-form-label'>Peso ("+_u+")</label><input id='fa-peso' class='cp-form-input' placeholder='"+(_u==='lb'?'172':'78')+"'></div><div class='cp-form-row'><label class='cp-form-label'>Masa grasa ("+_u+")</label><input id='fa-grasa' class='cp-form-input' placeholder='"+(_u==='lb'?'32':'14.5')+"'></div></div>"+
@@ -6183,7 +6240,7 @@ function viewClienteDetalle(c){
           "<span style='width:46px;height:46px;border-radius:50%;background:var(--pw-niebla-2);display:inline-flex;align-items:center;justify-content:center;color:var(--pw-bosque)'>"+svg("<rect x='3' y='11' width='18' height='11' rx='2'/><path d='M7 11V7a5 5 0 0 1 10 0v4'/>",20)+"</span>"+
           "<div style='font-family:var(--pw-serif);font-size:19px;font-weight:500;color:var(--pw-carbon);letter-spacing:-.4px'>Mensajería es una función Pro</div>"+
           "<p style='font-size:13px;color:var(--pw-text-soft);max-width:420px;line-height:1.55'>El envío de emails y plantillas al cliente desde el panel está disponible en el plan Pro (USD $59/mes). En Basic gestionas el contacto por fuera.</p>"+
-          "<button class='cp-btn cp-btn-primary' style='margin-top:6px' data-act='open' data-url='"+esc(UPGRADE_URL)+"'>Ver planes →</button></div></div>"
+          "<button class='cp-btn cp-btn-primary' style='margin-top:6px' onclick='_purchasePlan(\"pro\")'>Ver planes →</button></div></div>"
       : "<div class='cp-card'><div class='cp-card-hd'><h3 class='cp-card-title'>Mensajes<span class='dot'>.</span></h3>"+
       "<span class='cp-eyebrow'>Plantillas para "+esc(fn)+"</span></div><div class='cp-card-pad' style='display:flex;flex-direction:column;gap:12px'>"+mc+"</div></div>";
     var _thread=(c.chat&&c.chat.length?c.chat:[]).map(function(m){
@@ -6221,7 +6278,7 @@ function viewClienteDetalle(c){
     var _nd=_nut.dias||{};
     var _NDAYS=[["lun","Lunes"],["mar","Martes"],["mie","Miércoles"],["jue","Jueves"],["vie","Viernes"],["sab","Sábado"],["dom","Domingo"]];
     var _dayRows=_NDAYS.map(function(d){ return "<div class='cp-form-row'><label class='cp-form-label'>"+d[1]+"</label><textarea id='cf-nut-"+d[0]+"' class='cp-form-textarea' style='min-height:52px' placeholder='Desayuno… · Almuerzo… · Merienda… · Cena…'>"+esc(_nd[d[0]]||"")+"</textarea></div>"; }).join("");
-    body=_visBar('nutricion','Nutrición')+"<div class='cp-card'><div class='cp-card-hd'><h3 class='cp-card-title'>Nutrición · día a día<span class='dot'>.</span></h3><span class='cp-eyebrow'>Lo ve el cliente en su portal</span></div><div class='cp-card-pad' style='display:flex;flex-direction:column;gap:10px'>"+
+    body=_visBar('nutricion','Nutrición')+"<div class='cp-card'><div class='cp-card-hd'><h3 class='cp-card-title'>Nutrición · día a día<span class='dot'>.</span></h3><span class='cp-eyebrow'>"+(_cliVisOn('nutricion')?"Lo ve el cliente en su portal":"⚠ OCULTA — el cliente NO la ve")+"</span></div><div class='cp-card-pad' style='display:flex;flex-direction:column;gap:10px'>"+
       "<div class='cp-form-hint' style='margin:0'>Carga las comidas de cada día (no hace falta llenar todos). El cliente las ve día por día y puede anotar lo que comió de verdad.</div>"+
       _dayRows+
       "<div class='cp-form-row'><label class='cp-form-label'>Pautas generales</label><textarea id='cf-nut-pautas' class='cp-form-textarea' style='min-height:70px' placeholder='Macros/calorías, agua, qué evitar, horarios…'>"+esc(_nut.pautas||"")+"</textarea></div>"+
@@ -7535,7 +7592,7 @@ function cfgBrand(){
           svg("<rect x='3' y='11' width='18' height='11' rx='2'/><path d='M7 11V7a5 5 0 0 1 10 0v4'/>",20)+"</span>"+
         "<div style='font-family:var(--pw-serif);font-size:19px;font-weight:500;color:var(--pw-carbon);letter-spacing:-.4px'>Una función del plan Pro</div>"+
         "<p style='font-size:13px;color:var(--pw-text-soft);max-width:420px;line-height:1.55'>Personaliza el color de acento y el logo del portal de tus clientes y de tu página pública. Se activa al mejorar al plan Pro.</p>"+
-        "<button class='cp-btn cp-btn-primary' style='margin-top:6px' data-act='open' data-url='"+esc(UPGRADE_URL)+"'>Mejorar a Pro · USD $59/mes</button></div></div>";
+        "<button class='cp-btn cp-btn-primary' style='margin-top:6px' onclick='_purchasePlan(\"pro\")'>Mejorar a Pro · USD $59/mes</button></div></div>";
   }
   // Paleta de PRIMARIOS variada para que cada coach se diferencie (antes eran
   // 3 verdes casi iguales). Un verde + espectro: teal, azul, índigo, violeta,
@@ -7778,7 +7835,7 @@ function cfgPlan(){
       "<div class='cp-plan-meta'>Próximo cobro <strong style='color:rgba(255,255,255,.92)'>el 1 jun 2026</strong> · "+planLimit+"</div></div>"+
       "<div class='cp-plan-actions'>"+
         (isPro ? "<button class='cp-plan-btn-up' data-act='open' data-url='"+esc(supportMail("Cambiar de plan — Pathway"))+"'>Cambiar de plan</button>"
-               : "<button class='cp-plan-btn-up' data-act='open' data-url='"+esc(stripeUrl("pro"))+"'>Mejorar a Pro · USD $59/mes</button>")+
+               : "<button class='cp-plan-btn-up' onclick='_purchasePlan(\"pro\")'>Mejorar a Pro · USD $59/mes</button>")+
       "<button class='cp-plan-btn-mng' data-act='open' data-url='"+esc(supportMail("Cancelar suscripción — Pathway"))+"'>Cancelar suscripción</button></div></div>"+
     trialCard+
     "<div class='cp-card'><div class='cp-card-hd'><h3 class='cp-card-title'>Método de pago<span class='dot'>.</span></h3>"+
@@ -13504,12 +13561,42 @@ document.addEventListener("click", function(ev){
   if(act==="fit-nutri-save"){
     var fnid=el.getAttribute("data-id"); if(!fnid) return;
     var _NDK=["lun","mar","mie","jue","vie","sab","dom"], _ndias={}; _NDK.forEach(function(k){ _ndias[k]=_val("cf-nut-"+k).trim(); });
-    var fnv=JSON.stringify({dias:_ndias, pautas:_val("cf-nut-pautas").trim()});
+    var _npautas=_val("cf-nut-pautas").trim();
+    var fnv=JSON.stringify({dias:_ndias, pautas:_npautas});
+    // GUARDA: un plan con los 7 dias vacios se guardaba igual, y la cadena
+    // resultante ({"dias":{...""},"pautas":""}) es NO vacia, asi que el panel
+    // lo contaba como "nutricion cargada" mientras el cliente leia "Tu coach
+    // todavia no cargo tu plan". Guardar nada tiene que ser una decision, no
+    // un accidente. (Caso real: 1 de los 5 planes de produccion era esto.)
+    var _nHayAlgo=_NDK.some(function(k){ return _ndias[k]!==""; })||_npautas!=="";
+    if(!_nHayAlgo && !confirm("El plan esta vacio: no hay ningun dia cargado.\n\n"+
+        "Si guardas asi, tu cliente va a ver \u00abtu coach todavia no cargo tu plan\u00bb.\n\n"+
+        "\u00bfBorrar el plan que ve el cliente?")) return;
     var fnc=CLIENTS.filter(function(x){return String(x.id)===String(fnid);})[0];
     if(fnc && fnc._example){ if(fnc.raw) fnc.raw.fit_nutricion=fnv; toast("Nutrición guardada en el demo ✓ (no se guarda — es el cliente de ejemplo)"); render(); return; }
     _sbw("candidatos?id=eq."+encodeURIComponent(fnid),"PATCH",{fit_nutricion:fnv})
-      .then(function(r){ if(!r.ok) throw 0; CLIENTS.forEach(function(x){ if(String(x.id)===String(fnid)&&x.raw) x.raw.fit_nutricion=fnv; }); toast("Nutrición guardada ✓ — el cliente la ve"); })
-      .catch(function(){ alert("No se pudo guardar. Falta la columna fit_nutricion en candidatos (migración nicho_extra_fields.sql)."); });
+      .then(function(r){
+        if(r && r.ok){ CLIENTS.forEach(function(x){ if(String(x.id)===String(fnid)&&x.raw) x.raw.fit_nutricion=fnv; });
+          // No basta con que se guarde: si la seccion esta oculta el cliente no la
+          // ve, y prometerselo al coach es lo que hizo que este fallo durara.
+          if(!_nHayAlgo){ toast("Plan de nutrición borrado"); return; }
+          // El toast va DESPUES de _ofrecerVer a proposito: esa funcion hace
+          // render() por dentro, y un toast emitido antes se lo llevaría.
+          var _nVis=_ofrecerVer(fnid,"nutricion","Nutrición");
+          toast(_nVis ? "Nutrición guardada ✓ — y ya se la mostramos al cliente"
+            : (_visOculta(rawOf(fnid),"nutricion")
+                ? "Guardada ✓ — pero Nutrición sigue OCULTA: el cliente NO la ve"
+                : "Nutrición guardada ✓ — el cliente la ve"));
+          return; }
+        // 2xx con CERO filas = el PATCH no casó ninguna fila (la sesión no
+        // resolvió, o este cliente no está a tu nombre). NO es una columna que
+        // falte: fit_nutricion existe en candidatos. El mensaje viejo mandaba a
+        // buscar una migración que no era el problema.
+        if(r && r.status>=200 && r.status<300){
+          alert("No se guardó nada.\n\nTu sesión no está activa o este cliente no está a tu nombre. Cerrá sesión, volvé a entrar y guardá otra vez."); return; }
+        alert("No se pudo guardar (error "+((r&&r.status)||"?")+"). Volvé a intentarlo.");
+      })
+      .catch(function(){ alert("No se pudo guardar: no hubo conexión con el servidor."); });
     return;
   }
   if(act==="cli-saveweek"){
@@ -14073,7 +14160,7 @@ document.addEventListener("click", function(ev){
     _arr.push(m); _arr.sort(function(a,b){ return (""+(a.fecha||"")).localeCompare(""+(b.fecha||"")); });
     var _aj=JSON.stringify(_arr);
     _sbw("candidatos?id=eq."+encodeURIComponent(faid),"PATCH",{fit_antro:_aj})
-      .then(function(r){ if(!r.ok) throw 0; if(fac&&fac.raw) fac.raw.fit_antro=_aj; toast("Medición guardada ✓ — el cliente la ve"); render(); })
+      .then(function(r){ if(!r.ok) throw 0; if(fac&&fac.raw) fac.raw.fit_antro=_aj; var _aVis=_ofrecerVer(faid,"antropometria","Antropometría"); toast(_aVis ? "Medición guardada ✓ — y ya se la mostramos al cliente" : (_visOculta(rawOf(faid),"antropometria") ? "Guardada ✓ — pero Antropometría sigue OCULTA: el cliente NO la ve" : "Medición guardada ✓ — el cliente la ve")); render(); })
       .catch(function(){ alert("No se pudo guardar la medición. Reintenta."); });
     return;
   }
@@ -14106,7 +14193,7 @@ document.addEventListener("click", function(ev){
     // memoria para que la coach vea cómo queda; no persiste (se resetea al recargar).
     if(fec && fec._example){ fec.raw.fit_rutina=jE; window._frFoto=""; toast("Ejercicio agregado al demo ✓ (no se guarda — es el cliente de ejemplo)"); render(); return; }
     _sbw("candidatos?id=eq."+encodeURIComponent(feid),"PATCH",{fit_rutina:jE})
-      .then(function(r){ if(!r.ok) throw 0; if(fec&&fec.raw) fec.raw.fit_rutina=jE; window._frFoto=""; toast("Ejercicio agregado ✓ — el cliente lo ve"); render(); })
+      .then(function(r){ if(!r.ok) throw 0; if(fec&&fec.raw) fec.raw.fit_rutina=jE; window._frFoto=""; var _eVis=_ofrecerVer(feid,"rutina","Gym"); toast(_eVis ? "Ejercicio agregado ✓ — y ya se lo mostramos al cliente" : (_visOculta(rawOf(feid),"rutina") ? "Agregado ✓ — pero Gym sigue OCULTO: el cliente NO lo ve" : "Ejercicio agregado ✓ — el cliente lo ve")); render(); })
       .catch(function(){ alert("No se pudo guardar. Falta la columna fit_rutina en candidatos (ver migración career_nicho_fields.sql)."); });
     return;
   }
@@ -14154,7 +14241,7 @@ document.addEventListener("click", function(ev){
     var jD=JSON.stringify(arrD);
     if(drc && drc._example){ drc.raw.fit_rutina=jD; toast("Día renombrado en el demo ✓ (no se guarda)"); render(); return; }
     _sbw("candidatos?id=eq."+encodeURIComponent(drid),"PATCH",{fit_rutina:jD})
-      .then(function(r){ if(!r.ok) throw 0; if(drc&&drc.raw) drc.raw.fit_rutina=jD; toast("Día renombrado ✓ — el cliente lo ve"); render(); })
+      .then(function(r){ if(!r.ok) throw 0; if(drc&&drc.raw) drc.raw.fit_rutina=jD; var _dVis=_ofrecerVer(drid,"rutina","Gym"); toast(_dVis ? "Día renombrado ✓ — y ya se lo mostramos al cliente" : (_visOculta(rawOf(drid),"rutina") ? "Renombrado ✓ — pero Gym sigue OCULTO: el cliente NO lo ve" : "Día renombrado ✓ — el cliente lo ve")); render(); })
       .catch(function(){ alert("No se pudo guardar."); });
     return;
   }
@@ -15878,7 +15965,70 @@ function _busyOn(){ _genBusy = true; try{ if(_genBusyTimer) clearTimeout(_genBus
 function _busyOff(){ _genBusy = false; try{ if(_genBusyTimer){ clearTimeout(_genBusyTimer); _genBusyTimer = null; } }catch(e){} }
 var UPGRADE_URL="https://pathwaycareercoach.com/upgrade.html";
 var STRIPE_PORTAL="https://billing.stripe.com/p/login/fZu3cv9aE2py6b20f98AE00";
+
+/**
+ * Purchase plan handler: iOS via @capgo/native-purchases, web via Stripe
+ * @param {string} plan - 'basic' or 'pro'
+ */
+function _purchasePlan(plan){
+  if(_genBusy) return;
+
+  // iOS app: use native IAP via Capacitor
+  if(window.PW_IN_APP && window.PW_CAPGO_IAP){
+    _busyOn();
+    var productId = plan==='pro' ? 'coach.plan.pro.monthly' : 'coach.plan.basic.monthly';
+    var appAccountToken = localStorage.getItem('mj_app_account_token');
+
+    if(!appAccountToken){
+      console.warn('[_purchasePlan] No appAccountToken available');
+      _busyOff();
+      try{ toast('Error: account token not found. Try refreshing the app.'); }catch(e){}
+      return;
+    }
+
+    console.log('[_purchasePlan] Initiating purchase:', productId, appAccountToken);
+    window.PW_CAPGO_IAP.purchaseProduct(productId, appAccountToken).then(function(result){
+      _busyOff();
+      if(result.success){
+        console.log('[_purchasePlan] Purchase successful:', result.subscription);
+        try{ toast('✅ Plan upgraded! Refreshing...'); }catch(e){}
+        setTimeout(function(){ location.reload(); }, 1500);
+      } else {
+        console.error('[_purchasePlan] Purchase failed:', result.error);
+        try{ toast('Purchase failed: '+(result.error||'unknown error')); }catch(e){}
+      }
+    }).catch(function(err){
+      _busyOff();
+      console.error('[_purchasePlan] Purchase error:', err);
+      try{ toast('Error: '+err.message); }catch(e){}
+    });
+    return;
+  }
+
+  // Web: open Stripe (existing behavior)
+  var stripeUrl = plan==='pro' ? stripeUrl("pro") : "https://pathwaycareercoach.com/upgrade.html";
+  try{ window.open(stripeUrl, '_blank'); }catch(e){}
+}
 function rawOf(id){ var c=CLIENTS.filter(function(x){return String(x.id)===String(id);})[0]; return (c&&c.raw)||null; }
+// Una seccion puede estar GUARDADA y a la vez OCULTA para el cliente
+// (candidatos.visibilidad). Sin esto, el panel prometia "el cliente la ve"
+// mientras el portal la escondia — y el coach no tenia forma de saberlo salvo
+// mirar el interruptor de arriba. Caso real: un cliente con su plan cargado y
+// nutricion en false, que llamo por telefono porque no veia nada.
+function _visOculta(raw, k){ try{ var m=JSON.parse((raw&&raw.visibilidad)||"{}")||{}; return m[k]===false; }catch(e){ return false; } }
+// Un aviso PASIVO no arregla nada. El coach guardaba, leia "esta OCULTA:
+// prendela arriba", cerraba el toast y el cliente seguia sin ver su plan —
+// tres fichas reales de produccion llevaban asi desde julio. Aqui se OFRECE
+// encenderla, que es la unica accion que cierra el caso, en el momento en que
+// el coach esta mirando. Devuelve true si quedo visible.
+// Reutiliza _saveCliVis: es merge-safe (relee la fila antes del PATCH), asi que
+// encender nutricion NO pisa lo que el coach haya cambiado en otra seccion.
+function _ofrecerVer(cid, key, label){
+  if(!_visOculta(rawOf(cid), key)) return false;
+  if(!confirm(label+" esta OCULTA para este cliente.\n\nLo que acabas de guardar SI quedo guardado, pero el cliente no lo ve: la seccion no le aparece en su portal.\n\n\u00bfMostrarsela ahora?")) return false;
+  _saveCliVis(cid, function(v){ v[key]=true; });
+  return true;
+}
 function _val(id){ var e=document.getElementById(id); return e?e.value:""; }
 // IMO (índice músculo-óseo) = masa muscular ÷ masa ósea. Se autocompleta al
 // cargar ambos (los dos en kg), así la coach no lo calcula a mano.

@@ -2517,8 +2517,11 @@ const RULES = [
       if (!p) return null;
       if (!/function _cliVisibleTabs/.test(p)) return "panel-v2.html: falta _cliVisibleTabs (cascada de pestañas).";
       if (!/_CLI_CASCADE\s*=/.test(p)) return "panel-v2.html: falta la config _CLI_CASCADE (cadena por nicho).";
-      // El candado: una pestaña con datos se muestra (if(open || has)).
-      if (!/if\(open \|\| has\)\s*shown\[step\.tab\]=true/.test(p)) return "panel-v2.html: _cliVisibleTabs ya no muestra una pestaña con datos (candado roto).";
+      // El candado: una pestaña con datos se muestra (if(puerta || has)).
+      // La variable pasó a llamarse `puerta` al abrir el eslabón de Nutrición en
+      // PARALELO con Antropometría; lo que se vigila es el candado, no el nombre,
+      // y la forma se fija igual de estrecha que antes.
+      if (!/if\(puerta \|\| has\)\s*shown\[step\.tab\]=true/.test(p)) return "panel-v2.html: _cliVisibleTabs ya no muestra una pestaña con datos (candado roto).";
       if (!/carrera:.*fitness:.*life:/s.test(p)) return "panel-v2.html: la cascada no cubre los 3 nichos (carrera/fitness/life).";
       if (!/_cliVisibleTabs\(c,_tipo,_cliTabs\(_tipo\)\)/.test(p)) return "panel-v2.html: la ficha del cliente ya no aplica la cascada _cliVisibleTabs.";
       return null;
@@ -3089,25 +3092,33 @@ const RULES = [
       // Fallback a modo real vacío con aviso (no maqueta, no blanco).
       if (!/catch\(function\(\)\{[\s\S]{0,200}_apply\(null,\[\],\[\],null,\[\]\)/.test(mc))
         return "multicoach.html: mcLoadReal no queda en modo real vacío ante error (vuelve a caer a demo o blanco).";
-      // ENTRADA UNICA (cierre MultiCoach, sept 2026). El owner tiene que llegar
-      // a multicoach.html por TODAS sus puertas. Historia: la regla original
-      // exigia multicoach.html; luego se acepto tambien el handoff a
-      // pathwayplatforms.com (commit b8c3781), y el resultado fue que el login
-      // por email mandaba al dueno a un dominio que nunca se activo mientras el
-      // de Google lo dejaba en el panel de coach: tres destinos, ninguno el
-      // producto. Ahora hay uno solo. Si algun dia se activa el dominio propio,
-      // esta regla se actualiza a la vez que el redirect — no antes.
-      // Se comparan las lineas SIN comentarios: una mencion a un dominio dentro
-      // de un comentario no es una redireccion (asi se colaba un falso verde).
+      // ENTRADA UNICA — INVERTIDA el 2026-09-16, no aflojada.
+      //
+      // Esta regla exigia que el owner fuera a multicoach.html por TODAS sus
+      // puertas, y cerraba diciendo: "si algun dia se activa el dominio propio,
+      // esta regla se actualiza a la vez que el redirect — no antes". Es hoy:
+      // pathwayplatforms.com sirve MultiCoach desde el 2026-09-13 (deploy
+      // verificado, buildId = commit). El destino del dueño paso a ser el
+      // producto React, y el aserto se invierte con el cambio, en el mismo
+      // commit.
+      //
+      // Lo que se comprueba ahora es lo CONTRARIO y es mas estrecho: que
+      // ninguna de las dos paginas mande al dueño a multicoach.html. Que SI
+      // llegue a MultiCoach, y por las cinco puertas, lo cubren las reglas
+      // "owner → MultiCoach" del final de este fichero — que ademas vigilan las
+      // tres que esta nunca miro (auth-callback y los dos registro).
+      //
+      // Se comparan las lineas SIN comentarios: una mencion dentro de un
+      // comentario no es una redireccion (asi se colaba un falso verde).
       const sinComentarios = (s) => s.replace(/^\s*\/\/.*$/gm, "").replace(/\/\*[\s\S]*?\*\//g, "");
       for (const f of ["login.html", "login-en.html"]) {
         const raw = read(f);
         if (!raw) continue;
         const lg = sinComentarios(raw);
-        if (!/rol\s*===\s*['"]owner['"][\s\S]{0,400}multicoach\.html/.test(lg))
-          return f + ": el owner ya no se rutea a multicoach.html (entrada unica de la red).";
-        if (/pathwayplatforms\.com/.test(lg))
-          return f + ": vuelve a redirigir a pathwayplatforms.com. Ese dominio no esta activado (docs/PATHWAYPLATFORMS_SETUP.md) y el dueno acaba fuera del producto.";
+        if (/multicoach\.html/.test(lg))
+          return f + ": vuelve a mandar al dueño a multicoach.html. Su destino es MultiCoach (pw-multicoach.js).";
+        if (!/PW_MULTICOACH\.esDueno\(/.test(lg))
+          return f + ": ya no decide el destino del dueño con PW_MULTICOACH.esDueno.";
       }
       // Y las otras dos puertas del dueno: tras pagar y desde el panel de coach.
       const pl = read("pago-listo.html");
@@ -3626,6 +3637,260 @@ const RULES = [
       var c = read("pw-recursos.js");
       if (!c) return "pw-recursos.js: no existe.";
       if (!/naturalWidth\s*<=\s*120/.test(c)) return "pw-recursos.js: se cayó el guard onload (naturalWidth<=120) — un video borrado volvería a mostrar la miniatura gris rota.";
+      return null;
+    },
+  },
+  {
+    name: "nutrición: un plan VACÍO no se guarda en silencio ni cuenta como cargado",
+    why:
+      "Un cliente llamó porque su plan no le llegaba. El coach lo cargaba, veía " +
+      "'Nutrición guardada ✓' y al reabrir la pestaña salía EN BLANCO; el cliente " +
+      "leía 'Tu coach todavía no cargó tu plan'. Causa: fit-nutri-save arma el " +
+      "plan con _val('cf-nut-'+dia), y _val devuelve '' si no encuentra el campo, " +
+      "así que se guardaba el esqueleto entero vacío " +
+      "{\"dias\":{\"lun\":\"\",...},\"pautas\":\"\"} — 85 caracteres, o sea una cadena NO " +
+      "vacía. Y ahí se cerraba la trampa: !!c.raw.fit_nutricion la daba por " +
+      "verdadera, la guía dejaba de pedir el plan y la cascada marcaba el paso " +
+      "hecho. Medido en producción: 1 de 5 planes era exactamente eso. Nació bien " +
+      "el 2026-06-04 (era UN texto suelto: vacío era '') y se rompió el 2026-06-05 " +
+      "en df25b5ea, al pasar a día a día. Regla: 'tiene contenido' se pregunta " +
+      "recorriendo los días, nunca con !!cadena; y guardar nada se confirma.",
+    check() {
+      var p = read("panel-v2.html");
+      if (!p) return "panel-v2.html: no existe.";
+      if (!/function _nutConContenido\s*\(/.test(p))
+        return "panel-v2.html: falta _nutConContenido() — 'nutrición cargada' vuelve a ser !!cadena y un plan vacío contaria como cargado.";
+      if (/!!\s*\(\s*c\.raw\s*&&\s*\(\s*c\.raw\.fit_nutricion\s*\|\|/.test(p))
+        return "panel-v2.html: la cascada volvio a usar !!c.raw.fit_nutricion — el esqueleto vacio cuenta como plan cargado.";
+      if (!/_nutConContenido\(c\.raw\.fit_nutricion\)/.test(p))
+        return "panel-v2.html: la cascada de progreso ya no pregunta por CONTENIDO del plan de nutricion.";
+      if (!/_nutConContenido\(c\.raw\s*&&\s*c\.raw\.fit_nutricion\)/.test(p))
+        return "panel-v2.html: _cliNextStep ya no pregunta por CONTENIDO — el coach deja de ver 'arma el plan de nutricion' con el plan vacio.";
+      if (!/_nHayAlgo/.test(p) || !/if\(!_nHayAlgo && !confirm\(/.test(p))
+        return "panel-v2.html: fit-nutri-save ya no confirma antes de guardar un plan vacio — se puede borrar el plan del cliente sin querer.";
+      if (/Falta la columna fit_nutricion/.test(p))
+        return "panel-v2.html: volvio el aviso que culpa a la columna fit_nutricion. Esa columna EXISTE en candidatos: el mensaje manda a buscar una migracion que no es el problema.";
+      return null;
+    },
+  },
+  {
+    name: "nutrición: el panel no promete 'el cliente la ve' si la sección está OCULTA",
+    why:
+      "Una seccion puede estar GUARDADA y a la vez oculta para el cliente " +
+      "(candidatos.visibilidad, que el portal aplica en applyVisFit: " +
+      "vis[k]===false esconde el boton de nav Y la seccion entera). El panel " +
+      "decia 'Nutricion guardada ✓ — el cliente la ve' y ponia de rotulo 'Lo ve " +
+      "el cliente en su portal' SIN MIRAR ese interruptor. Caso real medido: un " +
+      "cliente con su plan cargado y nutricion:false llamo por telefono porque no " +
+      "veia nada, y el coach tenia razon en creer que lo habia guardado — lo habia " +
+      "guardado. Regla: donde se afirme que el cliente VE algo, se comprueba la " +
+      "visibilidad; guardar y mostrar son dos cosas distintas.",
+    check() {
+      var p = read("panel-v2.html");
+      if (!p) return "panel-v2.html: no existe.";
+      if (!/function _visOculta\s*\(/.test(p))
+        return "panel-v2.html: falta _visOculta() — el panel vuelve a prometer que el cliente ve algo sin mirar candidatos.visibilidad.";
+      if (!/_visOculta\(rawOf\(fnid\),\s*["']nutricion["']\)/.test(p))
+        return "panel-v2.html: el guardado de nutricion ya no comprueba si la seccion esta oculta para ese cliente.";
+      if (/toast\(_nHayAlgo\?"Nutrición guardada ✓ — el cliente la ve"/.test(p))
+        return "panel-v2.html: el aviso de guardado volvio a prometer 'el cliente la ve' sin condicion.";
+      if (!/_cliVisOn\('nutricion'\)\?"Lo ve el cliente en su portal"/.test(p))
+        return "panel-v2.html: el rotulo de la tarjeta de Nutricion volvio a afirmar que el cliente la ve sin mirar la visibilidad.";
+      return null;
+    },
+  },
+  {
+    name: "portal fitness: toggleEx no pisa la función de traducción t()",
+    why:
+      "Dentro de toggleEx se declaraba 'var t = day.querySelectorAll(\'.ex\').length', " +
+      "y ese 't' pisa la función de traducción global t() en TODA la función. Al " +
+      "marcar el ÚLTIMO ejercicio del día se llamaba t('diaCompletoToast') sobre un " +
+      "número → 'TypeError: t is not a function' (el error de produccion decía 't " +
+      "is 9': ese día tenía 9 ejercicios). La llamada a PWJ.celebrate está dentro " +
+      "de un try, pero el showToast final NO, así que la excepción sale de la " +
+      "función y se lleva el resto del manejador. Observado en client_errors en DOS " +
+      "clientes distintos, el 14-09 y el 15-09 de 2026. Regla: ninguna variable " +
+      "local de pathway-fit-cliente.html puede llamarse 't'.",
+    check() {
+      var f = read("pathway-fit-cliente.html");
+      if (!f) return "pathway-fit-cliente.html: no existe.";
+      var m = /function toggleEx\(el\)\{[\s\S]*?\n\}/.exec(f);
+      if (!m) return "pathway-fit-cliente.html: no se encontro toggleEx — si se renombro, actualiza este guardrail.";
+      var cuerpo = m[0];
+      if (/\bvar\s+t\s*=/.test(cuerpo))
+        return "pathway-fit-cliente.html: toggleEx volvio a declarar 'var t' — pisa la funcion de traduccion y revienta al completar el dia.";
+      if (!/t\('diaCompletoToast'\)/.test(cuerpo))
+        return "pathway-fit-cliente.html: toggleEx ya no traduce el aviso de dia completo (si se quito el toast, actualiza este guardrail).";
+      return null;
+    },
+  },
+  {
+    name: "gym y antropometría: 'cargada' se mide por CONTENIDO, no por presencia",
+    why:
+      "Es INC-082 en otros dos campos. Borrar el ultimo ejercicio deja fit_rutina " +
+      "en \"[]\" y borrar la ultima medicion deja fit_antro en \"[]\" — dos " +
+      "caracteres, o sea una cadena NO vacia. Con !!(c.raw&&c.raw.fit_antro) la " +
+      "guia del coach dejaba de pedir 'Carga la primera medicion' y la cascada " +
+      "abria la pestaña siguiente, para un cliente con CERO mediciones. Medido en " +
+      "produccion: un cliente con fit_antro de largo 2. Y el portal del cliente " +
+      "SIEMPRE mide contenido (.length>0, length>2), asi que panel y portal " +
+      "opinaban distinto del mismo cliente — que es lo que hace sonar el telefono. " +
+      "Regla: 'tiene datos' se pregunta recorriendo el contenedor, nunca con " +
+      "!!cadena, y el productor y el consumidor usan la MISMA regla.",
+    check() {
+      var p = read("panel-v2.html");
+      if (!p) return "panel-v2.html: no existe.";
+      if (!/function _listaConContenido\s*\(/.test(p))
+        return "panel-v2.html: falta _listaConContenido() — '[]' vuelve a contar como rutina o medicion cargada.";
+      if (/!!\s*\(\s*c\.raw\s*&&\s*c\.raw\.fit_(rutina|antro)\s*\)/.test(p))
+        return "panel-v2.html: la cascada volvio a usar !!c.raw.fit_rutina/fit_antro — un contenedor vacio cuenta como cargado.";
+      // DOS sitios cada uno: la guia (_cliNextStep) y la cascada de pestañas. Se
+      // CUENTAN, no se busca "alguna": con un .test() bastaba con que sobreviviera
+      // uno para dar verde con el otro roto — comprobado mutando (R-27 dentro de
+      // la propia comprobacion).
+      var nRut = (p.match(/_listaConContenido\(c\.raw&&c\.raw\.fit_rutina\)/g) || []).length;
+      var nAnt = (p.match(/_listaConContenido\(c\.raw&&c\.raw\.fit_antro\)/g) || []).length;
+      if (nRut < 2)
+        return "panel-v2.html: fit_rutina se mide por CONTENIDO en " + nRut + " de los 2 sitios (guia y cascada) — el que falte da 'rutina cargada' con '[]'.";
+      if (nAnt < 2)
+        return "panel-v2.html: fit_antro se mide por CONTENIDO en " + nAnt + " de los 2 sitios (guia y cascada) — el que falte da 'medicion cargada' con '[]'.";
+      var f = read("pathway-fit-cliente.html");
+      if (!f) return "pathway-fit-cliente.html: no existe.";
+      if (!/function _conContenido\s*\(/.test(f))
+        return "pathway-fit-cliente.html: falta _conContenido() — el contexto de la IA vuelve a medir presencia.";
+      if (/\(c\.fit_(rutina|antro)\?"cargada":"pendiente"\)/.test(f))
+        return "pathway-fit-cliente.html: el contexto de la IA volvio a usar !! — le diria al cliente que su plan esta 'cargado' con el contenedor vacio.";
+      if (!/_conContenido\(c\.fit_rutina\)/.test(f) || !/_conContenido\(c\.fit_antro\)/.test(f) || !/_conContenido\(c\.fit_nutricion\)/.test(f))
+        return "pathway-fit-cliente.html: el contexto de la IA ya no mide contenido en las tres secciones.";
+      return null;
+    },
+  },
+  {
+    name: "gym y antropometría: el panel no promete 'el cliente lo ve' si están OCULTAS",
+    why:
+      "Misma mentira que ya se corrigio en Nutricion, en las otras dos secciones " +
+      "que el coach carga. 'Medicion guardada ✓ — el cliente la ve' y 'Ejercicio " +
+      "agregado ✓ — el cliente lo ve' se decian sin mirar candidatos.visibilidad, " +
+      "y el portal esconde la seccion entera cuando vis[k]===false. Medido en " +
+      "produccion: un cliente con antropometria:false cuyo coach recibe ese aviso " +
+      "cada vez que carga una medicion. Regla: donde el panel afirme que el " +
+      "cliente VE algo, comprueba la visibilidad de ESA seccion.",
+    check() {
+      var p = read("panel-v2.html");
+      if (!p) return "panel-v2.html: no existe.";
+      if (/toast\("Medición guardada ✓ — el cliente la ve"\)/.test(p))
+        return "panel-v2.html: el aviso de medicion volvio a prometer 'el cliente la ve' sin condicion.";
+      if (/toast\("Ejercicio agregado ✓ — el cliente lo ve"\)/.test(p))
+        return "panel-v2.html: el aviso de ejercicio volvio a prometer 'el cliente lo ve' sin condicion.";
+      // No se ata a COMO se lee la fila (fac.raw vs rawOf(id)): despues de
+      // ofrecer encender la seccion hay que releerla fresca, asi que fijar la
+      // forma vieja obligaria a elegir entre el guardarrail y la correccion.
+      // Lo que se exige es que la comprobacion de ESA seccion siga ahi.
+      if (!/_visOculta\([^;\n]{0,60}"antropometria"\)/.test(p))
+        return "panel-v2.html: el guardado de antropometria ya no comprueba si la seccion esta oculta para ese cliente.";
+      if (!/_visOculta\([^;\n]{0,60}"rutina"\)/.test(p))
+        return "panel-v2.html: el alta de ejercicio ya no comprueba si Gym esta oculto para ese cliente.";
+      // Y lo que el aviso pasivo NO hacia: avisar de que esta oculta y dejar al
+      // coach ahi es lo que dejo tres fichas reales invisibles desde julio. El
+      // panel tiene que OFRECER encenderla, en las tres secciones.
+      if (!/function _ofrecerVer\s*\(/.test(p))
+        return "panel-v2.html: falta _ofrecerVer() — el panel vuelve a avisar de que la seccion esta oculta sin ofrecer mostrarla.";
+      if (!/_ofrecerVer\(\s*\w+\s*,\s*"nutricion"/.test(p))
+        return "panel-v2.html: guardar nutricion ya no ofrece mostrarsela al cliente cuando esta oculta.";
+      if (!/_ofrecerVer\(\s*\w+\s*,\s*"antropometria"/.test(p))
+        return "panel-v2.html: guardar una medicion ya no ofrece mostrar Antropometria cuando esta oculta.";
+      if (!/_ofrecerVer\(\s*\w+\s*,\s*"rutina"/.test(p))
+        return "panel-v2.html: el alta de ejercicio ya no ofrece mostrar Gym cuando esta oculto.";
+      // El coach tiene que poder COMPROBARLO, no creerselo: el portal del
+      // cliente a un clic desde donde decide la visibilidad.
+      if (!/ver su portal<\/a>/.test(p))
+        return "panel-v2.html: la barra de visibilidad ya no enlaza al portal del cliente — el coach no puede comprobar lo que ve.";
+      if (!/_cliVisOn\('antropometria'\)\?"Lo que cargas aquí el cliente lo ve/.test(p))
+        return "panel-v2.html: el rotulo de la tarjeta de Antropometria volvio a afirmar que el cliente la ve sin mirar la visibilidad.";
+      return null;
+    },
+  },
+  {
+    name: "Nutrición no cuelga de Antropometría, y el portal no niega un plan que SI existe",
+    why:
+      "La cascada de pestanas del panel abria Nutricion DESPUES de Antropometria. " +
+      "Medido en produccion: un cliente con rutina cargada y cero mediciones dejaba " +
+      "al coach SIN la pestana de Nutricion — no tenia donde escribir el plan — " +
+      "mientras su cliente SI veia la seccion de Nutricion en el portal, vacia. " +
+      "Un plan de comidas no necesita mediciones. Y del otro lado: el portal pinta " +
+      "solo los dias CON texto, asi que un plan escrito entero en 'Pautas generales' " +
+      "salia como 'Tu coach todavia no cargo tu plan' con las pautas justo debajo — " +
+      "la pantalla contradiciendose sola.",
+    bug: "coach sin pestana de Nutricion para un cliente sin antropometria; portal negando un plan que esta cargado en pautas",
+    check() {
+      var p = read("panel-v2.html");
+      if (!p) return "panel-v2.html: no existe.";
+      // 1 · el eslabon de Nutricion se abre EN PARALELO con Antropometria.
+      if (!/tab:\s*"fit_nutri"\s*,\s*paralelo:\s*true/.test(p))
+        return "panel-v2.html: Nutricion volvio a colgar de Antropometria en la cascada — un cliente sin mediciones deja al coach sin pestana donde cargar el plan.";
+      // 2 · ...y _cliVisibleTabs tiene que HONRARLO. Sin esto la bandera del
+      //     punto 1 es decorativa: estaria declarada y no la leeria nadie.
+      if (!/step\.paralelo\s*\?\s*puertaPrevia\s*:\s*open/.test(p))
+        return "panel-v2.html: _cliVisibleTabs ya no honra `paralelo` — la bandera queda declarada y el domino vuelve a ser estrictamente secuencial.";
+      if (!/if\s*\(\s*!step\.paralelo\s*\)\s*\{\s*puertaPrevia\s*=/.test(p))
+        return "panel-v2.html: un eslabon paralelo volvio a consumir su turno del domino — cierra la puerta del siguiente sin ser su requisito.";
+      // 3 · y Antropometria NO se retira de la cascada para 'arreglarlo': sigue
+      //     siendo el eslabon que abre lo que venga despues.
+      //     OJO: hay que mirar DENTRO de la cadena de fitness. Un `tab:"fit_antro"`
+      //     suelto tambien vive en _cliNextStep (la guia), asi que buscarlo en todo
+      //     el fichero aprobaba con el eslabon ya borrado — medido, no supuesto.
+      var _cadenaFit = (p.match(/fitness:\s*\{[\s\S]*?chain:\s*\[([\s\S]*?)\]\s*\}/) || [])[1] || "";
+      if (!_cadenaFit) return "panel-v2.html: no se encuentra la cadena de fitness en _CLI_CASCADE.";
+      if (!/tab:\s*"fit_antro"/.test(_cadenaFit))
+        return "panel-v2.html: Antropometria desaparecio de la cascada de fitness — el arreglo era desacoplar Nutricion, no borrar el eslabon.";
+      if (!/tab:\s*"fit_rutina"/.test(_cadenaFit))
+        return "panel-v2.html: Gym desaparecio de la cascada de fitness.";
+
+      var f = read("pathway-fit-cliente.html");
+      if (!f) return "pathway-fit-cliente.html: no existe.";
+      // 4 · el portal distingue "no hay plan" de "el plan esta en las pautas".
+      if (!/t\(\s*_hayPautas\s*\?\s*'planEnPautas'\s*:\s*'planVacioSpan'\s*\)/.test(f))
+        return "pathway-fit-cliente.html: el plan de nutricion volvio a negarse en bloque — con pautas cargadas el portal dice 'tu coach todavia no cargo tu plan' y las pinta debajo.";
+      // 5 · con su texto en los DOS idiomas (si falta uno, t() devuelve la clave
+      //     cruda y el cliente lee "planEnPautas").
+      if ((f.match(/planEnPautas\s*:/g) || []).length < 2)
+        return "pathway-fit-cliente.html: falta planEnPautas en alguno de los dos diccionarios — el cliente leeria el nombre de la clave.";
+      return null;
+    },
+  },
+  {
+    name: "hábitos del cliente: el guardado se COMPRUEBA, no se asume",
+    why:
+      "Una escritura no confirmada no es una escritura. sbPatch pide " +
+      "return=representation y pone ok=false cuando la RLS no casa ninguna fila " +
+      "— un PATCH denegado devuelve 200 con lista VACIA, no un error. De los tres " +
+      "guardados de fit_habitos, dos miraban solo el fallo de red (uno con el " +
+      "catch literalmente vacio), asi que el habito quedaba pintado en la " +
+      "pantalla del cliente (colorDay/renderFitCal son optimistas) y no llegaba " +
+      "nunca al calendario del coach, sin un solo aviso. El coach ve al cliente " +
+      "sin entrenar y el cliente jura que lo marco. Regla: todo guardado de " +
+      "fit_habitos pasa por _habGuardado, que mira r.ok y avisa.",
+    check() {
+      var f = read("pathway-fit-cliente.html");
+      if (!f) return "pathway-fit-cliente.html: no existe.";
+      if (!/function _habGuardado\s*\(/.test(f))
+        return "pathway-fit-cliente.html: falta _habGuardado() — los guardados de habitos vuelven a asumir que salio bien.";
+      // Se mira CADA sitio, no se cuentan apariciones sueltas: un sitio verificado
+      // aporta DOS usos de _habGuardado (.then y .catch), asi que contar el total
+      // daba verde con uno de los tres roto — comprobado mutando (R-102).
+      var re = /\{fit_habitos:JSON\.stringify\(WDATA\)\}/g, mm, sitios = 0, mudos = 0;
+      while ((mm = re.exec(f)) !== null) {
+        sitios++;
+        if (f.slice(mm.index, mm.index + 220).indexOf("_habGuardado") === -1) mudos++;
+      }
+      if (sitios < 1)
+        return "pathway-fit-cliente.html: no se encontro ningun guardado de fit_habitos — si se renombro, actualiza este guardrail.";
+      if (mudos > 0)
+        return "pathway-fit-cliente.html: " + mudos + " de " + sitios + " guardados de fit_habitos NO comprueban el resultado. El que falte guarda en silencio: el cliente ve el habito marcado y al coach no le llega.";
+      if (/\{fit_habitos:JSON\.stringify\(WDATA\)\}\)\.catch\(function\(\)\{\}\)/.test(f))
+        return "pathway-fit-cliente.html: volvio un catch VACIO sobre el guardado de habitos — el fallo no se ve en ninguna parte.";
+      if (/showToast\('⚠️ No se pudo guardar el hábito/.test(f))
+        return "pathway-fit-cliente.html: el aviso del habito volvio a estar escrito a mano en espanol — en el portal en ingles saldria en espanol. Usa t('noGuardoHabito').";
       return null;
     },
   },
@@ -6424,6 +6689,150 @@ const RULES = [
     },
   },
   {
+    name: "owner → MultiCoach: un solo destino, cargado por las cinco puertas",
+    bug: "El destino del dueño estaba decidido en SIETE sitios y los siete no " +
+         "coincidian: login/login-en mandaban a /multicoach.html (email y Google " +
+         "nativo), y auth-callback + registro + registro-en NO TENIAN rama de owner, " +
+         "asi que el dueño caia en /panel-v2.html — el panel del coach. Como la " +
+         "mayoria entra con Google, y Google vuelve por auth-callback y no por " +
+         "login.html, ese era el camino real de casi todos. Ahora la regla vive " +
+         "SOLO en pw-multicoach.js y las cinco paginas lo cargan.",
+    why: "Siete puertas al mismo sitio se comprueban las siete, y una regla " +
+         "replicada en siete ficheros se desalinea sin que nada avise.",
+    check() {
+      const mod = read("pw-multicoach.js");
+      if (!mod) return "falta pw-multicoach.js — la fuente unica del destino del dueño.";
+      if (!/var ORIGIN = 'https:\/\/pathwayplatforms\.com'/.test(mod))
+        return "pw-multicoach.js: ORIGIN ya no apunta a pathwayplatforms.com.";
+      if (!/functions\/v1\/pathway-handoff/.test(mod))
+        return "pw-multicoach.js: se perdio el handoff. MultiCoach esta en OTRO origen: sin canje el dueño llega sin sesion.";
+      if (!/function esDueno\(/.test(mod) || !/function urlDeEntrada\(/.test(mod))
+        return "pw-multicoach.js: falta esDueno() o urlDeEntrada().";
+      // El colaborador REAL lo es por la BANDERA, no por el rol: en produccion
+      // `rol='colaborador'` son 0 filas y `rol='coach'` +
+      // `configuracion.member_role='colaborador'` son 2, las dos con org. Si
+      // esDueno deja de mirar member_role, esas 2 personas vuelven a caer en
+      // panel-v2.html y no llegan a MultiCoach por ninguna de las cinco puertas.
+      const sinComent = (t) => t.replace(/^\s*\/\/.*$/gm, "").replace(/\/\*[\s\S]*?\*\//g, "");
+      const codigo = sinComent(mod);
+      const bandera = codigo.match(/(\w+)\s*=[^;]*configuracion\.member_role/);
+      if (!bandera)
+        return "pw-multicoach.js: esDueno dejo de leer configuracion.member_role — el colaborador real vuelve a caer en el panel del coach.";
+      if (!new RegExp(bandera[1] + "\\s*===\\s*'colaborador'").test(codigo))
+        return "pw-multicoach.js: se lee configuracion.member_role pero ya no se compara con 'colaborador' — el colaborador real vuelve a caer en el panel del coach.";
+      const offenders = [];
+      for (const f of ["login.html", "login-en.html", "auth-callback.html", "registro.html", "registro-en.html"]) {
+        const t = read(f);
+        if (!t) { offenders.push(f + " (no existe)"); continue; }
+        // La ETIQUETA, no la mencion: una regla que casa con el comentario que
+        // nombra el fichero aprueba una pagina que no lo carga.
+        if (!/<script src="\/pw-multicoach\.js"><\/script>/.test(t)) offenders.push(f + " no carga pw-multicoach.js");
+        if (!/PW_MULTICOACH\.esDueno\(/.test(t)) offenders.push(f + " no pregunta PW_MULTICOACH.esDueno");
+        // Y le pasa la configuracion EN TODAS sus llamadas: sin el 3er argumento
+        // la bandera no se puede leer y la rama del colaborador es inalcanzable
+        // desde esa puerta. login.html tiene DOS, asi que no vale «alguna».
+        const llamadas = sinComent(t).match(/esDueno\(([^)]*)\)/g) || [];
+        if (!llamadas.length) continue;
+        const cojas = llamadas.filter((c) => c.split(",").length < 3);
+        if (cojas.length) offenders.push(f + " llama esDueno sin pasarle la configuracion: " + cojas.join(" / "));
+      }
+      return offenders.length ? offenders.join("; ") : null;
+    },
+  },
+  {
+    name: "owner → MultiCoach: ninguna puerta escribe el destino a mano",
+    bug: "El destino se escribia a mano en cada pagina. Cuando el 09-09 se cambio " +
+         "a /multicoach.html, cuatro sitios cambiaron y tres se quedaron atras — " +
+         "y nadie lo vio hasta que un dueño no llego nunca a su producto.",
+    check() {
+      const offenders = [];
+      for (const f of ["login.html", "login-en.html", "auth-callback.html", "registro.html", "registro-en.html"]) {
+        const t = read(f);
+        if (!t) continue;
+        // Un destino es una CADENA, no una mencion. Se busca el dominio DENTRO
+        // de un literal entrecomillado y no "en el fichero": el primer intento
+        // tiraba los comentarios con /\/\/[^\n]*/ y eso se comia el "//" de
+        // "https://", asi que aprobaba una pagina con la URL escrita a mano.
+        // Lo caza la mutacion, no la lectura.
+        if (/['"`][^'"`\n]*pathwayplatforms\.com/.test(t)) offenders.push(f + " escribe pathwayplatforms.com a mano");
+        if (/['"`][^'"`\n]*multicoach\.html/.test(t)) offenders.push(f + " manda a multicoach.html");
+      }
+      return offenders.length ? offenders.join("; ") : null;
+    },
+  },
+  {
+    name: "registrar-coach: activar una cuenta NO cambia el rol de quien invito",
+    bug: "commonFields lleva rol:'coach' porque el alta normal crea coaches, y el " +
+         "PATCH de activacion lo mandaba tal cual. Un owner invitado por " +
+         "crear-multicoach (rol='owner' + org_id + su red ya creada) activaba su " +
+         "cuenta y salia COACH: perdia su red y el login lo mandaba a panel-v2. " +
+         "No habia fallado nada, asi que ninguna pantalla podia explicarselo. Es " +
+         "la misma leccion que member_role, una COLUMNA mas alla.",
+    why: "La lista es BLANCA: activar nunca puede conceder 'admin'.",
+    check() {
+      const s = read("supabase/functions/registrar-coach/index.ts");
+      if (!s) return "falta registrar-coach/index.ts";
+      if (!/ROLES_QUE_SE_CONSERVAN/.test(s))
+        return "registrar-coach: se perdio la conservacion del rol al activar (ROLES_QUE_SE_CONSERVAN).";
+      const lista = s.match(/ROLES_QUE_SE_CONSERVAN\s*=\s*\[([^\]]*)\]/);
+      if (!lista) return "registrar-coach: ROLES_QUE_SE_CONSERVAN ya no es una lista literal.";
+      if (/admin/.test(lista[1]))
+        return "registrar-coach: 'admin' entro en ROLES_QUE_SE_CONSERVAN — activar una cuenta podria conceder admin.";
+      if (!/rol: rolFinal/.test(s))
+        return "registrar-coach: el PATCH de activacion ya no manda rolFinal (vuelve a degradar al owner).";
+      return null;
+    },
+  },
+  {
+    name: "registro: el rol de la sesion sale de la fila, no del formulario",
+    bug: "registro.html guardaba mj_user con rol:'coach' fijo. Un owner que " +
+         "activaba su cuenta quedaba como coach en su propia sesion aunque la " +
+         "base dijera otra cosa, y el destino se decidia con ese dato.",
+    check() {
+      const offenders = [];
+      for (const f of ["registro.html", "registro-en.html"]) {
+        const t = read(f);
+        if (!t) continue;
+        if (/mj_user['"]\s*,\s*JSON\.stringify\(\{[\s\S]{0,200}?rol:\s*['"]coach['"]/.test(t))
+          offenders.push(f + " fija rol:'coach' en mj_user");
+        if (!/var _rolReal = \(coach && coach\.rol\)/.test(t))
+          offenders.push(f + " ya no lee el rol de la fila (_rolReal)");
+      }
+      return offenders.length ? offenders.join("; ") : null;
+    },
+  },
+  {
+    name: "pathway-handoff: el codigo de sesion NO sale de Math.random (S1)",
+    bug: "El codigo del handoff es una CREDENCIAL AL PORTADOR: quien lo tenga " +
+         "obtiene una sesion completa, con el rol y la organizacion de su dueno, " +
+         "sin contrasena. Se generaba con Math.random(), que en V8 es " +
+         "xorshift128+: el estado interno se reconstruye observando unas pocas " +
+         "salidas. Los 32 caracteres daban una falsa sensacion de fuerza — la " +
+         "entropia era la del generador, no la del alfabeto. Y las instancias de " +
+         "Deno se reutilizan, asi que ese estado persiste entre peticiones de " +
+         "usuarios DISTINTOS. Dejo de ser deuda dormida el dia que el dueño paso " +
+         "a entrar a MultiCoach por handoff: es su unica puerta.",
+    why: "Se mira el codigo EJECUTABLE, no el fichero: el comentario que explica " +
+         "el arreglo nombra Math.random, y una regla que grepea a lo bruto se " +
+         "pondria roja por la propia explicacion (o peor, aprobaria por mencion).",
+    check() {
+      const f = "supabase/functions/pathway-handoff/index.ts";
+      const raw = read(f);
+      if (!raw) return "falta " + f;
+      const codigo = raw
+        .replace(/\/\*[\s\S]*?\*\//g, "")
+        .replace(/^\s*\/\/.*$/gm, "");
+      if (/Math\.random/.test(codigo))
+        return f + ": vuelve a generar el codigo de sesion con Math.random (S1).";
+      if (!/crypto\.getRandomValues/.test(codigo))
+        return f + ": generateCode ya no usa crypto.getRandomValues.";
+      // El formato que `multicoach-exchange-handoff` espera: 32 bytes en hex.
+      if (!/new Uint8Array\(32\)/.test(codigo) || !/toString\(16\)/.test(codigo))
+        return f + ": el codigo dejo de ser 32 bytes en hexadecimal (64 caracteres).";
+      return null;
+    },
+  },
+  {
     name: "multicoach: A es legacy — no recibe funcionalidad nueva",
     bug: "Decision de producto del 2026-09-14: MultiCoach tiene DOS " +
          "implementaciones y la superviviente es B (repo `multicoach`, " +
@@ -6479,60 +6888,6 @@ const RULES = [
              "ponlo en el mensaje del commit y pasa:\n" +
              "        FIX-CRITICO-MULTICOACH: <que estaba roto en produccion>\n" +
              "        RETIRADA-MULTICOACH: <que paso de la retirada es>";
-    },
-  },
-  {
-    name: "aterrizaje por rol: UNA sola fuente (pw-destino.js) en las cuatro puertas",
-    bug: "P0-5. La misma decision —a donde va una persona tras autenticarse— " +
-         "estaba escrita CUATRO veces (login.html, login-en.html, registro.html, " +
-         "registro-en.html) y no decia lo mismo: los login enrutaban por rol y " +
-         "los registro terminaban SIEMPRE en panel-v2.html. Por eso el trabajo " +
-         "de registrar-coach v24 —conservar member_role al activar, justo para " +
-         "mandar al colaborador a MultiCoach— no lo ejercia nadie: el camino de " +
-         "activacion se salta el login, que era el unico que enrutaba. " +
-         "Y debajo habia un segundo defecto que rompia la regla TAMBIEN en el " +
-         "login: el colaborador no se reconoce por `usuarios.rol`. Medido en " +
-         "produccion el 2026-09-15: rol='colaborador' son 0 filas, y " +
-         "rol='coach' + configuracion.member_role='colaborador' son 2. " +
-         "Es el patron de _slugify: la misma regla copiada acaba divergiendo.",
-    check() {
-      const mod = read("pw-destino.js");
-      if (!mod) return "falta pw-destino.js — el enrutado por rol se quedaria sin fuente unica.";
-
-      // El modulo tiene que seguir reconociendo al colaborador por la BANDERA.
-      const m = noComments(mod);
-      if (!/function esColaborador\(/.test(m))
-        return "pw-destino.js: falta esColaborador() — nadie decidiria quien va a MultiCoach.";
-      if (!/member_role\s*===\s*['\"]colaborador['\"]/.test(m))
-        return "pw-destino.js: esColaborador dejo de mirar configuracion.member_role. " +
-               "rol='colaborador' son 0 filas en produccion: sin la bandera, ningun colaborador llega a MultiCoach.";
-      for (const destino of ["multicoach.html", "panel-v2.html", "empleado.html", "cliente.html"]) {
-        if (!m.includes(destino)) return "pw-destino.js: ya no resuelve " + destino + ".";
-      }
-
-      // Las cuatro puertas lo cargan y NINGUNA vuelve a decidir por su cuenta.
-      for (const f of ["login.html", "login-en.html", "registro.html", "registro-en.html"]) {
-        const h = read(f);
-        if (!h) return "falta " + f + ".";
-        if (!/<script src="\/pw-destino\.js"><\/script>/.test(h))
-          return f + ": ya no carga pw-destino.js — esa puerta vuelve a enrutar por su cuenta.";
-        const js = noComments(inlineJs(h));
-        if (!/PWDEST\.destinoAsync\(/.test(js))
-          return f + ": no llama a PWDEST.destinoAsync() — el destino se decide en otro sitio.";
-        // Un destino escrito a mano en el redirect final es como volvio la vez anterior.
-        if (/location\.href\s*=\s*['\"][^'\"]*multicoach\.html/.test(js))
-          return f + ": vuelve a mandar a multicoach.html con una URL escrita a mano.";
-        if (/location\.href\s*=\s*BASE\s*\+\s*['\"]\/(multicoach|panel-v2|empleado|cliente)\.html/.test(js))
-          return f + ": vuelve a enrutar por su cuenta en vez de preguntarle a pw-destino.js.";
-      }
-
-      // Y el alta no puede volver a terminar SIEMPRE en el panel del coach.
-      for (const f of ["registro.html", "registro-en.html"]) {
-        const js = noComments(inlineJs(read(f)));
-        if (/primerLogin\s*=\s*_authOk\s*\?\s*['\"]panel-v2\.html/.test(js))
-          return f + ": el aterrizaje tras activar vuelve a ser panel-v2.html fijo, sin mirar el rol.";
-      }
-      return null;
     },
   },
 ];
