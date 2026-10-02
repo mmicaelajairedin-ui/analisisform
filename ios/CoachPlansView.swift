@@ -11,8 +11,16 @@ import StoreKit
 /// - apple-iap-webhook for subscription lifecycle
 
 struct CoachPlansView: View {
-  @StateObject private var viewModel = CoachPlansViewModel()
+  let jwt: String
+  let appAccountToken: String
+  @StateObject private var viewModel: CoachPlansViewModel
   @Environment(\.dismiss) var dismiss
+
+  init(jwt: String = "", appAccountToken: String = "") {
+    self.jwt = jwt
+    self.appAccountToken = appAccountToken
+    _viewModel = StateObject(wrappedValue: CoachPlansViewModel(jwt: jwt, appAccountToken: appAccountToken))
+  }
 
   var body: some View {
     ZStack {

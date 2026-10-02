@@ -17,7 +17,8 @@ public class CoachPlansPlugin: CAPPlugin, CAPBridgedPlugin {
   ]
 
   /// Present native Coach Plans view (SwiftUI)
-  /// Called from JS: window.Capacitor.Plugins.CoachPlansPlugin.present()
+  /// Called from JS: window.Capacitor.Plugins.CoachPlansPlugin.present({jwt, appAccountToken})
+  /// JWT and appAccountToken passed from web (localStorage) to avoid UserDefaults sync issues
   @objc func present(_ call: CAPPluginCall) {
     DispatchQueue.main.async {
       guard let vc = self.bridge?.viewController else {
@@ -25,7 +26,11 @@ public class CoachPlansPlugin: CAPPlugin, CAPBridgedPlugin {
         return
       }
 
-      let coachPlansView = CoachPlansView()
+      // Read JWT and appAccountToken from JS
+      let jwt = call.getString("jwt") ?? ""
+      let appAccountToken = call.getString("appAccountToken") ?? ""
+
+      let coachPlansView = CoachPlansView(jwt: jwt, appAccountToken: appAccountToken)
       let hostingController = UIHostingController(rootViewController: coachPlansView)
 
       // Sheet presentation (modal, swipe to dismiss)

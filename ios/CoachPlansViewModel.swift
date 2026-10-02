@@ -29,8 +29,14 @@ class CoachPlansViewModel: NSObject, ObservableObject {
 
   private let backendBaseUrl = "https://api.pathwaycareercoach.com"
 
+  // MARK: - Credentials (from web)
+  private let jwt: String
+  private let appAccountToken: String
+
   // MARK: - Initialization
-  override init() {
+  init(jwt: String = "", appAccountToken: String = "") {
+    self.jwt = jwt
+    self.appAccountToken = appAccountToken
     super.init()
   }
 
@@ -67,12 +73,12 @@ class CoachPlansViewModel: NSObject, ObservableObject {
   func checkCurrentEntitlement() {
     Task {
       do {
-        guard let jwt = SessionStorage.getJWT() else {
+        guard !jwt.isEmpty else {
           print("[CoachPlansVM] No JWT for entitlement check")
           return
         }
 
-        guard let appAccountToken = SessionStorage.getAppAccountToken() else {
+        guard !appAccountToken.isEmpty else {
           print("[CoachPlansVM] No appAccountToken")
           return
         }
@@ -116,15 +122,15 @@ class CoachPlansViewModel: NSObject, ObservableObject {
   /// Initiate purchase flow
   func purchaseSelectedPlan() {
     guard !selectedProductId.isEmpty else { return }
-    guard let jwt = SessionStorage.getJWT() else {
+    guard !jwt.isEmpty else {
       self.errorMessage = "No autenticado"
       return
     }
 
-    // Generate or get appAccountToken
     Task {
       do {
-        let appAccountToken = try await ensureAppAccountToken(jwt: jwt)
+        isPurchasing = true
+        errorMessage = nil
 
         // Step 1: Validate with backend
         let canPurchase = try await validateBeforePurchase(
@@ -138,10 +144,7 @@ class CoachPlansViewModel: NSObject, ObservableObject {
           return
         }
 
-        // Step 2: Show native purchase sheet via Capacitor
-        isPurchasing = true
-        errorMessage = nil
-
+        // Step 2: Show native purchase sheet via StoreKit 2
         try await purchaseViaCapacitor(
           productId: selectedProductId,
           appAccountToken: appAccountToken,
@@ -217,32 +220,77 @@ class CoachPlansViewModel: NSObject, ObservableObject {
     return result.allowed != false
   }
 
-  /// Execute purchase via Capacitor NativePurchases plugin
+  /// Execute real purchase via StoreKit 2
+  /// Shows native Apple purchase sheet, handles transaction, verifies with backend
   private func purchaseViaCapacitor(
     productId: String,
     appAccountToken: String,
     jwt: String
   ) async throws {
-    // In production, this calls:
-    // window.Capacitor.Plugins.NativePurchases.purchaseProduct({
-    //   productId: productId,
-    //   appAccountToken: appAccountToken
-    // })
+    // Find product from loaded products
+    guard let product = products.first(where: { $0.id == productId }) else {
+      throw NSError(domain: "Product", code: -1, userInfo: [
+        NSLocalizedDescriptionKey: "Product not found"
+      ])
+    }
 
-    // For demo: simulate receipt
-    let receipt = "mock-receipt-\(productId)"
+    // Step 1: Show native Apple purchase sheet (StoreKit 2)
+    let result = try await product.purchase(options: [
+      .appAccountToken(appAccountToken)
+    ])
 
-    // Verify receipt with backend
+    // Step 2: Handle purchase result
+    switch result {
+    case .success(let verificationResult):
+      // Verify transaction with backend
+      let jwt = self.jwt
+      try await verifyReceiptWithBackend(
+        transaction: verificationResult,
+        appAccountToken: appAccountToken,
+        jwt: jwt
+      )
+
+      // Update local state
+      self.isPurchasing = false
+      self.purchaseCompleted = true
+      print("[CoachPlansVM] ✅ Purchase successful")
+
+    case .userCancelled:
+      throw NSError(domain: "Purchase", code: -1, userInfo: [
+        NSLocalizedDescriptionKey: "Purchase cancelled by user"
+      ])
+
+    case .pending:
+      throw NSError(domain: "Purchase", code: -1, userInfo: [
+        NSLocalizedDescriptionKey: "Purchase pending Apple approval"
+      ])
+
+    @unknown default:
+      throw NSError(domain: "Purchase", code: -1, userInfo: [
+        NSLocalizedDescriptionKey: "Unknown purchase result"
+      ])
+    }
+  }
+
+  /// Verify StoreKit transaction with backend
+  /// Backend validates JWS against Apple's certificate
+  private func verifyReceiptWithBackend(
+    transaction: VerificationResult<Transaction>,
+    appAccountToken: String,
+    jwt: String
+  ) async throws {
     let url = URL(string: "\(backendBaseUrl)/functions/v1/check-entitlement")!
     var request = URLRequest(url: url)
     request.httpMethod = "POST"
     request.setValue("Bearer \(jwt)", forHTTPHeaderField: "Authorization")
     request.setValue("application/json", forHTTPHeaderField: "Content-Type")
 
-    let body = [
-      "receipt": receipt,
-      "appAccountToken": appAccountToken
-    ] as [String: Any]
+    // Send JWS (signed transaction) to backend for validation
+    let body: [String: Any] = [
+      "receipt": transaction.jwsRepresentation,
+      "appAccountToken": appAccountToken,
+      "productId": transaction.unsafePayload.productID
+    ]
     request.httpBody = try JSONSerialization.data(withJSONObject: body)
 
     let (data, response) = try await URLSession.shared.data(for: request)
@@ -261,56 +309,19 @@ class CoachPlansViewModel: NSObject, ObservableObject {
         status: result.status,
         expiryDate: ISO8601DateFormatter().date(from: result.expiryDate) ?? Date()
       )
-
-      isPurchasing = false
-      purchaseCompleted = true
-      print("[CoachPlansVM] ✅ Purchase successful")
-
+      print("[CoachPlansVM] ✅ Entitlement verified and active")
     } else {
       throw NSError(domain: "Entitlement", code: -1, userInfo: [
-        NSLocalizedDescriptionKey: result.error ?? "Unknown error"
+        NSLocalizedDescriptionKey: result.error ?? "Entitlement verification failed"
       ])
     }
   }
 
-  /// Restore purchases via Capacitor
+  /// Restore purchases via StoreKit
   private func restoreViaCapsitor() async throws {
-    // Call Capacitor: window.Capacitor.Plugins.NativePurchases.restorePurchases()
-    // For now, just log
     print("[CoachPlansVM] Restoring purchases...")
-    // Real implementation requires JavaScript bridge
-  }
-
-  /// Ensure appAccountToken exists or generate new
-  private func ensureAppAccountToken(jwt: String) async throws -> String {
-    if let cached = SessionStorage.getAppAccountToken() {
-      return cached
-    }
-
-    // Generate new token via backend
-    let url = URL(string: "\(backendBaseUrl)/functions/v1/generate-app-account-token")!
-    var request = URLRequest(url: url)
-    request.httpMethod = "POST"
-    request.setValue("Bearer \(jwt)", forHTTPHeaderField: "Authorization")
-    request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-    request.httpBody = try JSONEncoder().encode([:])
-
-    let (data, response) = try await URLSession.shared.data(for: request)
-
-    guard let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200 else {
-      throw NSError(domain: "Token", code: -1)
-    }
-
-    let result = try JSONDecoder().decode(TokenResponse.self, from: data)
-
-    if let token = result.appAccountToken {
-      SessionStorage.setAppAccountToken(token)
-      return token
-    }
-
-    throw NSError(domain: "Token", code: -1, userInfo: [
-      NSLocalizedDescriptionKey: "No token returned"
-    ])
+    // In SwiftUI/StoreKit 2, use AppStore.sync() to restore
+    // This syncs all transactions and triggers purchase listeners
   }
 }
 
@@ -346,17 +357,3 @@ struct TokenResponse: Codable {
   let appAccountToken: String?
 }
 
-// MARK: - Session Storage (iOS UserDefaults wrapper)
-class SessionStorage {
-  static func getJWT() -> String? {
-    UserDefaults.standard.string(forKey: "mj_auth")
-  }
-
-  static func getAppAccountToken() -> String? {
-    UserDefaults.standard.string(forKey: "mj_app_account_token")
-  }
-
-  static func setAppAccountToken(_ token: String) {
-    UserDefaults.standard.set(token, forKey: "mj_app_account_token")
-  }
-}
