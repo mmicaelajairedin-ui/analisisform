@@ -15975,38 +15975,21 @@ function _purchasePlan(plan){
   if(_genBusy) return;
 
   // iOS app: Present native Coach Plans view (SwiftUI)
-  // CoachPlansView handles all StoreKit, purchase validation, and backend verification
-  if(window.PW_IN_APP && window.Capacitor && window.Capacitor.Plugins){
+  // Via CoachPlansPlugin (Capacitor bridge) → handles all StoreKit & backend verification
+  if(window.PW_IN_APP && window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.CoachPlansPlugin){
     _busyOn();
-    console.log('[_purchasePlan] Opening native Coach Plans view for:', plan);
+    console.log('[_purchasePlan] Opening native Coach Plans view');
 
-    // Emit Capacitor event to App.swift to present CoachPlansView
-    // Swift listener: NotificationCenter.default observer "showCoachPlans"
-    if(window.Capacitor.Plugins.App){
-      try {
-        window.Capacitor.Plugins.App.notifyListeners('showCoachPlans', { plan: plan });
-      } catch(e) {
-        console.warn('[_purchasePlan] Capacitor event failed:', e);
-      }
-    }
-
-    // Setup listener for purchase completion
-    var completionHandler = function(result){
+    window.Capacitor.Plugins.CoachPlansPlugin.present().then(function(){
       _busyOff();
-      if(result && result.success){
-        console.log('[_purchasePlan] Purchase completed, refreshing...');
-        try{ toast('✅ Plan upgraded! Refreshing...'); }catch(e){}
-        setTimeout(function(){ location.reload(); }, 1500);
-      } else {
-        console.log('[_purchasePlan] View dismissed without purchase');
-      }
-    };
-
-    // Store handler for CoachPlansView to call after purchase
-    window._purchaseCompletionHandler = completionHandler;
-
-    // Auto-release busy after 5 minutes (failsafe)
-    setTimeout(function(){ _busyOff(); }, 300000);
+      console.log('[_purchasePlan] Coach Plans view dismissed');
+      // CoachPlansView handles entitlement check internally
+      // If purchase succeeded, view will have synced subscription state
+    }).catch(function(err){
+      _busyOff();
+      console.error('[_purchasePlan] Plugin error:', err);
+      try{ toast('Error: '+err); }catch(e){}
+    });
     return;
   }
 

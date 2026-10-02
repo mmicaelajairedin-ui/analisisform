@@ -21,6 +21,12 @@ ios/CoachPlansViewModel.swift ..................... 380 lines
   ├─ RestorePurchases()
   ├─ EnsureAppAccountToken() → /generate-app-account-token
   └─ SessionStorage (UserDefaults wrapper)
+
+ios/CoachPlansPlugin.swift .......................... 50 lines
+  ├─ @objc(CoachPlansPlugin) Capacitor bridge
+  ├─ Registered in Info.plist
+  ├─ Method: present() → opens CoachPlansView natively
+  └─ JS: window.Capacitor.Plugins.CoachPlansPlugin.present()
 ```
 
 #### Documentation

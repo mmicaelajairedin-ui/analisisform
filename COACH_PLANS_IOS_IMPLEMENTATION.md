@@ -19,7 +19,8 @@ A native iOS (SwiftUI) screen for purchasing Pathway Coach Plans directly via St
 |------|---------|-------|
 | `ios/CoachPlansView.swift` | SwiftUI UI screen | 420 |
 | `ios/CoachPlansViewModel.swift` | Purchase logic + backend integration | 380 |
-| `ios/APP_TSX_COACH_PLANS_INTEGRATION.md` | Capacitor + App.swift setup | 200 |
+| `ios/CoachPlansPlugin.swift` | Capacitor bridge (JS → Swift) | 50 |
+| `ios/XCODE_SETUP_CORRECTED.md` | Correct Xcode setup guide | 250 |
 
 ### MODIFIED FILES (iOS + Web)
 | File | Changes | Lines Changed |
@@ -128,19 +129,20 @@ panel-v2.html
 ### Step 3: Prepare Swift Files (Copy to Mac/Xcode)
 - [ ] Copy `ios/CoachPlansView.swift` → `{XcodeProject}/ios/App/CoachPlansView.swift`
 - [ ] Copy `ios/CoachPlansViewModel.swift` → `{XcodeProject}/ios/App/CoachPlansViewModel.swift`
-- [ ] Read `ios/APP_TSX_COACH_PLANS_INTEGRATION.md` for App.swift setup
+- [ ] Copy `ios/CoachPlansPlugin.swift` → `{XcodeProject}/ios/App/CoachPlansPlugin.swift` (Capacitor bridge)
+- [ ] Read `ios/XCODE_SETUP_CORRECTED.md` for complete setup
 
 ### Step 4: Xcode Configuration
-- [ ] Link Capacitor framework to target
-- [ ] Add `StoreKit` framework (Build Phases → Link Binary)
-- [ ] Set iOS deployment target to 15.0 in Build Settings
-- [ ] Update `Info.plist` with SKAds permissions (optional but recommended)
+- [ ] Add files to Xcode target (File → Add Files to Project)
+- [ ] Register CoachPlansPlugin in `Info.plist` (CapacitorPlugins array)
+- [ ] Link `StoreKit` framework (Build Phases → Link Binary)
+- [ ] Set iOS deployment target to 15.0+ in Build Settings
+- [ ] Update `Info.plist` with SKAdNetwork (optional but recommended)
 
-### Step 5: App.swift Bootstrap
-- [ ] Create `ios/App/App.swift` (see `APP_TSX_COACH_PLANS_INTEGRATION.md`)
-- [ ] Register Capacitor plugins
-- [ ] Setup `NotificationCenter` listener for `showCoachPlans`
-- [ ] Implement `presentCoachPlans()` function
+### Step 5: Verify Plugin Registration
+- [ ] In Xcode Build Phases → Compile Sources: all 3 Swift files present
+- [ ] In File Inspector: Target Membership checked for main app target
+- [ ] In Info.plist: `CapacitorPlugins` array includes `CoachPlansPlugin`
 
 ### Step 6: Build & Test (Simulator)
 - [ ] `pod install` (if using CocoaPods)
