@@ -18,11 +18,17 @@
 //
 // Seguridad: solo escribe si el que llama tiene un JWT válido cuyo email es
 // rol='admin' en usuarios. Sin eso → 403. El coach objetivo se identifica por
-// id (uuid). No toca password_hash, rol, email ni auth_id del objetivo.
+// id (uuid). No toca password_hash, rol, email ni auth_id del objetivo, salvo
+// `delete_coach`, que borra la cuenta ENTERA —identidad de Auth incluida— por
+// la regla compartida de `_shared/cuenta/eliminar-cuenta.ts`.
 //
 // Env: SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, SUPABASE_ANON_KEY
 // Deploy: supabase functions deploy admin-coach-op --no-verify-jwt
 // ===================================================================
+
+import {
+  borrarCuenta, correoDespedida, enviarCorreo, type FilaUsuario, registrarBaja, SELECT_FILA,
+} from "../_shared/cuenta/eliminar-cuenta.ts";
 
 const SB_URL = Deno.env.get("SUPABASE_URL") || "";
 const SERVICE = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || "";
@@ -121,7 +127,7 @@ Deno.serve(async (req: Request) => {
   if ((!who.email && !who.uid) || !(await isAdmin(who.email, who.uid))) return json({ error: "not_admin" }, 403);
 
   // ── Input ─────────────────────────────────────────────────────────
-  let body: { op?: string; coach_id?: string; dias?: number | string; plan?: string; wipe?: boolean; activo?: boolean; desde?: string; limite?: number };
+  let body: { op?: string; coach_id?: string; dias?: number | string; plan?: string; wipe?: boolean; avisar?: boolean; activo?: boolean; desde?: string; limite?: number };
   try {
     body = await req.json();
   } catch {
@@ -150,51 +156,36 @@ Deno.serve(async (req: Request) => {
   if (!cur) return json({ error: "coach_not_found" }, 404);
 
   // ── Borrado de cuenta (irreversible) ──────────────────────────────
-  // El panel hacía DELETE directo a `usuarios` con la anon key → RLS lo
-  // bloqueaba ("protegida por RLS"). Acá corre con SERVICE ROLE, así que sí
-  // puede borrar. wipe=true borra también sus clientes/informes/CVs; wipe=false
-  // deja esos datos pero los DESLIGA (coach_id=null → quedan como huérfanos que
-  // el admin puede reasignar), lo que además evita cualquier FK al borrar.
+  // Va por la MISMA regla que el autoborrado (_shared/cuenta/eliminar-cuenta.ts):
+  // borra primero la identidad de Supabase Auth —antes solo borraba la fila de
+  // `usuarios`, y la persona podía volver a entrar y `auth-callback` se la
+  // recreaba—, después los datos, y la fila al final comprobando que se fue.
+  // wipe=true borra también sus clientes/informes/CVs; wipe=false los deja sin
+  // coach (huérfanos que el admin puede reasignar). avisar=true (por defecto)
+  // le manda el correo de confirmación de la baja.
   if (op === "delete_coach") {
     if ((cur as { rol?: string }).rol === "admin") return json({ error: "cannot_delete_admin" }, 403);
     const wipe = body.wipe === true;
-    const idq = `coach_id=eq.${encodeURIComponent(coachId)}`;
-    const del = (path: string) =>
-      fetch(`${SB_URL}/rest/v1/${path}`, { method: "DELETE", headers: { ...svc, Prefer: "return=minimal" } }).catch(() => null);
-    const nullify = (table: string) =>
-      fetch(`${SB_URL}/rest/v1/${table}?${idq}`, {
-        method: "PATCH",
-        headers: { ...svc, "Content-Type": "application/json", Prefer: "return=minimal" },
-        body: JSON.stringify({ coach_id: null }),
-      }).catch(() => null);
-    // Rastros que no sirven sin el coach (best-effort).
-    await del(`coach_nudges?${idq}`);
-    await del(`solicitudes?${idq}`);
-    await del(`mensajes_admin_coach?${idq}`);
-    if (wipe) {
-      await del(`informes?${idq}`);
-      await del(`cv_publicados?${idq}`);
-      await del(`candidatos?${idq}`);
-    } else {
-      // Dejar los datos, pero sin coach (huérfanos) → sin romper FKs.
-      await nullify("candidatos");
-      await nullify("informes");
-      await nullify("cv_publicados");
-    }
-    // La cuenta, al final. Este es el DELETE que RLS bloqueaba desde el panel.
+    const avisar = body.avisar !== false;
+    let fila: FilaUsuario | null = null;
     try {
-      const r = await fetch(`${SB_URL}/rest/v1/usuarios?id=eq.${encodeURIComponent(coachId)}`, {
-        method: "DELETE",
-        headers: { ...svc, Prefer: "return=minimal" },
-      });
-      if (!r.ok) {
-        const t = await r.text().catch(() => "");
-        return json({ error: "delete_failed", status: r.status, detail: t.slice(0, 200) }, 502);
-      }
+      const r = await fetch(
+        `${SB_URL}/rest/v1/usuarios?id=eq.${encodeURIComponent(coachId)}&select=${SELECT_FILA}&limit=1`,
+        { headers: svc },
+      );
+      if (r.ok) { const rows = await r.json(); if (Array.isArray(rows) && rows.length) fila = rows[0]; }
     } catch {
-      return json({ error: "delete_failed" }, 502);
+      return json({ error: "db_unreachable" }, 502);
     }
-    return json({ ok: true, op, coach_id: coachId, wiped: wipe });
+    if (!fila) return json({ error: "coach_not_found" }, 404);
+    const deps = { sbUrl: SB_URL, service: SERVICE };
+    const res = await borrarCuenta(deps, fila, { wipe, uidJwt: null });
+    if (!res.ok) return json({ error: res.error }, res.status || 502);
+    const correo = avisar
+      ? await enviarCorreo(deps, String(fila.email || ""), String(fila.nombre || ""), correoDespedida(fila, new Date()))
+      : false;
+    await registrarBaja(deps, fila, { via: "admin", motivo: "otro", detalle: "", wipe, correo });
+    return json({ ok: true, op, coach_id: coachId, wiped: wipe, correo_enviado: correo });
   }
 
   // ── Activar / desactivar coach (service role → no lo frena RLS) ────

@@ -7701,22 +7701,106 @@ function cfgAccount(){
     notifCard()+
     "<div class='cp-card' style='border-color:rgba(192,117,110,.25)'><div class='cp-card-pad' style='display:flex;justify-content:space-between;align-items:center;gap:18px'>"+
       "<div><div class='cp-toggle-title' style='color:var(--pw-danger)'>Eliminar mi cuenta</div>"+
-      "<div class='cp-toggle-desc'>Se eliminará tu cuenta permanentemente después de 24 horas (puedes cancelar en cualquier momento).</div></div>"+
-      "<button class='cp-btn cp-btn-ghost' style='color:var(--pw-danger);border-color:rgba(192,117,110,.4)' data-act='delete-account-modal'>Eliminar cuenta</button></div></div>";
+      "<div class='cp-toggle-desc'>Se elimina al momento junto con tus clientes, informes y CVs, y no se puede deshacer. Antes te preguntamos por qué te vas.</div></div>"+
+      "<button class='cp-btn cp-btn-ghost' style='color:var(--pw-danger);border-color:rgba(192,117,110,.4)' data-act='baja-abrir'>Eliminar cuenta</button></div></div>";
 }
-function viewDeleteAccountModal(){
-  return "<div data-act='del-bg' style='position:fixed;inset:0;background:rgba(27,46,38,.5);z-index:160;display:flex;align-items:center;justify-content:center;padding:20px'>"+
-    "<div data-act='del-stop' role='dialog' aria-modal='true' style='background:#fff;border-radius:18px;box-shadow:var(--pw-shadow-xl);width:420px;max-width:100%;padding:30px 26px'>"+
-      "<h3 style='font-family:var(--pw-serif);font-size:20px;font-weight:600;margin:0 0 8px;color:var(--pw-danger)'>Eliminar mi cuenta</h3>"+
-      "<p style='font-size:13px;color:var(--pw-text-soft);margin:0 0 20px;line-height:1.6'>Tu cuenta se eliminará permanentemente en 24 horas. Puedes cancelar en cualquier momento durante ese período.</p>"+
-      "<div class='cp-form-row'><label class='cp-form-label'>Tu contraseña</label>"+
-        "<input id='del-pass' type='password' class='cp-form-input' placeholder='Confirma tu contraseña'>"+
-      "</div>"+
-      "<div style='display:flex;gap:10px;justify-content:flex-end;flex-wrap:wrap;padding-top:12px'>"+
-        "<button class='cp-btn cp-btn-ghost' data-act='del-cancel'>Cancelar</button>"+
-        "<button class='cp-btn cp-btn-ghost' style='color:var(--pw-danger);border-color:rgba(192,117,110,.4)' data-act='del-confirm'>Eliminar cuenta</button>"+
-      "</div></div></div>";
+// ── Baja de cuenta ─────────────────────────────────────────────────────
+// La ventana NO se pinta desde render(): se cuelga del <body> con su propio
+// listener. Así funciona igual desde Configuración › Cuenta que desde la
+// pantalla «Tu prueba terminó», que reemplaza el body entero y donde render()
+// ya no existe — y es justo donde está quien quiere irse tras la prueba.
+// El borrado es INMEDIATO y lo hace `eliminar-mi-cuenta`: identidad SOLO por
+// el JWT, sin contraseña (quien entró con Google no tiene) y confirmando con
+// ELIMINAR. Borra también la identidad de Auth: para volver hay que registrarse.
+var _PW_BAJA_WA="34623816019";
+var _PW_BAJA_MOTIVOS=[
+  ["solo_probaba","Solo estaba probando"],
+  ["no_lo_necesito","Ya no lo necesito"],
+  ["muy_caro","Es muy caro para mí"],
+  ["falta_funcion","Me falta alguna función"],
+  ["dificil","Me resultó difícil de usar"],
+  ["otra_herramienta","Uso otra herramienta"],
+  ["otro","Otro motivo"]
+];
+var _PW_BAJA_ERR={
+  no_session:"Tu sesión caducó. Vuelve a iniciar sesión e inténtalo de nuevo.",
+  es_duena_de_organizacion:"Eres la dueña de una organización: si eliminas tu cuenta, tu equipo se queda sin dueña. Escríbenos por WhatsApp y lo resolvemos contigo.",
+  cannot_delete_admin:"Las cuentas de administrador no se eliminan desde aquí.",
+  usuario_no_encontrado:"No encontramos tu cuenta. Escríbenos por WhatsApp y lo revisamos."
+};
+function _pwBajaWa(){ return "https://wa.me/"+_PW_BAJA_WA+"?text="+encodeURIComponent("Hola, estaba por eliminar mi cuenta de Pathway y antes quería hablar con alguien."); }
+function _pwBajaAbrir(){
+  if(document.getElementById("pw-baja")) return;
+  var o=document.createElement("div");
+  o.id="pw-baja"; o.setAttribute("data-act","baja-bg");
+  o.style.cssText="position:fixed;inset:0;background:rgba(27,46,38,.5);z-index:300;display:flex;align-items:center;justify-content:center;padding:16px;font-family:Inter,-apple-system,sans-serif";
+  var motivos=_PW_BAJA_MOTIVOS.map(function(m){
+    return "<label style='display:flex;align-items:center;gap:10px;padding:8px 10px;border:1px solid #E3EFE8;border-radius:10px;cursor:pointer;font-size:13.5px;color:#1B2E26'>"+
+      "<input type='radio' name='pw-baja-motivo' value='"+m[0]+"' style='accent-color:#2D6A4F'>"+m[1]+"</label>";
+  }).join("");
+  o.innerHTML="<div data-act='baja-stop' role='dialog' aria-modal='true' aria-labelledby='pw-baja-t' style='background:#fff;border-radius:18px;box-shadow:0 18px 50px rgba(27,46,38,.25);width:460px;max-width:100%;max-height:calc(100vh - 32px);overflow:auto;padding:26px 22px'>"+
+    "<div id='pw-baja-cuerpo'>"+
+    "<h3 id='pw-baja-t' style='font-family:Fraunces,Georgia,serif;font-size:21px;font-weight:600;margin:0 0 6px;color:#1B2E26'>¿Por qué te vas?</h3>"+
+    "<p style='font-size:13px;color:#5A6A60;margin:0 0 14px;line-height:1.55'>Antes de eliminar tu cuenta, cuéntanos el motivo. Nos ayuda mucho a mejorar.</p>"+
+    "<div style='display:grid;gap:7px'>"+motivos+"</div>"+
+    "<textarea id='pw-baja-detalle' maxlength='500' rows='2' placeholder='¿Quieres contarnos algo más? (opcional)' style='width:100%;box-sizing:border-box;margin-top:10px;padding:10px 12px;border:1px solid #D7E5DC;border-radius:10px;font:inherit;font-size:13px;resize:vertical'></textarea>"+
+    "<div style='background:#F0F7F2;border-radius:12px;padding:14px 16px;margin:16px 0'>"+
+      "<div style='font-size:13.5px;font-weight:700;color:#1B4332;margin-bottom:3px'>¿Prefieres hablarlo antes?</div>"+
+      "<div style='font-size:12.5px;color:#40584C;line-height:1.5;margin-bottom:10px'>Si algo no funcionó como esperabas, escríbenos por WhatsApp y lo vemos juntos.</div>"+
+      "<a href='"+_pwBajaWa()+"' target='_blank' rel='noopener' style='display:inline-block;padding:9px 16px;background:#2D6A4F;color:#fff;border-radius:9px;text-decoration:none;font-size:13px;font-weight:700'>Escribir por WhatsApp</a>"+
+    "</div>"+
+    "<p style='font-size:12.5px;color:#8F4A44;line-height:1.55;margin:0 0 12px'><strong>Esto no se puede deshacer.</strong> Se eliminan tu cuenta y tus datos: clientes, informes y CVs. Si trabajas dentro de una organización, tus clientes se quedan en ella. Para volver tendrás que registrarte de nuevo.</p>"+
+    "<label for='pw-baja-conf' style='display:block;font-size:12.5px;font-weight:600;color:#1B2E26;margin-bottom:5px'>Para confirmar, escribe ELIMINAR</label>"+
+    "<input id='pw-baja-conf' autocomplete='off' autocapitalize='characters' style='width:100%;box-sizing:border-box;padding:10px 12px;border:1px solid #D7E5DC;border-radius:10px;font:inherit;font-size:14px'>"+
+    "<div id='pw-baja-err' role='alert' style='font-size:12.5px;color:#8F4A44;min-height:18px;margin-top:8px'></div>"+
+    "<div style='display:flex;gap:10px;justify-content:flex-end;flex-wrap:wrap;padding-top:6px'>"+
+      "<button type='button' data-act='baja-cerrar' style='padding:10px 18px;background:#fff;border:1px solid #D7E5DC;border-radius:9px;font:inherit;font-size:13px;font-weight:600;color:#1B2E26;cursor:pointer'>Me quedo</button>"+
+      "<button type='button' data-act='baja-confirmar' style='padding:10px 18px;background:#fff;border:1.5px solid #8F4A44;border-radius:9px;font:inherit;font-size:13px;font-weight:700;color:#8F4A44;cursor:pointer'>Eliminar mi cuenta</button>"+
+    "</div></div></div>";
+  document.body.appendChild(o);
 }
+function _pwBajaCerrar(){ var o=document.getElementById("pw-baja"); if(o) o.remove(); }
+function _pwBajaConfirmar(btn){
+  var err=document.getElementById("pw-baja-err"); if(!err) return;
+  var sel=document.querySelector("#pw-baja input[name='pw-baja-motivo']:checked");
+  if(!sel){ err.textContent="Elige un motivo (puede ser «Otro motivo»)."; return; }
+  var conf=document.getElementById("pw-baja-conf");
+  if(!conf||String(conf.value).trim().toUpperCase()!=="ELIMINAR"){ err.textContent="Escribe ELIMINAR para confirmar."; return; }
+  var det=document.getElementById("pw-baja-detalle");
+  err.textContent=""; btn.disabled=true; btn.textContent="Eliminando…";
+  _hdr({"Content-Type":"application/json"})
+    .then(function(h){ return fetch(SB+"/functions/v1/eliminar-mi-cuenta",{method:"POST",headers:h,body:JSON.stringify({confirmacion:"ELIMINAR",motivo:sel.value,detalle:det?det.value:""})}); })
+    .then(function(r){ return r.json().catch(function(){return {};}).then(function(j){ return {ok:r.ok,j:j}; }); })
+    .then(function(res){
+      if(!res.ok||!res.j||res.j.ok!==true){ throw ((res.j&&res.j.error)||"error"); }
+      _pwBajaHecha(res.j.correo_enviado===true);
+    })
+    .catch(function(e){
+      btn.disabled=false; btn.textContent="Eliminar mi cuenta";
+      err.textContent=_PW_BAJA_ERR[e]||"No pudimos eliminar tu cuenta. Inténtalo en un momento o escríbenos por WhatsApp.";
+    });
+}
+function _pwBajaHecha(correo){
+  // La cuenta ya no existe: se limpia la sesión local para que nada intente
+  // seguir usándola.
+  try{ localStorage.removeItem("mj_user"); }catch(e){}
+  try{ for(var i=localStorage.length-1;i>=0;i--){ var k=localStorage.key(i); if(k&&k.indexOf("sb-")===0&&k.indexOf("-auth-token")>0) localStorage.removeItem(k); } }catch(e){}
+  try{ sessionStorage.clear(); }catch(e){}
+  var c=document.getElementById("pw-baja-cuerpo"); if(!c) return;
+  var o=document.getElementById("pw-baja"); if(o) o.removeAttribute("data-act");
+  c.innerHTML="<h3 style='font-family:Fraunces,Georgia,serif;font-size:21px;font-weight:600;margin:0 0 8px;color:#1B2E26'>Tu cuenta fue eliminada</h3>"+
+    "<p style='font-size:13.5px;color:#40584C;line-height:1.6;margin:0 0 18px'>"+(correo?"Te enviamos un correo de confirmación. ":"")+"Gracias por haber probado Pathway. Si algún día quieres volver, tendrás que registrarte de nuevo.</p>"+
+    "<a href='https://pathwaycareercoach.com/' style='display:inline-block;padding:10px 20px;background:#2D6A4F;color:#fff;border-radius:9px;text-decoration:none;font-size:13px;font-weight:700'>Ir al inicio</a>";
+}
+document.addEventListener("click",function(ev){
+  var el=ev.target&&ev.target.closest?ev.target.closest("[data-act]"):null; if(!el) return;
+  var a=el.getAttribute("data-act");
+  if(a==="baja-abrir"){ _pwBajaAbrir(); return; }
+  if(a==="baja-bg"){ if(ev.target===el) _pwBajaCerrar(); return; }
+  if(a==="baja-cerrar"){ _pwBajaCerrar(); return; }
+  if(a==="baja-confirmar"){ _pwBajaConfirmar(el); return; }
+});
+document.addEventListener("keydown",function(ev){ if(ev.key==="Escape"&&document.getElementById("pw-baja")&&document.querySelector("#pw-baja [data-act='baja-confirmar']")&&!document.querySelector("#pw-baja [data-act='baja-confirmar']").disabled) _pwBajaCerrar(); });
 function cfgPlan(){
   // ── No mostrar selector de planes en la app: Apple rechaza pagos en-app ──
   var inApp = window.PW_IN_APP || false;
@@ -11580,7 +11664,6 @@ function render(){
       (state.genmat&&state.genmat.open?viewGenMatModal():"")+
       (state.review&&state.review.open?viewReviewModal():"")+
       (state.reasignOpen?viewReasignModal():"")+
-      (state.deleteAccountModal?viewDeleteAccountModal():"")+
       (state.ag?viewAgModal():"");
     var _same=(_vk===_lastViewKey);
     try{ var _scEl2=document.querySelector(".cp-scroll"); if(_scEl2) _scEl2.scrollTop=(_same?_prevScroll:0); }catch(e){}
@@ -12413,8 +12496,6 @@ document.addEventListener("click", function(ev){
   if(act==="mail-bg"){ if(ev.target===el){ state.mail.open=false; _gameReturnMaybe(); render(); } return; }
   if(act==="mail-stop"){ return; }
   if(act==="mail-close"){ state.mail.open=false; _gameReturnMaybe(); render(); return; }
-  if(act==="del-bg"){ if(ev.target===el){ state.deleteAccountModal=false; render(); } return; }
-  if(act==="del-stop"){ return; }
   if(act.indexOf("genmat:")===0){ var _gmid=el.getAttribute("data-id"); if(_gmid==="ejemplo-maria"){ demoGenerateExample(); return; } state.genmat={open:true,kind:act.slice(7),id:_gmid}; render(); return; }
   if(act==="genmat-bg"){ if(ev.target===el){ state.genmat=null; render(); } return; }
   if(act==="genmat-stop"){ return; }
@@ -13521,17 +13602,20 @@ document.addEventListener("click", function(ev){
     var _wipe = cdcli>0
       ? confirm("¿Borrar TAMBIÉN sus "+cdcli+" cliente(s) y sus datos (informes, CVs)?\n\nAceptar = borra TODO.\nCancelar = elimina solo la cuenta y deja los datos de los clientes.")
       : false;
+    // El correo de confirmación de la baja: por defecto sí (quien lo pidió
+    // tiene que saber que ya está); se puede saltar para una cuenta basura.
+    var _avisar = confirm("¿Le enviamos un correo confirmando que su cuenta fue eliminada?\n\nAceptar = sí, avisarle.\nCancelar = borrar sin avisar.");
     // Borrado por EDGE FUNCTION (service role) — el DELETE directo a `usuarios`
     // con la anon key lo bloquea RLS ("protegida por RLS"). admin-coach-op corre
     // con service role, borra la cuenta (y sus datos si _wipe) y deja huérfanos
     // los clientes si no. Mismo camino que extender trial / marcar pagado.
     _hdr({"Content-Type":"application/json"})
-      .then(function(h){ return fetch(SB+"/functions/v1/admin-coach-op",{method:"POST",headers:h,body:JSON.stringify({op:"delete_coach", coach_id:cdid, wipe:_wipe})}); })
+      .then(function(h){ return fetch(SB+"/functions/v1/admin-coach-op",{method:"POST",headers:h,body:JSON.stringify({op:"delete_coach", coach_id:cdid, wipe:_wipe, avisar:_avisar})}); })
       .then(function(r){ return r.json().catch(function(){return {};}).then(function(j){ return {ok:r.ok, j:j}; }); })
       .then(function(res){
         if(!res.ok || !res.j || res.j.ok!==true){ throw ((res.j&&res.j.error)||"error"); }
         if(RCOACHES){ RCOACHES=RCOACHES.filter(function(u){ return String(u.id)!==String(cdid); }); }
-        toast(_wipe?"Cuenta y datos eliminados ✓":"Cuenta eliminada ✓"); render();
+        toast((_wipe?"Cuenta y datos eliminados ✓":"Cuenta eliminada ✓")+(res.j.correo_enviado?" · correo enviado":"")); render();
       })
       .catch(function(e){
         var _m = (e==="cannot_delete_admin") ? "No se puede eliminar: es una cuenta de administrador."
@@ -14832,37 +14916,6 @@ document.addEventListener("click", function(ev){
   if(act==="path-toggle"){ try{ var _pc=localStorage.getItem("mj_path_collapsed")==="1"; localStorage.setItem("mj_path_collapsed", _pc?"0":"1"); }catch(e){} render(); return; }
   if(act==="goat-wave"){ _goatWaveUntil=Date.now()+2400; render(); setTimeout(function(){ try{ render(); }catch(e){} },2500); return; }
   if(act==="guide-off"){ try{ localStorage.setItem("pw_guide_off","1"); }catch(e){} render(); return; }
-  if(act==="delete-account-modal"){ state.deleteAccountModal=true; render(); return; }
-  if(act==="del-cancel"){ state.deleteAccountModal=false; var dp=document.getElementById("del-pass"); if(dp) dp.value=""; render(); return; }
-  if(act==="del-confirm"){
-    if(!REAL||!RME||!RME.id){ alert("Inicia sesión para eliminar tu cuenta."); return; }
-    var pw=_val("del-pass").trim(); if(!pw){ alert("Escribe tu contraseña para confirmar."); return; }
-    var em=RME.email||COACH.email||""; if(!em){ alert("No se pudo obtener tu email."); return; }
-    _sha256(pw).then(function(ph){
-      return _sbw("usuarios?email=eq."+encodeURIComponent(em)+"&select=id,password_hash","GET").then(function(r){
-        if(!r.ok){ throw "No se pudo verificar la contraseña"; }
-        return r.json().then(function(rows){
-          if(!rows||!rows[0]){ throw "Usuario no encontrado"; }
-          var stored=rows[0].password_hash||"";
-          if(stored!==ph){ throw "Contraseña incorrecta"; }
-          return ph;
-        });
-      });
-    }).then(function(){
-      return _hdr({"Content-Type":"application/json"}).then(function(h){
-        return fetch(SB+"/functions/v1/schedule-account-deletion",{method:"POST",headers:h,body:JSON.stringify({usuario_id:RME.id})});
-      });
-    }).then(function(r){ return r.json().catch(function(){return {};}).then(function(j){return {ok:r.ok,j:j};});})
-      .then(function(res){
-        if(!res.ok||!res.j||res.j.success!==true){ throw ((res.j&&res.j.error)||"error"); }
-        state.deleteAccountModal=false; var dp=document.getElementById("del-pass"); if(dp) dp.value="";
-        alert("Tu cuenta será eliminada en 24 horas. Puedes cancelar en cualquier momento.");
-        render();
-      }).catch(function(e){
-        alert("Error: "+(typeof e==="string"?e:"No se pudo procesar tu solicitud. Intenta de nuevo."));
-      });
-    return;
-  }
   if(act==="logout"){
     try{ localStorage.removeItem("mj_user"); }catch(e){}
     try{ sessionStorage.clear(); }catch(e){}
@@ -17111,7 +17164,7 @@ function _paywallCheck(u){
       var _cta = window.PW_IN_APP
         ? "<p style='font-size:14px;color:#5A6A60;line-height:1.55;margin-bottom:20px'>Tu prueba de Pathway terminó. Contacta con nuestro equipo para reactivar tu acceso.</p>"
         : "<p style='font-size:14px;color:#5A6A60;line-height:1.55;margin-bottom:20px'>Reactiva tu cuenta y sigue donde lo dejaste: <strong>tus clientes, informes y configuración siguen intactos</strong>. <strong>"+_precio+", cancelas cuando quieras.</strong></p><a href='"+su+"' style='display:inline-block;padding:13px 28px;background:#2D6A4F;color:#fff;border-radius:10px;text-decoration:none;font-size:14px;font-weight:600;margin-bottom:6px'>Reactivar mi cuenta →</a>"+_upsell+"<br>";
-      document.body.innerHTML="<div style='position:fixed;inset:0;display:flex;align-items:center;justify-content:center;background:#FCFDFC;font-family:Inter,sans-serif;padding:24px'><div id='pw-paywall-card' style='background:#fff;border-radius:14px;padding:32px;max-width:480px;width:100%;text-align:center;box-shadow:0 8px 30px rgba(31,42,35,.1)'><div style='font-size:42px;margin-bottom:14px'>"+PWI.svg('sprout',{sm:true})+"</div><h1 style='font-family:Fraunces,Georgia,serif;font-size:24px;color:#1B2E26;margin-bottom:10px;letter-spacing:-.4px'>Tu prueba terminó</h1>"+_cta+_resenaOffer+"<div style='margin-top:16px'><a href='login.html' style='display:inline-block;padding:8px 18px;font-size:12px;color:#5A6A60;text-decoration:underline'>Cerrar sesión</a></div><p style='font-size:11px;color:#999;margin-top:12px;line-height:1.5'>¿Algún problema? Escríbenos a <a href='mailto:"+SUPPORT_EMAIL+"' style='color:#2D6A4F'>"+SUPPORT_EMAIL+"</a></p></div></div>";
+      document.body.innerHTML="<div style='position:fixed;inset:0;display:flex;align-items:center;justify-content:center;background:#FCFDFC;font-family:Inter,sans-serif;padding:24px'><div id='pw-paywall-card' style='background:#fff;border-radius:14px;padding:32px;max-width:480px;width:100%;text-align:center;box-shadow:0 8px 30px rgba(31,42,35,.1)'><div style='font-size:42px;margin-bottom:14px'>"+PWI.svg('sprout',{sm:true})+"</div><h1 style='font-family:Fraunces,Georgia,serif;font-size:24px;color:#1B2E26;margin-bottom:10px;letter-spacing:-.4px'>Tu prueba terminó</h1>"+_cta+_resenaOffer+"<div style='margin-top:16px'><a href='login.html' style='display:inline-block;padding:8px 18px;font-size:12px;color:#5A6A60;text-decoration:underline'>Cerrar sesión</a><button type='button' data-act='baja-abrir' style='padding:8px 18px;font-size:12px;color:#8F4A44;background:none;border:none;text-decoration:underline;cursor:pointer;font-family:inherit'>Eliminar mi cuenta</button></div><p style='font-size:11px;color:#999;margin-top:12px;line-height:1.5'>¿Algún problema? Escríbenos a <a href='mailto:"+SUPPORT_EMAIL+"' style='color:#2D6A4F'>"+SUPPORT_EMAIL+"</a></p></div></div>";
     }).catch(function(){
       // Falla de RED al verificar la suscripción (offline/DNS/CORS), NO "trial
       // vencido". Antes esto mandaba a login.html → la coach re-logueaba, volvía
