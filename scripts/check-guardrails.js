@@ -6708,6 +6708,18 @@ const RULES = [
         return "pw-multicoach.js: se perdio el handoff. MultiCoach esta en OTRO origen: sin canje el dueño llega sin sesion.";
       if (!/function esDueno\(/.test(mod) || !/function urlDeEntrada\(/.test(mod))
         return "pw-multicoach.js: falta esDueno() o urlDeEntrada().";
+      // El colaborador REAL lo es por la BANDERA, no por el rol: en produccion
+      // `rol='colaborador'` son 0 filas y `rol='coach'` +
+      // `configuracion.member_role='colaborador'` son 2, las dos con org. Si
+      // esDueno deja de mirar member_role, esas 2 personas vuelven a caer en
+      // panel-v2.html y no llegan a MultiCoach por ninguna de las cinco puertas.
+      const sinComent = (t) => t.replace(/^\s*\/\/.*$/gm, "").replace(/\/\*[\s\S]*?\*\//g, "");
+      const codigo = sinComent(mod);
+      const bandera = codigo.match(/(\w+)\s*=[^;]*configuracion\.member_role/);
+      if (!bandera)
+        return "pw-multicoach.js: esDueno dejo de leer configuracion.member_role — el colaborador real vuelve a caer en el panel del coach.";
+      if (!new RegExp(bandera[1] + "\\s*===\\s*'colaborador'").test(codigo))
+        return "pw-multicoach.js: se lee configuracion.member_role pero ya no se compara con 'colaborador' — el colaborador real vuelve a caer en el panel del coach.";
       const offenders = [];
       for (const f of ["login.html", "login-en.html", "auth-callback.html", "registro.html", "registro-en.html"]) {
         const t = read(f);
@@ -6716,6 +6728,13 @@ const RULES = [
         // nombra el fichero aprueba una pagina que no lo carga.
         if (!/<script src="\/pw-multicoach\.js"><\/script>/.test(t)) offenders.push(f + " no carga pw-multicoach.js");
         if (!/PW_MULTICOACH\.esDueno\(/.test(t)) offenders.push(f + " no pregunta PW_MULTICOACH.esDueno");
+        // Y le pasa la configuracion EN TODAS sus llamadas: sin el 3er argumento
+        // la bandera no se puede leer y la rama del colaborador es inalcanzable
+        // desde esa puerta. login.html tiene DOS, asi que no vale «alguna».
+        const llamadas = sinComent(t).match(/esDueno\(([^)]*)\)/g) || [];
+        if (!llamadas.length) continue;
+        const cojas = llamadas.filter((c) => c.split(",").length < 3);
+        if (cojas.length) offenders.push(f + " llama esDueno sin pasarle la configuracion: " + cojas.join(" / "));
       }
       return offenders.length ? offenders.join("; ") : null;
     },
@@ -6811,6 +6830,64 @@ const RULES = [
       if (!/new Uint8Array\(32\)/.test(codigo) || !/toString\(16\)/.test(codigo))
         return f + ": el codigo dejo de ser 32 bytes en hexadecimal (64 caracteres).";
       return null;
+    },
+  },
+  {
+    name: "multicoach: A es legacy — no recibe funcionalidad nueva",
+    bug: "Decision de producto del 2026-09-14: MultiCoach tiene DOS " +
+         "implementaciones y la superviviente es B (repo `multicoach`, " +
+         "pathwayplatforms.com). `multicoach.html` se queda en produccion hasta " +
+         "que B alcance la paridad, pero NO recibe funcionalidad nueva: hacerla " +
+         "dos veces es el desarrollo paralelo que se acaba de congelar. " +
+         "Esta regla NO es una puerta cerrada — es una FIRMA. Mide el tamano de " +
+         "lo que se le agrega y, si es grande, pide que el commit diga que es un " +
+         "arreglo y no una funcion nueva. Un fix critico de produccion nunca se " +
+         "bloquea: se escribe la marca y pasa, y el motivo queda en el historial. " +
+         "Ver CLAUDE.md, seccion 'MULTICOACH — multicoach.html ES LEGACY'.",
+    check() {
+      // Lineas AGREGADAS a multicoach.html, respecto de main, que puede pasar
+      // sin firma. Un arreglo critico suele ser mucho mas chico que esto; lo
+      // que no cabe aca no es que este prohibido, es que se firma.
+      const UMBRAL = 60;
+      const MARCAS = /(FIX-CRITICO-MULTICOACH|RETIRADA-MULTICOACH)\s*:/;
+
+      let git;
+      try { git = require("child_process"); } catch (e) { return null; }
+      const sh = (cmd) => {
+        try { return git.execSync(cmd, { stdio: ["ignore", "pipe", "ignore"] }).toString(); }
+        catch (e) { return null; }
+      };
+
+      // La base es main. Si no se puede resolver —clon shallow de CI, repo sin
+      // remoto— la regla NO opina: callar es mejor que frenar por no saber.
+      let base = null;
+      for (const ref of ["origin/main", "main"]) {
+        if (sh("git rev-parse --verify --quiet " + ref)) { base = ref; break; }
+      }
+      if (!base) return null;
+      const mb = sh("git merge-base " + base + " HEAD");
+      if (!mb) return null;
+
+      // Solo lo COMMITEADO: antes del commit la marca todavia no puede existir,
+      // y la regla no va a pedir algo que aun no se puede dar.
+      const numstat = sh("git diff --numstat " + mb.trim() + " HEAD -- multicoach.html");
+      if (numstat === null) return null;
+      const m = /^(\d+)\s+(\d+)\s/.exec(numstat.trim());
+      if (!m) return null;                       // sin cambios en el archivo
+      const agregadas = parseInt(m[1], 10) || 0;
+      if (agregadas <= UMBRAL) return null;
+
+      // Los mensajes de los commits que TOCAN el archivo en esta rama.
+      const log = sh("git log --format=%B " + mb.trim() + "..HEAD -- multicoach.html");
+      if (log === null) return null;
+      if (MARCAS.test(log)) return null;
+
+      return "multicoach.html suma " + agregadas + " lineas sobre " + base + " y ningun " +
+             "commit que lo toca dice por que. A es LEGACY: lo nuevo va al repo `multicoach` " +
+             "(B). Si esto ES un arreglo critico de produccion o un paso de la retirada, " +
+             "ponlo en el mensaje del commit y pasa:\n" +
+             "        FIX-CRITICO-MULTICOACH: <que estaba roto en produccion>\n" +
+             "        RETIRADA-MULTICOACH: <que paso de la retirada es>";
     },
   },
 ];

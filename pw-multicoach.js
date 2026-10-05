@@ -30,16 +30,28 @@
   // puertas a la vez. Ninguna página escribe esta URL a mano.
   var ORIGIN = 'https://pathwayplatforms.com';
 
-  // Quién va a MultiCoach. Copiado TAL CUAL de la condición que login.html ya
-  // usaba, para no cambiar de paso quién entra:
+  // Quién va a MultiCoach:
   //   rol='owner'                    → siempre.
   //   rol='colaborador' con acceso   → hoy INALCANZABLE: el CHECK de
   //     `usuarios.rol` solo admite admin|coach|cliente|empleado|owner, así que
   //     esa rama no puede darse. Se conserva porque quitarla es una decisión
   //     propia, no un efecto lateral de mover el destino.
-  function esDueno(rol, multicoachAccess) {
+  //   rol='coach' + configuracion.member_role='colaborador' → el colaborador
+  //     REAL, y la única forma en que hoy existe. Medido en producción:
+  //
+  //       rol='colaborador'                                -> 0 filas
+  //       rol='coach' + configuracion.member_role='colab'  -> 2 filas, con org
+  //
+  //     Las dos ramas de arriba miran `rol`, así que estas 2 personas caían en
+  //     `panel-v2.html` —el panel del coach— y no llegaban a MultiCoach por
+  //     ninguna de las cinco puertas. `member_role` es la bandera que
+  //     `registrar-coach` ya conserva; esto la LEE, no cambia quién es qué.
+  function esDueno(rol, multicoachAccess, configuracion) {
     var r = String(rol || '').toLowerCase();
-    return r === 'owner' || (r === 'colaborador' && !!multicoachAccess);
+    if (r === 'owner') return true;
+    if (r === 'colaborador' && !!multicoachAccess) return true;
+    var mr = String((configuracion && configuracion.member_role) || '').toLowerCase();
+    return r === 'coach' && mr === 'colaborador';
   }
 
   // La URL a la que mandar al dueño. Pide el código de handoff; si no lo
