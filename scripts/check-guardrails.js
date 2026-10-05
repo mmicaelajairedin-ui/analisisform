@@ -2772,6 +2772,28 @@ const RULES = [
     },
   },
   {
+    name: "cuenta: «Eliminar mi cuenta» borra de verdad, y se llega también desde «Tu prueba terminó»",
+    bug: "El botón llamaba a schedule-account-deletion: comprobaba la contraseña contra " +
+         "password_hash (vacío para quien entró con Google), el RPC con service role nunca " +
+         "encontraba a nadie y ningún cron ejecutaba el borrado. Y la pantalla «Tu prueba " +
+         "terminó» reemplaza el body entero, así que quien más quería irse no tenía botón. " +
+         "Además el borrado de admin dejaba viva la identidad de Auth y la persona volvía a entrar.",
+    check() {
+      const p = read("panel-v2.html");
+      const sh = read("supabase/functions/_shared/cuenta/eliminar-cuenta.ts");
+      const adm = read("supabase/functions/admin-coach-op/index.ts");
+      if (!p || !sh || !adm) return "falta panel-v2.html, el módulo compartido de borrado o admin-coach-op.";
+      if (/functions\/v1\/schedule-account-deletion/.test(p)) return "panel-v2.html vuelve a llamar a schedule-account-deletion, que no puede borrar nada.";
+      if (!/functions\/v1\/eliminar-mi-cuenta/.test(p)) return "panel-v2.html no llama a eliminar-mi-cuenta.";
+      if (/del-pass|password_hash/.test((p.match(/function _pwBajaConfirmar[\s\S]*?\n}/) || [""])[0])) return "la baja vuelve a pedir la contraseña: quien entró con Google no tiene.";
+      const pw = (p.match(/document\.body\.innerHTML="[^\n]*Tu prueba terminó[^\n]*/) || [""])[0];
+      if (!/data-act='baja-abrir'/.test(pw)) return "la pantalla «Tu prueba terminó» no ofrece «Eliminar mi cuenta».";
+      if (!/auth\/v1\/admin\/users\/\$\{encodeURIComponent\(id\)\}`, \{ method: "DELETE"/.test(sh)) return "el borrado ya no elimina la identidad de Auth: la persona podría volver a entrar.";
+      if (!/from "\.\.\/_shared\/cuenta\/eliminar-cuenta\.ts"/.test(adm) || !/borrarCuenta\(/.test(adm)) return "admin-coach-op ya no borra por la regla compartida (se saltaría Auth y el correo).";
+      return null;
+    },
+  },
+  {
     name: "deploy: TODA edge function tiene su step en el workflow (ninguna se olvida)",
     bug: "El deploy de funciones se hace por lista explícita en deploy-functions.yml. " +
          "Si se agrega una función a supabase/functions/ y no se suma su step, queda " +

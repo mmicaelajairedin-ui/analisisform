@@ -1,0 +1,43 @@
+# Comprueba el borrado de cuenta: el autoborrado (`eliminar-mi-cuenta`) y el
+# de admin (`admin-coach-op` · delete_coach), que comparten regla en
+# `_shared/cuenta/eliminar-cuenta.ts`.
+#
+# Lo que fija: la identidad de Auth se borra —todas las de ese email— y ANTES
+# que los datos, así que si Auth falla no se toca nada; quien llama sale del
+# JWT y no del cuerpo; la dueña de una organización y el admin no se borran
+# solos; y un DELETE que no borra ninguna fila no se da por bueno.
+#
+# Sin red y sin secretos: shimea `Deno`, carga los `index.ts` tal cual y pone
+# detrás un Supabase de mentira. Lleva tres canarios. Va aparte de
+# `npm run verify` por lo mismo que el contrato de mc_permisos: necesita Node 22.
+
+on:
+  push:
+    paths:
+      - 'supabase/functions/eliminar-mi-cuenta/**'
+      - 'supabase/functions/admin-coach-op/**'
+      - 'supabase/functions/_shared/cuenta/**'
+      - 'scripts/probar-eliminar-mi-cuenta.mjs'
+      - '.github/workflows/contrato-borrado-de-cuenta.yml'
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: contrato-borrado-de-cuenta-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  contrato:
+    name: Auth primero, identidad por JWT + canarios
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Contrato del borrado de cuenta
+        run: node --experimental-strip-types scripts/probar-eliminar-mi-cuenta.mjs
