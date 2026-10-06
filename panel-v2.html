@@ -16030,32 +16030,38 @@ function _purchasePlan(plan){
   // iOS app: Present native Coach Plans view (SwiftUI)
   // Via CoachPlansPlugin (Capacitor bridge) → handles all StoreKit & backend verification
   // Pass JWT and appAccountToken from web (localStorage) to avoid UserDefaults sync issues
-  if(window.PW_IN_APP && window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.CoachPlansPlugin){
-    _busyOn();
-    console.log('[_purchasePlan] Opening native Coach Plans view');
+  if(window.PW_IN_APP){
+    // iOS: NEVER open Stripe, use native IAP only
+    if(window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.CoachPlansPlugin){
+      _busyOn();
+      console.log('[_purchasePlan] Opening native Coach Plans view');
 
-    var jwt = localStorage.getItem('mj_auth') || '';
-    var appAccountToken = localStorage.getItem('mj_app_account_token') || '';
+      var jwt = localStorage.getItem('mj_auth') || '';
+      var appAccountToken = localStorage.getItem('mj_app_account_token') || '';
 
-    window.Capacitor.Plugins.CoachPlansPlugin.present({
-      jwt: jwt,
-      appAccountToken: appAccountToken
-    }).then(function(){
+      window.Capacitor.Plugins.CoachPlansPlugin.present({
+        jwt: jwt,
+        appAccountToken: appAccountToken
+      }).then(function(){
+        _busyOff();
+        console.log('[_purchasePlan] Coach Plans view dismissed');
+      }).catch(function(err){
+        _busyOff();
+        console.error('[_purchasePlan] Plugin error:', err);
+        try{ toast('Error: '+err); }catch(e){}
+      });
+    } else {
+      // Plugin not available: show neutral modal (never Stripe)
       _busyOff();
-      console.log('[_purchasePlan] Coach Plans view dismissed');
-      // CoachPlansView handles entitlement check internally
-      // If purchase succeeded, view will have synced subscription state
-    }).catch(function(err){
-      _busyOff();
-      console.error('[_purchasePlan] Plugin error:', err);
-      try{ toast('Error: '+err); }catch(e){}
-    });
+      try{ toast('IAP temporarily unavailable. Please try again.'); }catch(e){}
+    }
     return;
   }
 
   // Web: open Stripe (existing behavior)
-  var stripeUrl = plan==='pro' ? stripeUrl("pro") : "https://pathwaycareercoach.com/upgrade.html";
-  try{ window.open(stripeUrl, '_blank'); }catch(e){}
+  // Note: stripeUrl is global function, don't shadow with local var
+  var stripeCheckoutUrl = plan==='pro' ? stripeUrl("pro") : "https://pathwaycareercoach.com/upgrade.html";
+  try{ window.open(stripeCheckoutUrl, '_blank'); }catch(e){}
 }
 function rawOf(id){ var c=CLIENTS.filter(function(x){return String(x.id)===String(id);})[0]; return (c&&c.raw)||null; }
 // Una seccion puede estar GUARDADA y a la vez OCULTA para el cliente

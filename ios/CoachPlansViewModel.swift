@@ -38,6 +38,26 @@ class CoachPlansViewModel: NSObject, ObservableObject {
     self.jwt = jwt
     self.appAccountToken = appAccountToken
     super.init()
+
+    // Setup listener for transaction updates from StoreKit 2
+    setupTransactionListener()
+  }
+
+  /// Setup listener for StoreKit 2 transaction updates
+  private func setupTransactionListener() {
+    updateListenerTask = Task.detached { [weak self] in
+      for await update in Transaction.updates {
+        await self?.handleTransactionUpdate(update)
+      }
+    }
+  }
+
+  /// Handle transaction updates from StoreKit 2
+  private func handleTransactionUpdate(_ update: Transaction) async {
+    print("[CoachPlansVM] Transaction update: \(update.productID)")
+
+    // Check entitlement status
+    checkCurrentEntitlement()
   }
 
   // MARK: - Public Methods
@@ -234,9 +254,16 @@ class CoachPlansViewModel: NSObject, ObservableObject {
       ])
     }
 
+    // Validate appAccountToken is a valid UUID
+    guard let token = UUID(uuidString: appAccountToken) else {
+      throw NSError(domain: "Token", code: -1, userInfo: [
+        NSLocalizedDescriptionKey: "Invalid appAccountToken format"
+      ])
+    }
+
     // Step 1: Show native Apple purchase sheet (StoreKit 2)
     let result = try await product.purchase(options: [
-      .appAccountToken(appAccountToken)
+      .appAccountToken(token)
     ])
 
     // Step 2: Handle purchase result
@@ -249,6 +276,11 @@ class CoachPlansViewModel: NSObject, ObservableObject {
         appAccountToken: appAccountToken,
         jwt: jwt
       )
+
+      // Mark transaction as finished (required by Apple)
+      if case .verified(let transaction) = verificationResult {
+        await transaction.finish()
+      }
 
       // Update local state
       self.isPurchasing = false
@@ -320,8 +352,14 @@ class CoachPlansViewModel: NSObject, ObservableObject {
   /// Restore purchases via StoreKit
   private func restoreViaCapsitor() async throws {
     print("[CoachPlansVM] Restoring purchases...")
-    // In SwiftUI/StoreKit 2, use AppStore.sync() to restore
-    // This syncs all transactions and triggers purchase listeners
+
+    // Sync all transactions from App Store
+    try await AppStore.sync()
+
+    // Check entitlement after restore
+    checkCurrentEntitlement()
+
+    print("[CoachPlansVM] ✅ Restore complete")
   }
 }
 
