@@ -11,8 +11,10 @@ import { createClient } from "jsr:@supabase/supabase-js@2";
 import { Buffer } from "jsr:@std/encoding";
 
 interface CheckRequest {
-  originalTransactionId: string;
+  receipt: string; // JWS from StoreKit 2
+  appAccountToken: string;
   productId: string;
+  originalTransactionId: string; // Extracted from StoreKit transaction
 }
 
 interface CheckResponse {

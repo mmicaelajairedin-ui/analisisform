@@ -367,10 +367,12 @@ class CoachPlansViewModel: NSObject, ObservableObject {
     request.setValue("application/json", forHTTPHeaderField: "Content-Type")
 
     // Send JWS (signed transaction) to backend for validation
+    let txPayload = transaction.unsafePayloadValue
     let body: [String: Any] = [
       "receipt": transaction.jwsRepresentation,
       "appAccountToken": appAccountToken,
-      "productId": transaction.unsafePayloadValue.productID
+      "productId": txPayload.productID,
+      "originalTransactionId": txPayload.originalTransactionID
     ]
     request.httpBody = try JSONSerialization.data(withJSONObject: body)
 

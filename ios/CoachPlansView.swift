@@ -291,15 +291,16 @@ struct PlanCard: View {
       // Features
       VStack(alignment: .leading, spacing: 8) {
         if product.id.contains("pro") {
-          FeatureRow(text: "Mensajería y email")
-          FeatureRow(text: "White-label personalizado")
-          FeatureRow(text: "Analytics y reportes")
-          FeatureRow(text: "Integraciones avanzadas")
-          FeatureRow(text: "Soporte prioritario")
+          FeatureRow(text: "Todo lo de Basic")
+          FeatureRow(text: "Clientes ilimitados")
+          FeatureRow(text: "White-label / personalización de marca")
+          FeatureRow(text: "Automatizaciones")
+          FeatureRow(text: "Plantillas de email")
         } else {
           FeatureRow(text: "Gestión de clientes")
+          FeatureRow(text: "CV + LinkedIn con IA")
+          FeatureRow(text: "Agenda y seguimiento")
           FeatureRow(text: "Portal del cliente")
-          FeatureRow(text: "Generación de informes")
           FeatureRow(text: "Hasta 10 clientes")
         }
       }
@@ -349,9 +350,9 @@ struct FeaturesComparisonView: View {
 
       VStack(spacing: 6) {
         ComparisonRow(feature: "Clientes", basic: "Hasta 10", pro: "Ilimitados")
-        ComparisonRow(feature: "Mensajería", basic: "No", pro: "Sí")
         ComparisonRow(feature: "White-label", basic: "No", pro: "Sí")
-        ComparisonRow(feature: "Analytics", basic: "No", pro: "Sí")
+        ComparisonRow(feature: "Automatizaciones", basic: "No", pro: "Sí")
+        ComparisonRow(feature: "Plantillas de email", basic: "No", pro: "Sí")
       }
     }
   }
