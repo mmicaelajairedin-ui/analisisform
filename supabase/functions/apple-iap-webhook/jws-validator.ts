@@ -351,9 +351,10 @@ async function isWithinValidityPeriod(certDER: Uint8Array): Promise<boolean> {
   const metadata = await getCertificateMetadata(certDER);
 
   if (!metadata) {
-    // Cannot verify dates without @peculiar/x509, but don't fail completely
-    console.warn("[JWS] Temporal validation: @peculiar/x509 unavailable");
-    return true; // Placeholder: pass if library unavailable
+    // SECURITY GATE: Cannot verify dates without @peculiar/x509 → REJECT
+    // Accepting a cert when we cannot verify its validity is insecure
+    console.error("[JWS] SECURITY GATE: Temporal validation unavailable (@peculiar/x509 missing) → REJECT");
+    return false;
   }
 
   const now = new Date();
@@ -483,9 +484,10 @@ async function validateCertificateChain(x5c: string[], testRootDER?: Uint8Array)
         console.error("[JWS] Cryptographic chain verification error: REJECT", e);
         return false;
       }
-    } else if (certs.length > 1) {
+    } else {
+      // certs.length === 0 (impossible, checked at start) OR @peculiar/x509 unavailable
       console.error(
-        "[JWS] ⚠️  @peculiar/x509 unavailable for cryptographic chain verification: REJECT"
+        "[JWS] SECURITY GATE: Cannot verify certificate chain cryptographically (@peculiar/x509 unavailable) → REJECT"
       );
       return false;
     }
