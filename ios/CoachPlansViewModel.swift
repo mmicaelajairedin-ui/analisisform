@@ -28,6 +28,7 @@ class CoachPlansViewModel: NSObject, ObservableObject {
   ]
 
   private let backendBaseUrl = "https://api.pathwaycareercoach.com"
+  private let userDefaults = UserDefaults.standard
 
   // MARK: - Credentials (from web)
   private let jwt: String
@@ -90,6 +91,7 @@ class CoachPlansViewModel: NSObject, ObservableObject {
   }
 
   /// Check current entitlement from backend
+  /// Also retries any pending purchases saved locally
   func checkCurrentEntitlement() {
     Task {
       do {
@@ -115,9 +117,17 @@ class CoachPlansViewModel: NSObject, ObservableObject {
         let (data, response) = try await URLSession.shared.data(for: request)
 
         guard let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200 else {
-          print("[CoachPlansVM] Entitlement check failed")
+          print("[CoachPlansVM] Entitlement check failed with status \(String(describing: (response as? HTTPURLResponse)?.statusCode))")
+
+          // Retry any pending transaction from last purchase
+          if let pendingJws = userDefaults.string(forKey: "iap_pending_jws") {
+            await self.retryPendingTransaction(jws: pendingJws)
+          }
           return
         }
+
+        // Clear pending transaction on success
+        userDefaults.removeObject(forKey: "iap_pending_jws")
 
         let result = try JSONDecoder().decode(EntitlementResponse.self, from: data)
 
@@ -136,6 +146,45 @@ class CoachPlansViewModel: NSObject, ObservableObject {
       } catch {
         print("[CoachPlansVM] Entitlement check error: \(error)")
       }
+    }
+  }
+
+  /// Retry verification of a pending transaction
+  private func retryPendingTransaction(jws: String) async {
+    print("[CoachPlansVM] Retrying pending transaction...")
+
+    let url = URL(string: "\(backendBaseUrl)/functions/v1/check-entitlement")!
+    var request = URLRequest(url: url)
+    request.httpMethod = "POST"
+    request.setValue("Bearer \(jwt)", forHTTPHeaderField: "Authorization")
+    request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+
+    let body: [String: Any] = [
+      "receipt": jws,
+      "appAccountToken": appAccountToken
+    ]
+
+    do {
+      request.httpBody = try JSONSerialization.data(withJSONObject: body)
+      let (data, response) = try await URLSession.shared.data(for: request)
+
+      guard let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200 else {
+        print("[CoachPlansVM] Pending transaction still not verified")
+        return
+      }
+
+      let result = try JSONDecoder().decode(EntitlementResponse.self, from: data)
+      if result.hasAccess {
+        userDefaults.removeObject(forKey: "iap_pending_jws")
+        self.currentSubscription = SubscriptionInfo(
+          productId: result.productId,
+          status: result.status,
+          expiryDate: ISO8601DateFormatter().date(from: result.expiryDate) ?? Date()
+        )
+        print("[CoachPlansVM] ✅ Pending transaction verified!")
+      }
+    } catch {
+      print("[CoachPlansVM] Retry error: \(error)")
     }
   }
 
@@ -327,15 +376,36 @@ class CoachPlansViewModel: NSObject, ObservableObject {
 
     let (data, response) = try await URLSession.shared.data(for: request)
 
-    guard let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200 else {
+    guard let httpResponse = response as? HTTPURLResponse else {
       throw NSError(domain: "Verification", code: -1, userInfo: [
-        NSLocalizedDescriptionKey: "Receipt verification failed"
+        NSLocalizedDescriptionKey: "No response from server"
+      ])
+    }
+
+    // Handle 404: backend function not deployed yet
+    // Save transaction locally for retry when function is live
+    if httpResponse.statusCode == 404 {
+      print("[CoachPlansVM] ⚠️ Backend not ready (404), saving for retry...")
+      userDefaults.set(transaction.jwsRepresentation, forKey: "iap_pending_jws")
+
+      // Show user that purchase succeeded but activation is pending
+      throw NSError(domain: "Verification", code: 404, userInfo: [
+        NSLocalizedDescriptionKey: "Tu compra se procesó ✅ Estamos activando tu plan (puede tomar 1-2 minutos)."
+      ])
+    }
+
+    guard httpResponse.statusCode == 200 else {
+      throw NSError(domain: "Verification", code: -1, userInfo: [
+        NSLocalizedDescriptionKey: "Receipt verification failed (status: \(httpResponse.statusCode))"
       ])
     }
 
     let result = try JSONDecoder().decode(EntitlementResponse.self, from: data)
 
     if result.hasAccess {
+      // Clear pending if verification succeeds
+      userDefaults.removeObject(forKey: "iap_pending_jws")
+
       self.currentSubscription = SubscriptionInfo(
         productId: result.productId,
         status: result.status,
