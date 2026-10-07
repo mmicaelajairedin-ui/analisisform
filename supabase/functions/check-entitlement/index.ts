@@ -1,20 +1,38 @@
 // check-entitlement — Verify Apple IAP subscription with App Store Server API
 //
+// SECURITY: Validates JWS cryptographically before trusting any transaction data
+//
 // Flow:
 // 1. Validate environment (fail closed if credentials missing)
 // 2. Get authenticated user from JWT
-// 3. Call Apple App Store Server API to verify subscription state
-// 4. Update database with Apple's authoritative state
-// 5. Return entitlement (access: true/false)
+// 3. VALIDATE JWS signature (must be signed by Apple)
+// 4. EXTRACT transaction data from JWS payload (never from client body)
+// 5. Verify appAccountToken in JWS = authenticated user
+// 6. Verify productId is valid coach.plan.*
+// 7. Call Apple App Store Server API to verify subscription state
+// 8. Update database with Apple's authoritative state
+// 9. Return entitlement (access: true/false)
 
 import { createClient } from "jsr:@supabase/supabase-js@2";
 import { Buffer } from "jsr:@std/encoding";
+import { validateJWS } from "../apple-iap-webhook/jws-validator.ts";
 
 interface CheckRequest {
-  receipt: string; // JWS from StoreKit 2
-  appAccountToken: string;
-  productId: string;
-  originalTransactionId: string; // Extracted from StoreKit transaction
+  receipt: string; // JWS from StoreKit 2 (MUST be validated)
+  appAccountToken: string; // For verification against JWS
+  // NOTE: originalTransactionId NOT accepted from body
+  // It is extracted from validated JWS only
+}
+
+interface StoreKitTransaction {
+  originalTransactionId?: string;
+  transactionId?: string;
+  productId?: string;
+  appAccountToken?: string;
+  expiresDate?: number;
+  revocationDate?: number;
+  isUpgrade?: boolean;
+  bundleId?: string;
 }
 
 interface CheckResponse {
@@ -203,18 +221,95 @@ Deno.serve(async (req) => {
     }
 
     const body: CheckRequest = await req.json();
-    const { originalTransactionId, productId } = body;
+    const { receipt, appAccountToken } = body;
 
-    if (!originalTransactionId || !productId) {
+    // SECURITY GATE 1: Validate receipt is provided
+    if (!receipt || !appAccountToken) {
       return new Response(
         JSON.stringify({
           ok: false,
           access: false,
-          message: "Missing required fields",
+          message: "Missing receipt or appAccountToken",
         }),
         { status: 400, headers: { "Content-Type": "application/json" } }
       );
     }
+
+    // SECURITY GATE 2: Validate JWS signature (must be signed by Apple)
+    console.log("[check-entitlement] Validating JWS signature...");
+    const jwtValidation = await validateJWS(receipt);
+
+    if (!jwtValidation.valid) {
+      console.error(
+        `[check-entitlement] JWS validation failed: ${jwtValidation.error}`
+      );
+      return new Response(
+        JSON.stringify({
+          ok: false,
+          access: false,
+          message: "Invalid receipt: JWS signature verification failed",
+        }),
+        { status: 400, headers: { "Content-Type": "application/json" } }
+      );
+    }
+
+    // SECURITY GATE 3: Extract transaction data from VALIDATED JWS payload
+    // NEVER trust data from client body, only from Apple-signed JWS
+    const txData = jwtValidation.payload as StoreKitTransaction;
+
+    if (!txData.originalTransactionId || !txData.productId) {
+      console.error(
+        "[check-entitlement] JWS missing required transaction fields"
+      );
+      return new Response(
+        JSON.stringify({
+          ok: false,
+          access: false,
+          message: "Invalid receipt: missing transaction data",
+        }),
+        { status: 400, headers: { "Content-Type": "application/json" } }
+      );
+    }
+
+    const originalTransactionId = txData.originalTransactionId;
+    const productId = txData.productId;
+
+    // SECURITY GATE 4: Validate appAccountToken matches JWS
+    if (txData.appAccountToken && txData.appAccountToken !== appAccountToken) {
+      console.error(
+        "[check-entitlement] appAccountToken mismatch between JWS and body"
+      );
+      return new Response(
+        JSON.stringify({
+          ok: false,
+          access: false,
+          message: "Invalid appAccountToken",
+        }),
+        { status: 401, headers: { "Content-Type": "application/json" } }
+      );
+    }
+
+    // SECURITY GATE 5: Validate productId is one of our products
+    const ALLOWED_PRODUCTS = new Set([
+      "coach.plan.basic.monthly",
+      "coach.plan.pro.monthly",
+    ]);
+
+    if (!ALLOWED_PRODUCTS.has(productId)) {
+      console.error(`[check-entitlement] Invalid productId: ${productId}`);
+      return new Response(
+        JSON.stringify({
+          ok: false,
+          access: false,
+          message: "Invalid product",
+        }),
+        { status: 400, headers: { "Content-Type": "application/json" } }
+      );
+    }
+
+    console.log(
+      `[check-entitlement] ✓ JWS validated. Transaction: ${originalTransactionId}, Product: ${productId}`
+    );
 
     // Get auth
     const authHeader = req.headers.get("Authorization") || "";
@@ -266,6 +361,47 @@ Deno.serve(async (req) => {
     }
 
     const userId = user.id;
+
+    // SECURITY GATE 6: Verify appAccountToken belongs to authenticated user
+    // appAccountToken should be a UUID that links the transaction to this user
+    // In our system, appAccountToken typically comes from ME.id (usuarios.id)
+    // For now, we verify it's a valid UUID format (further backend logic can link to user)
+    const uuidRegex =
+      /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+    if (!uuidRegex.test(appAccountToken)) {
+      console.error(
+        `[check-entitlement] Invalid appAccountToken format: not a UUID`
+      );
+      return new Response(
+        JSON.stringify({
+          ok: false,
+          access: false,
+          message: "Invalid appAccountToken format",
+        }),
+        { status: 400, headers: { "Content-Type": "application/json" } }
+      );
+    }
+
+    // In Swift, appAccountToken is RME.id (usuarios.id), which should match userId from JWT
+    // Verify they match
+    if (appAccountToken !== userId) {
+      console.error(
+        "[check-entitlement] appAccountToken does not match authenticated user"
+      );
+      return new Response(
+        JSON.stringify({
+          ok: false,
+          access: false,
+          message: "Unauthorized: token does not belong to this user",
+        }),
+        { status: 403, headers: { "Content-Type": "application/json" } }
+      );
+    }
+
+    console.log(
+      `[check-entitlement] ✓ appAccountToken verified: ${appAccountToken} = userId`
+    );
 
     // STEP 1: Create Apple JWT for API authentication
     const appleJWT = await createAppleJWT(
