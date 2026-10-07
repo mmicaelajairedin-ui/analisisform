@@ -31,7 +31,7 @@ public class CoachPlansPlugin: CAPPlugin, CAPBridgedPlugin {
       let appAccountToken = call.getString("appAccountToken") ?? ""
 
       let coachPlansView = CoachPlansView(jwt: jwt, appAccountToken: appAccountToken)
-      let hostingController = UIHostingController(rootViewController: coachPlansView)
+      let hostingController = UIHostingController(rootView: coachPlansView)
 
       // Sheet presentation (modal, swipe to dismiss)
       hostingController.modalPresentationStyle = .formSheet

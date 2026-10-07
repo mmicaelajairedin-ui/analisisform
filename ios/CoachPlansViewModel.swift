@@ -46,15 +46,15 @@ class CoachPlansViewModel: NSObject, ObservableObject {
   /// Setup listener for StoreKit 2 transaction updates
   private func setupTransactionListener() {
     updateListenerTask = Task.detached { [weak self] in
-      for await update in Transaction.updates {
+      for await update in StoreKit.Transaction.updates {
         await self?.handleTransactionUpdate(update)
       }
     }
   }
 
   /// Handle transaction updates from StoreKit 2
-  private func handleTransactionUpdate(_ update: Transaction) async {
-    print("[CoachPlansVM] Transaction update: \(update.productID)")
+  private func handleTransactionUpdate(_ update: VerificationResult<StoreKit.Transaction>) async {
+    print("[CoachPlansVM] Transaction update received")
 
     // Check entitlement status
     checkCurrentEntitlement()
@@ -307,7 +307,7 @@ class CoachPlansViewModel: NSObject, ObservableObject {
   /// Verify StoreKit transaction with backend
   /// Backend validates JWS against Apple's certificate
   private func verifyReceiptWithBackend(
-    transaction: VerificationResult<Transaction>,
+    transaction: VerificationResult<StoreKit.Transaction>,
     appAccountToken: String,
     jwt: String
   ) async throws {
@@ -321,7 +321,7 @@ class CoachPlansViewModel: NSObject, ObservableObject {
     let body: [String: Any] = [
       "receipt": transaction.jwsRepresentation,
       "appAccountToken": appAccountToken,
-      "productId": transaction.unsafePayload.productID
+      "productId": transaction.unsafePayloadValue.productID
     ]
     request.httpBody = try JSONSerialization.data(withJSONObject: body)
 
