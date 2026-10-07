@@ -152,13 +152,13 @@ struct CoachPlansView: View {
 
             // MARK: - Links
             VStack(spacing: 6) {
-              Link(destination: URL(string: "https://pathwaycareercoach.com/terms-of-use")!) {
+              Link(destination: URL(string: "https://pathwaycareercoach.com/legales.html")!) {
                 Text("Terms of Use")
                   .font(.system(size: 11, weight: .regular))
                   .foregroundColor(Color(red: 0.3, green: 0.64, blue: 0.58))
               }
 
-              Link(destination: URL(string: "https://pathwaycareercoach.com/privacy-policy")!) {
+              Link(destination: URL(string: "https://pathwaycareercoach.com/legales.html")!) {
                 Text("Privacy Policy")
                   .font(.system(size: 11, weight: .regular))
                   .foregroundColor(Color(red: 0.3, green: 0.64, blue: 0.58))
