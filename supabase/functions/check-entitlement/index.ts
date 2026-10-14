@@ -13,6 +13,7 @@ import { Buffer } from "jsr:@std/encoding";
 interface CheckRequest {
   originalTransactionId: string;
   productId: string;
+  appAccountToken?: string;
 }
 
 interface CheckResponse {
@@ -201,7 +202,7 @@ Deno.serve(async (req) => {
     }
 
     const body: CheckRequest = await req.json();
-    const { originalTransactionId, productId } = body;
+    const { originalTransactionId, productId, appAccountToken } = body;
 
     if (!originalTransactionId || !productId) {
       return new Response(
@@ -264,6 +265,20 @@ Deno.serve(async (req) => {
     }
 
     const userId = user.id;
+
+    // Validate appAccountToken matches authenticated user's Supabase Auth UUID
+    // appAccountToken must be session.user.id (Auth UUID), NOT usuarios.id
+    // This ensures the purchase is linked to the correct authenticated user
+    if (appAccountToken && appAccountToken !== userId) {
+      return new Response(
+        JSON.stringify({
+          ok: false,
+          access: false,
+          message: "Invalid appAccountToken: does not match authenticated user",
+        }),
+        { status: 403, headers: { "Content-Type": "application/json" } }
+      );
+    }
 
     // STEP 1: Create Apple JWT for API authentication
     const appleJWT = await createAppleJWT(
