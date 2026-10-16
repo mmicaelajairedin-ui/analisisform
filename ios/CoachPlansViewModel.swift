@@ -235,14 +235,17 @@ class CoachPlansViewModel: NSObject, ObservableObject {
         isPurchasing = true
         errorMessage = nil
 
-        // Capacitor plugin: restorePurchases()
-        // In a real app, you'd call the Capacitor plugin here
-        try await restoreViaCapsitor()
+        try await restoreViaCapacitor()
 
-        checkCurrentEntitlement()
+        // Check if any subscription was restored
+        if currentSubscription != nil {
+          errorMessage = nil // Clear any previous errors
+        } else {
+          errorMessage = "No encontramos compras anteriores para restaurar"
+        }
 
       } catch {
-        errorMessage = "Error restaurando compras"
+        errorMessage = "No pudimos restaurar las compras. Reintentá o contactá a soporte."
         print("[CoachPlansVM] Restore error: \(error)")
       }
       isPurchasing = false
@@ -277,12 +280,20 @@ class CoachPlansViewModel: NSObject, ObservableObject {
 
     if httpResponse.statusCode == 409 {
       throw NSError(domain: "Conflict", code: 409, userInfo: [
-        NSLocalizedDescriptionKey: "Active Stripe subscription exists"
+        NSLocalizedDescriptionKey: "Ya tienes una suscripción activa"
+      ])
+    }
+
+    if httpResponse.statusCode == 404 {
+      throw NSError(domain: "Backend", code: 404, userInfo: [
+        NSLocalizedDescriptionKey: "El servicio no está disponible. Reintentá en unos momentos."
       ])
     }
 
     guard httpResponse.statusCode == 200 else {
-      throw NSError(domain: "Backend", code: httpResponse.statusCode)
+      throw NSError(domain: "Backend", code: httpResponse.statusCode, userInfo: [
+        NSLocalizedDescriptionKey: "Error de verificación (código: \(httpResponse.statusCode)). Reintentá."
+      ])
     }
 
     let result = try JSONDecoder().decode(ValidateResponse.self, from: data)
@@ -372,7 +383,7 @@ class CoachPlansViewModel: NSObject, ObservableObject {
       "receipt": transaction.jwsRepresentation,
       "appAccountToken": appAccountToken,
       "productId": txPayload.productID,
-      "originalTransactionId": txPayload.originalTransactionID
+      "originalTransactionId": String(txPayload.originalID)
     ]
     request.httpBody = try JSONSerialization.data(withJSONObject: body)
 
@@ -422,7 +433,7 @@ class CoachPlansViewModel: NSObject, ObservableObject {
   }
 
   /// Restore purchases via StoreKit
-  private func restoreViaCapsitor() async throws {
+  private func restoreViaCapacitor() async throws {
     print("[CoachPlansVM] Restoring purchases...")
 
     // Sync all transactions from App Store
