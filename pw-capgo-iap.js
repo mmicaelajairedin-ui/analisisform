@@ -199,30 +199,31 @@ const PW_CAPGO_IAP = {
    */
   async checkCurrentEntitlement() {
     if (!IAP_STATE.isInitialized) await this.init();
-    
+
     try {
-      const user = this._getCurrentUser();
-      if (!user || !user.app_account_token) {
+      // Get JWT from Supabase Auth session (works with email, Google, Apple)
+      const session = await this._getAuthSession();
+      if (!session || !session.access_token) {
+        console.log('[PW_CAPGO_IAP] No session/JWT, skipping entitlement check');
+        return null;
+      }
+
+      const appAccountToken = session.user.id;  // Auth ID, not usuarios.id
+      if (!appAccountToken) {
         console.log('[PW_CAPGO_IAP] No appAccountToken, skipping entitlement check');
         return null;
       }
       
-      const jwt = localStorage.getItem('mj_auth');
-      if (!jwt) {
-        console.log('[PW_CAPGO_IAP] No JWT, skipping entitlement check');
-        return null;
-      }
-      
       console.log('[PW_CAPGO_IAP] Checking entitlement...');
-      
+
       const response = await fetch('/functions/v1/check-entitlement', {
         method: 'POST',
         headers: {
-          'Authorization': 'Bearer ' + jwt,
+          'Authorization': 'Bearer ' + session.access_token,
           'Content-Type': 'application/json'
         },
         body: JSON.stringify({
-          appAccountToken: user.app_account_token
+          appAccountToken: appAccountToken
         })
       });
       
@@ -236,7 +237,7 @@ const PW_CAPGO_IAP = {
       if (result.hasAccess) {
         IAP_STATE.currentSubscription = {
           productId: result.productId,
-          appAccountToken: user.app_account_token,
+          appAccountToken: appAccountToken,
           expiryDate: new Date(result.expiryDate),
           status: result.status,
           verifiedAt: new Date()
@@ -286,13 +287,13 @@ const PW_CAPGO_IAP = {
    */
   async _validateBeforePurchase(productId, appAccountToken) {
     try {
-      const jwt = localStorage.getItem('mj_auth');
-      if (!jwt) throw new Error('No JWT available');
-      
+      const session = await this._getAuthSession();
+      if (!session || !session.access_token) throw new Error('No session/JWT available');
+
       const response = await fetch('/functions/v1/validate-iap', {
         method: 'POST',
         headers: {
-          'Authorization': 'Bearer ' + jwt,
+          'Authorization': 'Bearer ' + session.access_token,
           'Content-Type': 'application/json'
         },
         body: JSON.stringify({
@@ -336,13 +337,13 @@ const PW_CAPGO_IAP = {
    */
   async _verifyReceiptWithBackend(receipt, appAccountToken) {
     try {
-      const jwt = localStorage.getItem('mj_auth');
-      if (!jwt) throw new Error('No JWT available');
-      
+      const session = await this._getAuthSession();
+      if (!session || !session.access_token) throw new Error('No session/JWT available');
+
       const response = await fetch('/functions/v1/check-entitlement', {
         method: 'POST',
         headers: {
-          'Authorization': 'Bearer ' + jwt,
+          'Authorization': 'Bearer ' + session.access_token,
           'Content-Type': 'application/json'
         },
         body: JSON.stringify({
@@ -372,6 +373,24 @@ const PW_CAPGO_IAP = {
       const userStr = localStorage.getItem('mj_user');
       return userStr ? JSON.parse(userStr) : null;
     } catch (err) {
+      return null;
+    }
+  },
+
+  /**
+   * Get current auth session from Supabase
+   * Works with email, Google, Apple logins
+   */
+  async _getAuthSession() {
+    try {
+      if (!window.sb || !window.sb.auth) {
+        throw new Error('Supabase client not available');
+      }
+      const { data, error } = await window.sb.auth.getSession();
+      if (error) throw error;
+      return data?.session || null;
+    } catch (err) {
+      console.error('[PW_CAPGO_IAP] _getAuthSession error:', err);
       return null;
     }
   }

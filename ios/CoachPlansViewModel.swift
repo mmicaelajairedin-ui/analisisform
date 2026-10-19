@@ -235,14 +235,28 @@ class CoachPlansViewModel: NSObject, ObservableObject {
         isPurchasing = true
         errorMessage = nil
 
-        // Capacitor plugin: restorePurchases()
-        // In a real app, you'd call the Capacitor plugin here
-        try await restoreViaCapsitor()
+        // Sync purchases from App Store
+        try await restoreViaCapacitor()
 
-        checkCurrentEntitlement()
+        // Check if entitlement was found
+        if let subscription = currentSubscription {
+          errorMessage = nil
+          print("[CoachPlansVM] ✅ Compra restaurada: \(subscription.productId)")
+        } else {
+          // Check entitlement after restore
+          checkCurrentEntitlement()
+
+          // Small delay to let entitlement check complete
+          try await Task.sleep(nanoseconds: 500_000_000)
+
+          if currentSubscription == nil {
+            errorMessage = "No encontramos compras previas en tu cuenta."
+            print("[CoachPlansVM] No previous purchases found")
+          }
+        }
 
       } catch {
-        errorMessage = "Error restaurando compras"
+        errorMessage = "No pudimos verificar tus compras. Reintentá en unos segundos."
         print("[CoachPlansVM] Restore error: \(error)")
       }
       isPurchasing = false
@@ -372,7 +386,7 @@ class CoachPlansViewModel: NSObject, ObservableObject {
       "receipt": transaction.jwsRepresentation,
       "appAccountToken": appAccountToken,
       "productId": txPayload.productID,
-      "originalTransactionId": txPayload.originalTransactionID
+      "originalTransactionId": String(txPayload.originalID)
     ]
     request.httpBody = try JSONSerialization.data(withJSONObject: body)
 
@@ -422,7 +436,7 @@ class CoachPlansViewModel: NSObject, ObservableObject {
   }
 
   /// Restore purchases via StoreKit
-  private func restoreViaCapsitor() async throws {
+  private func restoreViaCapacitor() async throws {
     print("[CoachPlansVM] Restoring purchases...")
 
     // Sync all transactions from App Store
