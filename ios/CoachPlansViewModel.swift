@@ -42,6 +42,11 @@ class CoachPlansViewModel: NSObject, ObservableObject {
 
     // Setup listener for transaction updates from StoreKit 2
     setupTransactionListener()
+
+    // Retry any unfinished transactions on app launch
+    Task {
+      await self.retryUnfinishedTransactions()
+    }
   }
 
   /// Setup listener for StoreKit 2 transaction updates
@@ -49,6 +54,36 @@ class CoachPlansViewModel: NSObject, ObservableObject {
     updateListenerTask = Task.detached { [weak self] in
       for await update in StoreKit.Transaction.updates {
         await self?.handleTransactionUpdate(update)
+      }
+    }
+  }
+
+  /// Retry any unfinished transactions on app launch
+  private func retryUnfinishedTransactions() async {
+    print("[CoachPlansVM] Checking for unfinished transactions...")
+
+    for await transaction in StoreKit.Transaction.unfinished {
+      print("[CoachPlansVM] Found unfinished transaction: \(transaction.unsafePayloadValue.productID)")
+
+      do {
+        // Verify with backend
+        try await verifyReceiptWithBackend(
+          transaction: transaction,
+          appAccountToken: appAccountToken,
+          jwt: jwt
+        )
+
+        // If successful, finalize the transaction
+        await transaction.finish()
+
+        // Update entitlement
+        await checkCurrentEntitlement()
+
+        print("[CoachPlansVM] ✅ Unfinished transaction completed: \(transaction.unsafePayloadValue.productID)")
+
+      } catch {
+        // Transaction still can't be verified - keep it unfinished for retry on next launch
+        print("[CoachPlansVM] ⏳ Transaction still pending: \(error)")
       }
     }
   }
