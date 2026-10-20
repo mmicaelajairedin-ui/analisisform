@@ -74,7 +74,9 @@ class CoachPlansViewModel: NSObject, ObservableObject {
         )
 
         // If successful, finalize the transaction
-        await transaction.finish()
+        if case .verified(let tx) = transaction {
+          await tx.finish()
+        }
 
         // Update entitlement
         await checkCurrentEntitlement()

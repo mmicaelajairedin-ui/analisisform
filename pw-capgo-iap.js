@@ -291,28 +291,48 @@ const PW_CAPGO_IAP = {
       const NativePurchases = window.Capacitor.Plugins.NativePurchases;
       const result = await NativePurchases.restorePurchases();
 
+      // Case 1: Apple has no purchases
       if (!result || !result.length) {
-        console.log('[PW_CAPGO_IAP] No purchases to restore');
+        console.log('[PW_CAPGO_IAP] No purchases found on Apple');
         return {
           success: false,
-          message: '❌ No encontramos compras anteriores asociadas a tu cuenta.'
+          message: 'No encontramos compras previas en tu cuenta de Apple.'
         };
       }
 
-      // Check entitlement with backend for the first restored purchase
-      await this.checkCurrentEntitlement();
-
-      console.log('[PW_CAPGO_IAP] ✅ Purchase restored');
-      return {
-        success: true,
-        message: '✅ Compra restaurada correctamente.'
-      };
+      // Case 2 & 3: Apple has purchases; verify with backend
+      console.log('[PW_CAPGO_IAP] Found purchases, verifying with backend...');
+      try {
+        const verifyResult = await this.checkCurrentEntitlement();
+        if (verifyResult && verifyResult.success) {
+          // Case 3: Backend verified successfully
+          console.log('[PW_CAPGO_IAP] ✅ Purchase restored and verified');
+          return {
+            success: true,
+            message: '✅ Compra restaurada correctamente.'
+          };
+        } else {
+          // Case 2: Backend verification failed or returned error
+          console.warn('[PW_CAPGO_IAP] Backend verification failed:', verifyResult);
+          return {
+            success: false,
+            message: 'No pudimos verificar tu compra. El backend no respondió. Reintentá en unos minutos.'
+          };
+        }
+      } catch (backendErr) {
+        // Case 2: Backend error (timeout, 404, etc.)
+        console.warn('[PW_CAPGO_IAP] Backend verification error:', backendErr);
+        return {
+          success: false,
+          message: 'No pudimos verificar tu compra. Reintentá en unos minutos.'
+        };
+      }
 
     } catch (err) {
       console.error('[PW_CAPGO_IAP] Restore purchases error:', err);
       return {
         success: false,
-        message: '⚠️ No pudimos verificar tus compras. Intentá de nuevo más tarde.'
+        message: '⚠️ Error al buscar compras. Intentá de nuevo más tarde.'
       };
     } finally {
       IAP_STATE.isLoading = false;
@@ -327,7 +347,7 @@ const PW_CAPGO_IAP = {
    * Validate purchase with backend before showing purchase sheet
    * Checks: Stripe mutual exclusivity, coach eligibility, etc.
    */
-  async _validateBeforePurchase(productId, appAccountToken) {
+  async validateBeforePurchase(productId, appAccountToken) {
     try {
       const session = await this._getAuthSession();
       if (!session || !session.access_token) throw new Error('Sin sesión disponible');
@@ -374,7 +394,7 @@ const PW_CAPGO_IAP = {
       };
 
     } catch (err) {
-      console.error('[PW_CAPGO_IAP] _validateBeforePurchase error:', err);
+      console.error('[PW_CAPGO_IAP] validateBeforePurchase error:', err);
       return {
         allowed: false,
         reason: 'Servicio no disponible. Intentá más tarde.'

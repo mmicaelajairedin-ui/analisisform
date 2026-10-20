@@ -16024,40 +16024,48 @@ var STRIPE_PORTAL="https://billing.stripe.com/p/login/fZu3cv9aE2py6b20f98AE00";
  * Purchase plan handler: iOS via @capgo/native-purchases, web via Stripe
  * @param {string} plan - 'basic' or 'pro'
  */
-function _purchasePlan(plan){
+async function _purchasePlan(plan){
   if(_genBusy) return;
 
   // iOS app: Present native Coach Plans view (SwiftUI)
   // Via CoachPlansPlugin (Capacitor bridge) → handles all StoreKit & backend verification
-  // Pass JWT to plugin; Swift will call validate-iap to generate/obtain appAccountToken
   if(window.PW_IN_APP){
     // iOS: NEVER open Stripe, use native IAP only
     if(window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.CoachPlansPlugin){
       _busyOn();
-      console.log('[_purchasePlan] Opening native Coach Plans view');
 
-      var jwt = localStorage.getItem('mj_auth') || '';
-      // RME is global (assigned in loadReal, line 16830)
-      // Use RME.id (usuarios.id UUID) as appAccountToken correlation
-      var appAccountToken = (RME && RME.id) ? RME.id : '';
+      try {
+        // Get live Supabase Auth session (works with Google, Apple, email)
+        const { data: { session }, error: sessionErr } = await window.sb.auth.getSession();
+        if(!session || !session.user){
+          _busyOff();
+          try{ toast('Sesión expirada. Recargá la página.'); }catch(e){}
+          return;
+        }
 
-      if(!appAccountToken){
+        // appAccountToken = Auth user ID; JWT = access_token
+        const jwt = session.access_token;
+        const appAccountToken = session.user.id;
+
+        console.log('[_purchasePlan] Opening native Coach Plans view');
+
+        window.Capacitor.Plugins.CoachPlansPlugin.present({
+          jwt: jwt,
+          appAccountToken: appAccountToken
+        }).then(function(){
+          _busyOff();
+          console.log('[_purchasePlan] Coach Plans view dismissed');
+        }).catch(function(err){
+          _busyOff();
+          console.error('[_purchasePlan] Plugin error:', err);
+          try{ toast('Error: '+err); }catch(e){}
+        });
+
+      } catch (err) {
         _busyOff();
-        try{ toast('Error: No user ID found. Please refresh and try again.'); }catch(e){}
-        return;
+        console.error('[_purchasePlan] Auth error:', err);
+        try{ toast('No pudimos verificar tu sesión.'); }catch(e){}
       }
-
-      window.Capacitor.Plugins.CoachPlansPlugin.present({
-        jwt: jwt,
-        appAccountToken: appAccountToken
-      }).then(function(){
-        _busyOff();
-        console.log('[_purchasePlan] Coach Plans view dismissed');
-      }).catch(function(err){
-        _busyOff();
-        console.error('[_purchasePlan] Plugin error:', err);
-        try{ toast('Error: '+err); }catch(e){}
-      });
     } else {
       // Plugin not available: show neutral modal (never Stripe)
       _busyOff();
