@@ -79,7 +79,7 @@ class CoachPlansViewModel: NSObject, ObservableObject {
         }
 
         // Update entitlement
-        await checkCurrentEntitlement()
+        checkCurrentEntitlement()
 
         print("[CoachPlansVM] ✅ Unfinished transaction completed: \(transaction.unsafePayloadValue.productID)")
 
