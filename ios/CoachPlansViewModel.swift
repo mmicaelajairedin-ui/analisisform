@@ -238,17 +238,12 @@ class CoachPlansViewModel: NSObject, ObservableObject {
         isPurchasing = true
         errorMessage = nil
 
-        // Step 1: Validate with backend
-        let canPurchase = try await validateBeforePurchase(
+        // Step 1: Validate with backend (throws on 409/404/error)
+        try await validateBeforePurchase(
           productId: selectedProductId,
           appAccountToken: appAccountToken,
           jwt: jwt
         )
-
-        if !canPurchase {
-          self.errorMessage = "No puedes activar IAP (verificar Stripe)"
-          return
-        }
 
         // Step 2: Show native purchase sheet via StoreKit 2
         try await purchaseViaCapacitor(
@@ -323,21 +318,38 @@ class CoachPlansViewModel: NSObject, ObservableObject {
     let (data, response) = try await URLSession.shared.data(for: request)
 
     guard let httpResponse = response as? HTTPURLResponse else {
-      throw NSError(domain: "Network", code: -1)
+      throw NSError(domain: "Network", code: -1, userInfo: [
+        NSLocalizedDescriptionKey: "Servicio no disponible. Intentá más tarde."
+      ])
     }
 
     if httpResponse.statusCode == 409 {
       throw NSError(domain: "Conflict", code: 409, userInfo: [
-        NSLocalizedDescriptionKey: "Active Stripe subscription exists"
+        NSLocalizedDescriptionKey: "Ya tenés una suscripción activa. Cancelala primero para usar la compra en la app."
+      ])
+    }
+
+    if httpResponse.statusCode == 404 {
+      throw NSError(domain: "Backend", code: 404, userInfo: [
+        NSLocalizedDescriptionKey: "Servicio no disponible. Intentá más tarde."
       ])
     }
 
     guard httpResponse.statusCode == 200 else {
-      throw NSError(domain: "Backend", code: httpResponse.statusCode)
+      throw NSError(domain: "Backend", code: httpResponse.statusCode, userInfo: [
+        NSLocalizedDescriptionKey: "Servicio no disponible. Intentá más tarde."
+      ])
     }
 
     let result = try JSONDecoder().decode(ValidateResponse.self, from: data)
-    return result.allowed != false
+
+    if result.allowed == false {
+      throw NSError(domain: "Validation", code: -1, userInfo: [
+        NSLocalizedDescriptionKey: result.reason ?? "Servicio no disponible. Intentá más tarde."
+      ])
+    }
+
+    return true
   }
 
   /// Execute real purchase via StoreKit 2
