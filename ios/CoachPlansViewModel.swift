@@ -249,7 +249,7 @@ class CoachPlansViewModel: NSObject, ObservableObject {
         errorMessage = nil
 
         // Step 1: Validate with backend (throws on 409/404/error)
-        try await validateBeforePurchase(
+        _ = try await validateBeforePurchase(
           productId: selectedProductId,
           appAccountToken: appAccountToken,
           jwt: jwt
@@ -286,9 +286,11 @@ class CoachPlansViewModel: NSObject, ObservableObject {
         switch result {
         case .success:
           // Backend verified subscription successfully
-          errorMessage = nil
           if let subscription = currentSubscription {
+            errorMessage = "✅ Compra restaurada correctamente"
             print("[CoachPlansVM] ✅ Compra restaurada correctamente: \(subscription.productId)")
+          } else {
+            errorMessage = nil
           }
 
         case .noTransactions:
