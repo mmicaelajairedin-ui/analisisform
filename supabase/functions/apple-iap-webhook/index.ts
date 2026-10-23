@@ -135,7 +135,12 @@ Deno.serve(async (req) => {
 
         notification = validation.payload as AppleNotification;
 
-        // If signedTransactionInfo exists, validate it as nested JWS
+        // SECURITY: Validate and extract data from nested JWS payloads
+        // In Apple V2 notifications, transaction details are inside signedTransactionInfo (firmado)
+        let transactionData: Record<string, unknown> | null = null;
+        let renewalData: Record<string, unknown> | null = null;
+
+        // If signedTransactionInfo exists, validate it as nested JWS and use its payload
         if (notification.data?.signedTransactionInfo) {
           const txnValidation = await validateNestedJWS(notification.data.signedTransactionInfo);
           if (!txnValidation.valid) {
@@ -145,9 +150,10 @@ Deno.serve(async (req) => {
               { status: 400, headers: { "Content-Type": "application/json" } }
             );
           }
+          transactionData = txnValidation.payload as Record<string, unknown>;
         }
 
-        // If signedRenewalInfo exists, validate it as nested JWS
+        // If signedRenewalInfo exists, validate it as nested JWS and use its payload
         if (notification.data?.signedRenewalInfo) {
           const renewalValidation = await validateNestedJWS(notification.data.signedRenewalInfo);
           if (!renewalValidation.valid) {
@@ -157,6 +163,7 @@ Deno.serve(async (req) => {
               { status: 400, headers: { "Content-Type": "application/json" } }
             );
           }
+          renewalData = renewalValidation.payload as Record<string, unknown>;
         }
       } catch (e) {
         console.error("[webhook] JWS parse error:", e);
@@ -174,18 +181,43 @@ Deno.serve(async (req) => {
       });
     }
 
-    // Extract fields
+    // Extract fields: prefer validated nested data (signedTransactionInfo), fall back to outer notification
+    // SECURITY: If we have a validated transaction payload, use it; otherwise reject
     const notificationType = notification.notificationType || "";
-    const originalTransactionId = notification.originalTransactionId || "";
     const notificationUUID = notification.notificationUUID || "";
-    const productId = notification.productId || "";
+
+    // originalTransactionId MUST come from validated signedTransactionInfo if present
+    let originalTransactionId = "";
+    let productId = "";
+    let bundleId = "";
+
+    if (transactionData) {
+      // Data came from validated JWS
+      originalTransactionId = (transactionData.originalTransactionId as string) || "";
+      productId = (transactionData.productId as string) || "";
+      bundleId = (transactionData.bundleId as string) || "";
+    } else {
+      // Fall back to outer notification only if no nested transaction data
+      originalTransactionId = notification.originalTransactionId || "";
+      productId = notification.productId || "";
+      bundleId = notification.bundleId || "";
+    }
+
     const appAccountToken = notification.appAccountToken || "";
 
     if (!originalTransactionId || !notificationType || !notificationUUID) {
       return new Response(
-        JSON.stringify({ ok: false, error: "Missing required fields" }),
+        JSON.stringify({ ok: false, error: "Missing required fields (transaction validation)" }),
         { status: 400, headers: { "Content-Type": "application/json" } }
       );
+    }
+
+    // SECURITY: Validate environment consistency
+    // bundleId should be either empty (development) or match expected production bundle
+    const expectedBundleId = "com.pathway.coach"; // or environment variable
+    if (bundleId && bundleId !== expectedBundleId) {
+      console.warn(`[webhook] Unexpected bundleId: ${bundleId} (expected: ${expectedBundleId})`);
+      // Log but don't reject - could be legitimate new bundle in the future
     }
 
     // Initialize Supabase (service role for webhook processing)

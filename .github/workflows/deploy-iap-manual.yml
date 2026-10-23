@@ -87,13 +87,16 @@ jobs:
             exit 1
           fi
 
-          # Verify it's production (analisisform project)
-          if ! echo "$SUPABASE_URL" | grep -q "analisisform"; then
-            echo "❌ Not targeting production (analisisform). URL: $SUPABASE_URL"
+          # Verify it's the correct production project (ddxnrsnjdvtqhxunxnwj)
+          # This is the only authorized Supabase project for IAP migrations
+          if ! echo "$SUPABASE_URL" | grep -q "ddxnrsnjdvtqhxunxnwj"; then
+            echo "❌ Not targeting correct production project."
+            echo "   Expected project ref: ddxnrsnjdvtqhxunxnwj"
+            echo "   Got: $SUPABASE_URL"
             exit 1
           fi
 
-          echo "✅ Production environment verified (analisisform)"
+          echo "✅ Production environment verified (ddxnrsnjdvtqhxunxnwj)"
 
       - name: Apply migrations to production
         env:
@@ -104,15 +107,14 @@ jobs:
 
           echo "⚠️  Applying IAP migrations to production..."
 
-          # SECURITY: Only apply the 2 IAP migrations, not all pending migrations
+          # SECURITY: STRICT validation before any push
           # supabase db push --linked applies ALL pending migrations
-          # Instead, we manually verify only the 2 expected ones exist, then apply them by timestamp order
+          # We ensure ONLY the 2 IAP migrations are pending before applying
 
-          # Get the actual migration names from local files
           MIGRATION_1="20261001_iap_subscriptions"
           MIGRATION_2="20261023_add_last_signed_date"
 
-          # Find the migration files
+          # Verify both files exist locally
           FILE_1=$(find supabase/migrations -name "*${MIGRATION_1}*" -type f | head -1)
           FILE_2=$(find supabase/migrations -name "*${MIGRATION_2}*" -type f | head -1)
 
@@ -121,11 +123,47 @@ jobs:
             exit 1
           fi
 
-          echo "✅ Found migrations:"
+          echo "✅ Local migration files:"
           echo "   $FILE_1"
           echo "   $FILE_2"
 
-          # Apply migrations via supabase db push (this applies all pending, but we validated only 2 exist above)
+          # Get pending migrations list AGAIN (double-check before push)
+          echo "Checking pending migrations before push..."
+          PENDING=$(supabase migration list --linked 2>/dev/null | awk -F'|' '/^[0-9]+/ {
+            local=$1; remote=$2; gsub(/^[[:space:]]+|[[:space:]]+$/, "", local); gsub(/^[[:space:]]+|[[:space:]]+$/, "", remote)
+            if (remote == "") print local
+          }' | sort)
+
+          echo "Pending migrations:"
+          echo "$PENDING"
+
+          # Count lines
+          COUNT=$(echo "$PENDING" | grep -c . || true)
+          if [ "$COUNT" -ne 2 ]; then
+            echo "❌ SAFETY GATE: Expected exactly 2 pending migrations, found $COUNT"
+            echo "   Only these 2 are allowed: $MIGRATION_1, $MIGRATION_2"
+            echo "   To proceed, resolve other pending migrations first or discuss with team"
+            exit 1
+          fi
+
+          # Verify the exact migration names
+          if ! echo "$PENDING" | grep -q "$MIGRATION_1"; then
+            echo "❌ Expected migration $MIGRATION_1 not found in pending"
+            exit 1
+          fi
+
+          if ! echo "$PENDING" | grep -q "$MIGRATION_2"; then
+            echo "❌ Expected migration $MIGRATION_2 not found in pending"
+            exit 1
+          fi
+
+          echo "✅ Pending migrations validated: exactly $MIGRATION_1 and $MIGRATION_2"
+          echo ""
+          echo "🔐 FINAL SAFETY CHECK: This will apply 2 IAP migrations."
+          echo "   If any other migrations are pending, this will FAIL (see above)."
+          echo ""
+
+          # Apply migrations via supabase db push
           supabase db push --linked
 
           if [ $? -eq 0 ]; then
