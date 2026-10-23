@@ -99,20 +99,20 @@ COMMENT
 # Después del bootstrap, habilita migraciones nuevamente
 # En supabase/config.toml, cambiar [db.migrations] enabled = true
 
-# Luego aplica las migraciones pendientes (NO reset, que borraría usuarios)
-supabase migration up
+# Luego resetea la BD (aplica todas las migraciones sobre la base de usuarios ya creada)
+supabase db reset
 ```
 
 Esto ejecutará:
 - **`supabase/migrations/20261001_iap_subscriptions.sql`** — Crea tabla `usuarios_suscripciones_iap` (FK a usuarios funciona)
 
-**⚠️ IMPORTANTE:** Usar `migration up`, NO `db reset`. El reset recrea toda la BD, borrando la tabla usuarios que acabas de crear.
+**⚠️ IMPORTANTE:** Usar `db reset` (recrea toda la BD aplicando todas las migraciones sobre la tabla usuarios que creó bootstrap_local.sql).
 
 **✅ Seguridad en Producción:**
 - `bootstrap_local.sql` está FUERA de `supabase/migrations/`
 - `supabase db push` lo ignora completamente (nunca ve este archivo)
 - Es solo para desarrollo local
-- No se mergea a `main` (ya está en rama `claude/iap-local-testing`)
+- No se mergea a `main` (ya está en rama `fix/iap-webhook-security`)
 
 **Verificar en pgAdmin local** (opcional):
 - URL: http://localhost:54323
@@ -214,7 +214,7 @@ curl http://192.168.1.50:54321/functions/v1/validate-iap
 
 ---
 
-## 10. TIER 1 Testing — 5 Pruebas Locales (Sin Apple Sandbox)
+## 10. TIER 1 Testing — Deno Tests Locales
 
 **Precondición crítica**: Verificar que Supabase CLI está configurado SOLO para local:
 ```bash
@@ -225,238 +225,56 @@ supabase status
 
 **NUNCA ejecutar `supabase db push`, `supabase functions deploy --project-ref`, ni ningún comando con `--linked` o `--project-ref`.**
 
-### Test 1: JWT Inválido — Verificar DB Intacta
+### Ejecutar Tests de Seguridad Webhook
 
-**Acción:**
+**Test Run 1: Con `IAP_ALLOW_UNSIGNED_TEST=true` (test local permitido)**
+
 ```bash
-# Contar filas ANTES
-psql postgresql://postgres:postgres@localhost:54322/postgres -c "SELECT COUNT(*) FROM usuarios_suscripciones_iap;"
+# Terminal 1: funciones en ejecución
+supabase functions serve
 
-# POST sin JWT válido
-curl -X POST http://localhost:54321/functions/v1/validate-iap \
-  -H "Authorization: Bearer invalid-token-12345" \
-  -H "Content-Type: application/json" \
-  -d '{}' \
-  > /tmp/test1-response.txt
-
-# Contar filas DESPUÉS
-psql postgresql://postgres:postgres@localhost:54322/postgres -c "SELECT COUNT(*) FROM usuarios_suscripciones_iap;"
+# Terminal 2: ejecutar tests con env variables locales
+cd supabase/functions/apple-iap-webhook
+deno test --env-file=.env.test webhook-security.test.ts
 ```
 
 **Resultados esperados:**
-- HTTP 401 Unauthorized (en /tmp/test1-response.txt)
-- Conteo de filas antes = conteo después (DB intacta)
-- Mensaje: "Unauthorized"
+```
+ok | 7 passed | 0 failed (279ms)
+```
+
+Estos 7 tests validan:
+- Deduplicación por NotificationUUID
+- Rechazo de eventos stale (older signedDate)
+- Validación en test mode (campos requeridos)
+- Atomicidad de UPDATE
+- Validación de hostname whitelist
 
 **Guarda:**
-- `/tmp/test1-response.txt` (respuesta HTTP)
-- Screenshot del conteo de filas antes/después
+- Screenshot de salida exitosa
+- Salida completa del deno test
 
 ---
 
-### Test 2: JWS Alterado — Firma Criptográfica Rechazada
+### Test Run 2: Sin `IAP_ALLOW_UNSIGNED_TEST` (producción stricta)
 
 **Acción:**
 ```bash
-# Generar JWT válido
-JWT=$(supabase auth admin create-user \
-  --email test-jws@example.com \
-  --password TestPassword123! | jq -r '.user_id')
+# Terminal 1 sigue corriendo funciones
+# Terminal 2: ejecutar tests SIN env file (simula producción)
 
-# JWS válido de prueba (firmado localmente con clave de prueba)
-# Para esta prueba, usar un JWS que tenga estructura válida pero firma alterada
-JWS_VALID="eyJhbGciOiJFUzI1NiIsIng1YyI6WyJNSUlCWVRDQ0FRZWdBd0lCQWdJUldQLzBZMENFb0JRRExJQUFBQUhpcVFBQ0J4UjBFQkd3Y2tCR0Z3Z1lJQkJ4UjBFQkd3Y2tCR0Z3Z1lJQkJTVEZRTUI0WERUSXhNVE13TmpNeU5ESTBOMlYzQkE0eENqQUtCZ2dxa2hraUc5dzBCQlRVeFFEQitCQkJZMENFb0JRRExJQUFBQUhpcVFBQ0J4UjBFQkd3Y2tCR0Z3Z1lJQkJTVEZRTUI0WERUSXhNVE13TmpNeU5ESTBOMlYzQkE0eENqQktCZ1lxV2tJRlx1MDAzZDNCRjRwLFtdXX0="
-JWS_TAMPERED="${JWS_VALID:0:-20}abcdefghij1234567890"  # Cambiar últimos 20 chars
-
-# POST con JWS alterado
-curl -X POST http://localhost:54321/functions/v1/check-entitlement \
-  -H "Authorization: Bearer $JWT" \
-  -H "Content-Type: application/json" \
-  -d "{\"receipt\": \"$JWS_TAMPERED\", \"appAccountToken\": \"$JWT\"}" \
-  > /tmp/test2-response.txt
-
-cat /tmp/test2-response.txt
+cd supabase/functions/apple-iap-webhook
+deno test webhook-security.test.ts
 ```
 
 **Resultados esperados:**
-- HTTP 400 Bad Request
-- Mensaje contiene "signature verification" (NO "JSON parse error" ni "format error")
-- DB sin nuevas filas
+- Los tests que requieren `IAP_ALLOW_UNSIGNED_TEST=true` fallan con mensaje claro
+- El comportamiento es más estricto (sin defaults en test mode)
+- Ningún test debería corromper la BD
 
 **Guarda:**
-- `/tmp/test2-response.txt`
-- Confirmar en el message que dice "signature" (no "format")
-
----
-
-### Test 4: Idempotencia — 3 Webhooks, 1 Row
-
-**Acción:**
-```bash
-# Crear usuario local de prueba
-JWT=$(supabase auth admin create-user \
-  --email test-webhook@example.com \
-  --password TestPassword123! | jq -r '.user_id')
-
-# Notification UUID (ficticio, consistente para las 3 pruebas)
-NOTIF_UUID="12345678-1234-5678-abcd-ef0123456789"
-
-# Payload de webhook (estructura simple para local)
-PAYLOAD='{
-  "notificationType": "DID_CHANGE_RENEWAL_STATUS",
-  "notificationUUID": "'$NOTIF_UUID'",
-  "data": {
-    "original_transaction_id": "test-tx-001",
-    "user_id": "'$JWT'",
-    "state": "active"
-  }
-}'
-
-# Test 4.1: Primer webhook
-echo "=== Test 4.1: Primer webhook ===" 
-curl -X POST http://localhost:54321/functions/v1/apple-iap-webhook \
-  -H "Content-Type: application/json" \
-  -d "$PAYLOAD" > /tmp/test4-1.txt
-
-psql postgresql://postgres:postgres@localhost:54322/postgres \
-  -c "SELECT COUNT(*) FROM usuarios_suscripciones_iap WHERE latest_notification_uuid = '$NOTIF_UUID';" \
-  > /tmp/test4-1-count.txt
-
-# Test 4.2: Segundo webhook (mismo UUID)
-echo "=== Test 4.2: Segundo webhook (idempotent) ===" 
-curl -X POST http://localhost:54321/functions/v1/apple-iap-webhook \
-  -H "Content-Type: application/json" \
-  -d "$PAYLOAD" > /tmp/test4-2.txt
-
-psql postgresql://postgres:postgres@localhost:54322/postgres \
-  -c "SELECT COUNT(*) FROM usuarios_suscripciones_iap WHERE latest_notification_uuid = '$NOTIF_UUID';" \
-  > /tmp/test4-2-count.txt
-
-# Test 4.3: Tercero webhook (mismo UUID)
-echo "=== Test 4.3: Tercer webhook (idempotent) ===" 
-curl -X POST http://localhost:54321/functions/v1/apple-iap-webhook \
-  -H "Content-Type: application/json" \
-  -d "$PAYLOAD" > /tmp/test4-3.txt
-
-psql postgresql://postgres:postgres@localhost:54322/postgres \
-  -c "SELECT COUNT(*) FROM usuarios_suscripciones_iap WHERE latest_notification_uuid = '$NOTIF_UUID';" \
-  > /tmp/test4-3-count.txt
-```
-
-**Resultados esperados:**
-- Test 4.1: HTTP 200, count = 1
-- Test 4.2: HTTP 200, count = 1 (NO duplicado)
-- Test 4.3: HTTP 200, count = 1 (NO duplicado)
-
-**Guarda:**
-- `/tmp/test4-*.txt` (respuestas HTTP)
-- `/tmp/test4-*-count.txt` (conteos de DB)
-
----
-
-### Test 5: Transiciones de Estado — Evento Antiguo NO Revierte
-
-**Acción:**
-```bash
-# Crear usuario de prueba
-JWT=$(supabase auth admin create-user \
-  --email test-transition@example.com \
-  --password TestPassword123! | jq -r '.user_id')
-
-# INSERT manual: estado "active" con timestamp reciente
-psql postgresql://postgres:postgres@localhost:54322/postgres -c "
-INSERT INTO usuarios_suscripciones_iap (
-  usuario_id, original_transaction_id, state, updated_at, last_notification_at
-) VALUES (
-  '$JWT', 'test-tx-transition', 'active', 
-  NOW(), NOW()
-) ON CONFLICT (original_transaction_id) DO NOTHING;
-"
-
-# Verificar estado ANTES
-echo "=== ANTES ===" 
-psql postgresql://postgres:postgres@localhost:54322/postgres \
-  -c "SELECT state, updated_at FROM usuarios_suscripciones_iap WHERE original_transaction_id = 'test-tx-transition';" \
-  > /tmp/test5-before.txt
-
-# POST webhook con evento ANTIGUO (2 minutos atrás)
-OLD_TIMESTAMP=$(date -d "2 minutes ago" -u +"%Y-%m-%dT%H:%M:%SZ")
-curl -X POST http://localhost:54321/functions/v1/apple-iap-webhook \
-  -H "Content-Type: application/json" \
-  -d '{
-    "notificationType": "EXPIRED",
-    "notificationUUID": "old-event-uuid",
-    "data": {
-      "original_transaction_id": "test-tx-transition",
-      "state": "expired",
-      "signedDate": "'$OLD_TIMESTAMP'"
-    }
-  }' > /tmp/test5-webhook.txt
-
-# Verificar estado DESPUÉS
-echo "=== DESPUÉS ===" 
-psql postgresql://postgres:postgres@localhost:54322/postgres \
-  -c "SELECT state, updated_at FROM usuarios_suscripciones_iap WHERE original_transaction_id = 'test-tx-transition';" \
-  > /tmp/test5-after.txt
-```
-
-**Resultados esperados:**
-- Estado ANTES: "active"
-- Webhook: HTTP 200 (se procesa pero no modifica estado)
-- Estado DESPUÉS: "active" (SIN CAMBIAR)
-
-**Guarda:**
-- `/tmp/test5-before.txt` y `/tmp/test5-after.txt` (estado DB)
-- `/tmp/test5-webhook.txt` (respuesta del webhook)
-- Confirmar que son iguales (o que el timestamp del webhook es ignorado)
-
----
-
-### Test 6a: E2E Simulado (Sin Apple Real)
-
-**Acción:**
-```bash
-# Crear usuario
-JWT=$(supabase auth admin create-user \
-  --email test-e2e@example.com \
-  --password TestPassword123! | jq -r '.user_id')
-
-echo "JWT: $JWT"
-
-# Step 1: validate-iap
-echo "=== Step 1: validate-iap ===" 
-curl -X POST http://localhost:54321/functions/v1/validate-iap \
-  -H "Authorization: Bearer $JWT" \
-  -H "Content-Type: application/json" \
-  -d '{}' > /tmp/test6-step1.txt
-
-APP_ACCOUNT_TOKEN=$(cat /tmp/test6-step1.txt | jq -r '.appAccountToken')
-echo "appAccountToken: $APP_ACCOUNT_TOKEN"
-
-# Step 2: check-entitlement con JWS de prueba
-echo "=== Step 2: check-entitlement ===" 
-curl -X POST http://localhost:54321/functions/v1/check-entitlement \
-  -H "Authorization: Bearer $JWT" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "receipt": "test-jws-payload",
-    "appAccountToken": "'$APP_ACCOUNT_TOKEN'"
-  }' > /tmp/test6-step2.txt
-
-# Step 3: Verificar DB
-echo "=== Step 3: DB state ===" 
-psql postgresql://postgres:postgres@localhost:54322/postgres \
-  -c "SELECT usuario_id, product_id, state FROM usuarios_suscripciones_iap LIMIT 5;" \
-  > /tmp/test6-step3.txt
-```
-
-**Resultados esperados:**
-- Step 1: HTTP 200, appAccountToken = JWT
-- Step 2: HTTP 400 (JWS inválido es esperado en test local)
-- Step 3: DB puede o no tener nuevas filas (depende de Step 2)
-
-**Guarda:**
-- `/tmp/test6-step*.txt`
+- Screenshot de salida
+- Confirmar que el comportamiento es diferente al Test Run 1
 
 ---
 
@@ -501,33 +319,6 @@ curl -X POST http://localhost:54321/functions/v1/check-entitlement \
 - Opción A: Usar payload de prueba firmado localmente (ver sección 9)
 - Opción B: Saltarse webhook en sandbox, probar solo con `check-entitlement`
 - Opción C: Usar `ngrok` para exponer localhost a internet (avanzado)
-
----
-
-## 11. Testing sin Webhooks Reales (Fallback para localhost)
-
-Crear script `test-webhook-local.sh`:
-
-```bash
-#!/bin/bash
-
-# Payload de prueba con firma ficticia (no es válida para producción)
-PAYLOAD='{
-  "notificationType": "SUBSCRIBED",
-  "notificationUUID": "12345678-1234-5678-abcd-ef0123456789",
-  "data": {
-    "signedTransactionInfo": "...",
-    "signedRenewalInfo": "..."
-  }
-}'
-
-# Enviar a webhook local (sin validar firma, solo probar lógica)
-curl -X POST http://localhost:54321/functions/v1/apple-iap-webhook \
-  -H "Content-Type: application/json" \
-  -d "{ \"notification\": $PAYLOAD }"
-```
-
-**Importante:** Esta es una prueba de LÓGICA, no de seguridad. La firma real de Apple solo se valida en `check-entitlement`.
 
 ---
 
@@ -578,7 +369,8 @@ docker-compose down
 - [ ] iPhone conectado al wifi local del Mac
 - [ ] App iOS apunta a `http://192.168.x.x:54321`
 - [ ] Prueba de conectividad exitosa (curl desde iPhone)
-- [ ] Test pre-purchase exitoso (appAccountToken generado)
+- [ ] Test Run 1 exitoso (deno test con .env.test)
+- [ ] Test Run 2 exitoso (deno test sin .env.test)
 - [ ] **Test post-purchase:** requiere Paid Apps Agreement + compra sandbox real
 
 ---
@@ -605,6 +397,11 @@ Si algo falla:
    - `supabase functions serve` debe estar en nueva terminal
    - Reiniciar `supabase functions serve` después de cambiar `.env.local`
 
+5. **Deno test falla:**
+   - Verificar que `supabase functions serve` está corriendo en otra terminal
+   - Verificar que `.env.test` existe en `supabase/functions/apple-iap-webhook/`
+   - Ejecutar desde dentro del directorio de la función: `cd supabase/functions/apple-iap-webhook`
+
 ---
 
 **Contacto:** Si hay dudas, escribir en el thread del proyecto.
@@ -616,7 +413,7 @@ Si algo falla:
 **Estado:** ⏸️ **NO DESPLEGAR AÚN.** Esperando confirmación explícita de Micaela.
 
 **Requisitos previos antes de ejecutar:**
-1. Todas las correcciones de código (Swift + JS) están en rama `claude/project-thread-2z7kdw` y mergeadas a `main`
+1. Todas las correcciones de código (Swift + JS) están en rama `fix/iap-webhook-security` y mergeadas a `main`
 2. Supabase CLI instalado localmente: `supabase --version`
 3. Acceso autenticado: `supabase projects list` debe mostrar `analisisform` (proyecto de producción)
 4. Testing local completado (si aplica)
@@ -824,7 +621,7 @@ curl -X POST https://api.pathwaycareercoach.com/functions/v1/validate-iap \
 - [ ] Migración `20261001_iap_subscriptions.sql` está en `supabase/migrations/`
 - [ ] Edge Functions (`validate-iap`, `check-entitlement`, `apple-iap-webhook`) compiladas sin errores Deno
 - [ ] `.env.local` en rama con credenciales Apple **reales** para testing
-- [ ] Tests locales ejecutados y validados (pre-purchase, webhook idempotencia)
+- [ ] Tests locales ejecutados y validados (Test Run 1 y Test Run 2 pasan)
 - [ ] Micaela autoriza deploy con palabra clave: "AUTORIZO DEPLOY IAP"
 - [ ] Micaela proporciona credenciales Apple Sandbox (Issuer ID, Key ID, .p8)
 
@@ -832,8 +629,8 @@ curl -X POST https://api.pathwaycareercoach.com/functions/v1/validate-iap \
 
 ## Próximos Pasos
 
-1. **Hoy:** Consolidar todos los fixes en rama `claude/project-thread-2z7kdw`
-2. **Testing local (Gonzalo):** Ejecutar suite de tests con Supabase local + app iOS
+1. **Hoy:** Consolidar todos los fixes en rama `fix/iap-webhook-security`
+2. **Testing local (Gonzalo):** Ejecutar suite de tests con Supabase local
 3. **Micaela autoriza:** Ejecutar comandos de deploy cuando esté lista
 4. **Post-deploy:** Monitoreo 48h, validar que transacciones se registran en DB
 5. **App Store:** Habilitar compras reales solo después de validación completa
