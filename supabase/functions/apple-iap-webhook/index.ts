@@ -74,14 +74,32 @@ Deno.serve(async (req) => {
     const body: WebhookPayload = await req.json();
     const signedPayload = body.signedPayload;
 
+    // SECURITY: Require signedPayload (JWS signed by Apple) in production
+    // Allow unsigned notifications ONLY in local test mode (IAP_ALLOW_UNSIGNED_TEST=true)
+    const allowUnsignedTest = Deno.env.get("IAP_ALLOW_UNSIGNED_TEST") === "true";
+
     if (!signedPayload) {
-      // If no signed payload, check if we're in test mode (notification directly provided)
-      if (!body.notification) {
-        return new Response(JSON.stringify({ ok: false, error: "No payload" }), {
-          status: 400,
-          headers: { "Content-Type": "application/json" },
-        });
+      // Production: REQUIRE signed payload (reject by default)
+      if (!allowUnsignedTest) {
+        console.warn("[webhook] Unsigned notification rejected (not in test mode)");
+        return new Response(
+          JSON.stringify({
+            ok: false,
+            error: "Webhook requires signedPayload (JWS signed by Apple App Store)"
+          }),
+          { status: 400, headers: { "Content-Type": "application/json" } }
+        );
       }
+
+      // Test mode: allow direct notification for local testing
+      if (!body.notification) {
+        return new Response(
+          JSON.stringify({ ok: false, error: "No payload or notification" }),
+          { status: 400, headers: { "Content-Type": "application/json" } }
+        );
+      }
+
+      console.log("[webhook] TEST MODE: Accepting unsigned notification (local testing only)");
     }
 
     // Parse and validate JWS from Apple
@@ -228,15 +246,44 @@ Deno.serve(async (req) => {
       expiresAt = new Date().toISOString();
     }
 
+    // Extract signedDate from Apple notification (milliseconds since epoch)
+    // If missing, use current time as fallback
+    const notificationDate = notification.signedDate
+      ? new Date(notification.signedDate)
+      : new Date();
+
     // Update or insert subscription
     const { data: existing } = await client
       .from("usuarios_suscripciones_iap")
-      .select("id, usuario_id")
+      .select("id, usuario_id, last_signed_date")
       .eq("original_transaction_id", originalTransactionId)
       .single();
 
     if (existing) {
-      // Update
+      // SECURITY: Only update if this event is newer (or first event)
+      // Prevents old/stale webhooks from reverting recent state changes
+      const lastSignedDate = existing.last_signed_date
+        ? new Date(existing.last_signed_date)
+        : null;
+
+      if (lastSignedDate && notificationDate < lastSignedDate) {
+        // Event is older than what we already have
+        console.log(
+          `[webhook] Ignoring stale event: ${notificationType} ` +
+          `(${notificationDate.toISOString()} is before ${lastSignedDate.toISOString()})`
+        );
+
+        return new Response(
+          JSON.stringify({
+            ok: true,
+            state: "ignored_stale",
+            reason: "Event timestamp is older than last processed event"
+          }),
+          { status: 200, headers: { "Content-Type": "application/json" } }
+        );
+      }
+
+      // Update only if timestamp is newer (or no previous date)
       const { error: updateError } = await client
         .from("usuarios_suscripciones_iap")
         .update({
@@ -244,7 +291,8 @@ Deno.serve(async (req) => {
           expires_at: expiresAt,
           latest_notification_uuid: notificationUUID,
           last_notification_type: notificationType,
-          last_notification_at: new Date().toISOString(),
+          last_notification_at: notificationDate.toISOString(),
+          last_signed_date: notificationDate.toISOString(),
           notification_count: (existingNotif?.notification_count || 0) + 1,
           auto_renew_status:
             notification.autoRenewStatus !== undefined
