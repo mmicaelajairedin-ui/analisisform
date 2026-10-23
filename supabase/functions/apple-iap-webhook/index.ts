@@ -109,7 +109,19 @@ Deno.serve(async (req) => {
         );
       }
 
-      // Test mode: allow direct notification for local testing
+      // Parse and validate JWS from Apple
+    // App Store Server Notifications V2 are JWS (JSON Web Signature) with x5c certificate chain
+    // Spec: https://developer.apple.com/documentation/appstoreserverapi/jwsrenewalinfo
+
+    // SECURITY: Prevent bypass — notification must be extracted ONLY from validated signedPayload
+    // If both are present, signedPayload takes precedence and notification is ignored
+    let notification: AppleNotification | null = null;
+    let notificationType = "";
+    let transactionData: Record<string, unknown> | null = null;
+    let renewalData: Record<string, unknown> | null = null;
+
+    // Test mode: allow direct notification for local testing
+    if (!signedPayload) {
       if (!body.notification) {
         return new Response(
           JSON.stringify({ ok: false, error: "No payload or notification" }),
@@ -123,17 +135,6 @@ Deno.serve(async (req) => {
 
       console.log("[webhook] TEST MODE: Accepting unsigned notification (local testing only)");
     }
-
-    // Parse and validate JWS from Apple
-    // App Store Server Notifications V2 are JWS (JSON Web Signature) with x5c certificate chain
-    // Spec: https://developer.apple.com/documentation/appstoreserverapi/jwsrenewalinfo
-
-    // SECURITY: Prevent bypass — notification must be extracted ONLY from validated signedPayload
-    // If both are present, signedPayload takes precedence and notification is ignored
-    let notification: AppleNotification | null = null;
-    let notificationType = "";
-    let transactionData: Record<string, unknown> | null = null;
-    let renewalData: Record<string, unknown> | null = null;
 
     if (signedPayload) {
       try {
