@@ -83,7 +83,7 @@ Luego aplica el bootstrap:
 
 ```bash
 # Ejecutar bootstrap dentro del contenedor Docker
-docker exec $CONTAINER_ID psql -U postgres -d postgres < supabase/bootstrap_local.sql
+docker exec $CONTAINER_ID psql -i -v ON_ERROR_STOP=1 -U postgres -d postgres < supabase/bootstrap_local.sql
 ```
 
 **Qué hace:**
@@ -117,10 +117,10 @@ Aplica las dos migraciones IAP **en orden** con docker exec:
 
 ```bash
 # 1. Crear tabla usuarios_suscripciones_iap
-docker exec $CONTAINER_ID psql -U postgres -d postgres < supabase/migrations/20261001_iap_subscriptions.sql
+docker exec $CONTAINER_ID psql -i -v ON_ERROR_STOP=1 -U postgres -d postgres < supabase/migrations/20261001_iap_subscriptions.sql
 
 # 2. Agregar columna last_signed_date para deduplicación atómica
-docker exec $CONTAINER_ID psql -U postgres -d postgres < supabase/migrations/20261023_add_last_signed_date.sql
+docker exec $CONTAINER_ID psql -i -v ON_ERROR_STOP=1 -U postgres -d postgres < supabase/migrations/20261023_add_last_signed_date.sql
 ```
 
 **Qué hace:**
@@ -145,7 +145,7 @@ ALTER TABLE
 
 ```bash
 # Antes de tests, verificar que tabla existe
-docker exec $CONTAINER_ID psql -U postgres -d postgres -c "SELECT COUNT(*) as row_count FROM usuarios_suscripciones_iap;"
+docker exec $CONTAINER_ID psql -v ON_ERROR_STOP=1 -U postgres -d postgres -c "SELECT COUNT(*) as row_count FROM usuarios_suscripciones_iap;"
 # Debería retornar: 0 (tabla creada, vacía)
 ```
 
@@ -282,14 +282,14 @@ echo "Container ID: $CONTAINER_ID"
 supabase functions serve --env-file supabase/functions/apple-iap-webhook/.env.test
 
 # Terminal 2: contar filas ANTES
-docker exec $CONTAINER_ID psql -U postgres -d postgres -c "SELECT COUNT(*) as before_count FROM usuarios_suscripciones_iap;" > /tmp/tier1-run1-before.txt
+docker exec $CONTAINER_ID psql -v ON_ERROR_STOP=1 -U postgres -d postgres -c "SELECT COUNT(*) as before_count FROM usuarios_suscripciones_iap;" > /tmp/tier1-run1-before.txt
 
 # Terminal 2: ejecutar tests con variable de entorno (permite payloads sin firma para local)
 cd supabase/functions/apple-iap-webhook
 IAP_ALLOW_UNSIGNED_TEST=true deno test --allow-net --allow-env webhook-security.test.ts > /tmp/tier1-run1-output.txt 2>&1
 
 # Terminal 2: contar filas DESPUÉS
-docker exec $CONTAINER_ID psql -U postgres -d postgres -c "SELECT COUNT(*) as after_count FROM usuarios_suscripciones_iap;" > /tmp/tier1-run1-after.txt
+docker exec $CONTAINER_ID psql -v ON_ERROR_STOP=1 -U postgres -d postgres -c "SELECT COUNT(*) as after_count FROM usuarios_suscripciones_iap;" > /tmp/tier1-run1-after.txt
 ```
 
 **Resultados esperados:**
@@ -318,14 +318,14 @@ Estos tests validan:
 supabase functions serve
 
 # Terminal 2: contar filas ANTES
-docker exec $CONTAINER_ID psql -U postgres -d postgres -c "SELECT COUNT(*) as before_count FROM usuarios_suscripciones_iap;" > /tmp/tier1-run2-before.txt
+docker exec $CONTAINER_ID psql -v ON_ERROR_STOP=1 -U postgres -d postgres -c "SELECT COUNT(*) as before_count FROM usuarios_suscripciones_iap;" > /tmp/tier1-run2-before.txt
 
 # Terminal 2: ejecutar tests sin pasar IAP_ALLOW_UNSIGNED_TEST (modo producción)
 cd supabase/functions/apple-iap-webhook
 deno test --allow-net --allow-env webhook-security.test.ts > /tmp/tier1-run2-output.txt 2>&1
 
 # Terminal 2: contar filas DESPUÉS
-docker exec $CONTAINER_ID psql -U postgres -d postgres -c "SELECT COUNT(*) as after_count FROM usuarios_suscripciones_iap;" > /tmp/tier1-run2-after.txt
+docker exec $CONTAINER_ID psql -v ON_ERROR_STOP=1 -U postgres -d postgres -c "SELECT COUNT(*) as after_count FROM usuarios_suscripciones_iap;" > /tmp/tier1-run2-after.txt
 ```
 
 **Resultados esperados:**
