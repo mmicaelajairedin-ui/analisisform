@@ -136,22 +136,29 @@ Deno.serve(async (req) => {
         notification = validation.payload as AppleNotification;
 
         // SECURITY: Validate and extract data from nested JWS payloads
-        // In Apple V2 notifications, transaction details are inside signedTransactionInfo (firmado)
+        // In Apple V2 notifications, transaction details are inside signedTransactionInfo (REQUIRED)
+        // signedTransactionInfo is MANDATORY — if missing, reject immediately
+        if (!notification.data?.signedTransactionInfo) {
+          console.error("[webhook] Missing required signedTransactionInfo");
+          return new Response(
+            JSON.stringify({ ok: false, error: "Missing signedTransactionInfo" }),
+            { status: 400, headers: { "Content-Type": "application/json" } }
+          );
+        }
+
         let transactionData: Record<string, unknown> | null = null;
         let renewalData: Record<string, unknown> | null = null;
 
-        // If signedTransactionInfo exists, validate it as nested JWS and use its payload
-        if (notification.data?.signedTransactionInfo) {
-          const txnValidation = await validateNestedJWS(notification.data.signedTransactionInfo);
-          if (!txnValidation.valid) {
-            console.error("[webhook] signedTransactionInfo validation failed:", txnValidation.error);
-            return new Response(
-              JSON.stringify({ ok: false, error: "Transaction info validation failed" }),
-              { status: 400, headers: { "Content-Type": "application/json" } }
-            );
-          }
-          transactionData = txnValidation.payload as Record<string, unknown>;
+        // Validate signedTransactionInfo as nested JWS and extract payload
+        const txnValidation = await validateNestedJWS(notification.data.signedTransactionInfo);
+        if (!txnValidation.valid) {
+          console.error("[webhook] signedTransactionInfo validation failed:", txnValidation.error);
+          return new Response(
+            JSON.stringify({ ok: false, error: "Transaction info validation failed" }),
+            { status: 400, headers: { "Content-Type": "application/json" } }
+          );
         }
+        transactionData = txnValidation.payload as Record<string, unknown>;
 
         // If signedRenewalInfo exists, validate it as nested JWS and use its payload
         if (notification.data?.signedRenewalInfo) {
@@ -181,27 +188,15 @@ Deno.serve(async (req) => {
       });
     }
 
-    // Extract fields: prefer validated nested data (signedTransactionInfo), fall back to outer notification
-    // SECURITY: If we have a validated transaction payload, use it; otherwise reject
+    // Extract fields from VALIDATED nested JWS payload
+    // SECURITY: signedTransactionInfo is mandatory, so transactionData is always non-null
     const notificationType = notification.notificationType || "";
     const notificationUUID = notification.notificationUUID || "";
 
-    // originalTransactionId MUST come from validated signedTransactionInfo if present
-    let originalTransactionId = "";
-    let productId = "";
-    let bundleId = "";
-
-    if (transactionData) {
-      // Data came from validated JWS
-      originalTransactionId = (transactionData.originalTransactionId as string) || "";
-      productId = (transactionData.productId as string) || "";
-      bundleId = (transactionData.bundleId as string) || "";
-    } else {
-      // Fall back to outer notification only if no nested transaction data
-      originalTransactionId = notification.originalTransactionId || "";
-      productId = notification.productId || "";
-      bundleId = notification.bundleId || "";
-    }
+    // originalTransactionId MUST come from validated signedTransactionInfo
+    const originalTransactionId = (transactionData!.originalTransactionId as string) || "";
+    const productId = (transactionData!.productId as string) || "";
+    const bundleId = (transactionData!.bundleId as string) || "";
 
     const appAccountToken = notification.appAccountToken || "";
 
@@ -212,12 +207,27 @@ Deno.serve(async (req) => {
       );
     }
 
-    // SECURITY: Validate environment consistency
-    // bundleId should be either empty (development) or match expected production bundle
-    const expectedBundleId = "com.pathway.coach"; // or environment variable
+    // SECURITY: Validate environment and bundle consistency
+    // bundleId MUST match expected production bundle or be empty (development only)
+    const expectedBundleId = "com.pathway.coach";
     if (bundleId && bundleId !== expectedBundleId) {
-      console.warn(`[webhook] Unexpected bundleId: ${bundleId} (expected: ${expectedBundleId})`);
-      // Log but don't reject - could be legitimate new bundle in the future
+      console.error(`[webhook] Invalid bundleId: ${bundleId} (expected: ${expectedBundleId})`);
+      return new Response(
+        JSON.stringify({ ok: false, error: "Invalid bundle ID" }),
+        { status: 400, headers: { "Content-Type": "application/json" } }
+      );
+    }
+
+    // Validate environment (Sandbox vs Production)
+    // Apple notifications include environment field: must match expected environment
+    const expectedEnvironment = Deno.env.get("IAP_ENVIRONMENT") || "Production";
+    const notificationEnvironment = (notification as any).environment || "Production";
+    if (notificationEnvironment !== expectedEnvironment) {
+      console.error(`[webhook] Invalid environment: ${notificationEnvironment} (expected: ${expectedEnvironment})`);
+      return new Response(
+        JSON.stringify({ ok: false, error: "Invalid environment" }),
+        { status: 400, headers: { "Content-Type": "application/json" } }
+      );
     }
 
     // Initialize Supabase (service role for webhook processing)
