@@ -83,7 +83,7 @@ Luego aplica el bootstrap:
 
 ```bash
 # Ejecutar bootstrap dentro del contenedor Docker
-docker exec $CONTAINER_ID psql -i -v ON_ERROR_STOP=1 -U postgres -d postgres < supabase/bootstrap_local.sql
+docker exec -i $CONTAINER_ID psql -v ON_ERROR_STOP=1 -U postgres -d postgres < supabase/bootstrap_local.sql
 ```
 
 **Qué hace:**
@@ -117,10 +117,10 @@ Aplica las dos migraciones IAP **en orden** con docker exec:
 
 ```bash
 # 1. Crear tabla usuarios_suscripciones_iap
-docker exec $CONTAINER_ID psql -i -v ON_ERROR_STOP=1 -U postgres -d postgres < supabase/migrations/20261001_iap_subscriptions.sql
+docker exec -i $CONTAINER_ID psql -v ON_ERROR_STOP=1 -U postgres -d postgres < supabase/migrations/20261001_iap_subscriptions.sql
 
 # 2. Agregar columna last_signed_date para deduplicación atómica
-docker exec $CONTAINER_ID psql -i -v ON_ERROR_STOP=1 -U postgres -d postgres < supabase/migrations/20261023_add_last_signed_date.sql
+docker exec -i $CONTAINER_ID psql -v ON_ERROR_STOP=1 -U postgres -d postgres < supabase/migrations/20261023_add_last_signed_date.sql
 ```
 
 **Qué hace:**
