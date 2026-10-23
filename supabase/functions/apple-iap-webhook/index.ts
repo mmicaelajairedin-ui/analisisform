@@ -82,10 +82,18 @@ Deno.serve(async (req) => {
     // Only these hosts are safe for unsigned notifications: localhost, 127.0.0.1, host.docker.internal, kong
     // Any other host (including production Supabase) is rejected
     const supabaseUrl = Deno.env.get("SUPABASE_URL") || "";
-    const isLocalHost = supabaseUrl.includes("localhost") ||
-                       supabaseUrl.includes("127.0.0.1") ||
-                       supabaseUrl.includes("host.docker.internal") ||
-                       supabaseUrl.includes("kong");
+
+    let isLocalHost = false;
+    try {
+      const url = new URL(supabaseUrl);
+      const hostname = url.hostname;
+      const allowedLocalHosts = ["localhost", "127.0.0.1", "host.docker.internal", "kong"];
+      isLocalHost = allowedLocalHosts.includes(hostname);
+    } catch (e) {
+      // Invalid URL format — reject test mode
+      console.error("[webhook] Invalid SUPABASE_URL format:", e);
+      isLocalHost = false;
+    }
     const isLocalTestMode = allowUnsignedTest && isLocalHost;
 
     if (!signedPayload) {
@@ -119,6 +127,9 @@ Deno.serve(async (req) => {
     // SECURITY: Prevent bypass — notification must be extracted ONLY from validated signedPayload
     // If both are present, signedPayload takes precedence and notification is ignored
     let notification: AppleNotification | null = null;
+    let notificationType = "";
+    let transactionData: Record<string, unknown> | null = null;
+    let renewalData: Record<string, unknown> | null = null;
 
     if (signedPayload) {
       try {
@@ -136,29 +147,52 @@ Deno.serve(async (req) => {
         notification = validation.payload as AppleNotification;
 
         // SECURITY: Validate and extract data from nested JWS payloads
-        // In Apple V2 notifications, transaction details are inside signedTransactionInfo (REQUIRED)
-        // signedTransactionInfo is MANDATORY — if missing, reject immediately
-        if (!notification.data?.signedTransactionInfo) {
-          console.error("[webhook] Missing required signedTransactionInfo");
-          return new Response(
-            JSON.stringify({ ok: false, error: "Missing signedTransactionInfo" }),
-            { status: 400, headers: { "Content-Type": "application/json" } }
-          );
-        }
+        // In Apple V2 notifications, transaction details are inside signedTransactionInfo
+        // Some notification types (TEST, SUMMARY, unknown) don't include it — handle those without 400
+        notificationType = notification.notificationType || "";
 
-        let transactionData: Record<string, unknown> | null = null;
-        let renewalData: Record<string, unknown> | null = null;
+        if (notification.data?.signedTransactionInfo) {
+          // Validate signedTransactionInfo as nested JWS and extract payload
+          const txnValidation = await validateNestedJWS(notification.data.signedTransactionInfo);
+          if (!txnValidation.valid) {
+            console.error("[webhook] signedTransactionInfo validation failed:", txnValidation.error);
+            return new Response(
+              JSON.stringify({ ok: false, error: "Transaction info validation failed" }),
+              { status: 400, headers: { "Content-Type": "application/json" } }
+            );
+          }
+          transactionData = txnValidation.payload as Record<string, unknown>;
+        } else {
+          // signedTransactionInfo missing — only valid for certain notification types
+          const typesWithoutTransaction = ["TEST", "SUMMARY"];
+          const isSafeType = typesWithoutTransaction.includes(notificationType);
 
-        // Validate signedTransactionInfo as nested JWS and extract payload
-        const txnValidation = await validateNestedJWS(notification.data.signedTransactionInfo);
-        if (!txnValidation.valid) {
-          console.error("[webhook] signedTransactionInfo validation failed:", txnValidation.error);
-          return new Response(
-            JSON.stringify({ ok: false, error: "Transaction info validation failed" }),
-            { status: 400, headers: { "Content-Type": "application/json" } }
-          );
+          if (!isSafeType && notificationType) {
+            // Type SHOULD have signedTransactionInfo but doesn't — subscription-related types must have it
+            // Only reject subscription-modifying types; unknown types are safe to skip
+            const subscriptionModifyingTypes = [
+              "SUBSCRIBED",
+              "RENEWED",
+              "EXPIRED",
+              "REVOKED",
+              "BILLING_RETRY",
+              "GRACE_PERIOD",
+              "DID_FAIL_TO_RENEW",
+              "DID_CHANGE_RENEWAL_STATUS",
+              "DID_CHANGE_RENEWAL_PREF",
+              "REFUND",
+              "REFUND_DECLINED"
+            ];
+
+            if (subscriptionModifyingTypes.includes(notificationType)) {
+              console.error(`[webhook] Missing signedTransactionInfo for subscription-modifying type: ${notificationType}`);
+              return new Response(
+                JSON.stringify({ ok: false, error: "Missing transaction info for subscription notification" }),
+                { status: 400, headers: { "Content-Type": "application/json" } }
+              );
+            }
+          }
         }
-        transactionData = txnValidation.payload as Record<string, unknown>;
 
         // If signedRenewalInfo exists, validate it as nested JWS and use its payload
         if (notification.data?.signedRenewalInfo) {
@@ -188,16 +222,23 @@ Deno.serve(async (req) => {
       });
     }
 
-    // Extract fields from VALIDATED nested JWS payload
-    // SECURITY: signedTransactionInfo is mandatory, so transactionData is always non-null
-    const notificationType = notification.notificationType || "";
+    // Extract fields from VALIDATED nested JWS payload (if present)
     const notificationUUID = notification.notificationUUID || "";
 
-    // originalTransactionId MUST come from validated signedTransactionInfo
-    const originalTransactionId = (transactionData!.originalTransactionId as string) || "";
-    const productId = (transactionData!.productId as string) || "";
-    const bundleId = (transactionData!.bundleId as string) || "";
+    // If transactionData is null (TEST, SUMMARY, or other non-subscription types without signedTransactionInfo)
+    if (!transactionData) {
+      // These types are acknowledged but don't modify subscription state
+      console.log(`[webhook] Received non-subscription notification: ${notificationType}`);
+      return new Response(
+        JSON.stringify({ ok: true, state: "acknowledged_no_transaction", type: notificationType }),
+        { status: 200, headers: { "Content-Type": "application/json" } }
+      );
+    }
 
+    // transactionData is present — extract subscription-modifying fields
+    const originalTransactionId = (transactionData.originalTransactionId as string) || "";
+    const productId = (transactionData.productId as string) || "";
+    const bundleId = (transactionData.bundleId as string) || "";
     const appAccountToken = notification.appAccountToken || "";
 
     if (!originalTransactionId || !notificationType || !notificationUUID) {
