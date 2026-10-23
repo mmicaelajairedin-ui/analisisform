@@ -284,8 +284,8 @@ Deno.serve(async (req) => {
     const originalTransactionId = (transactionData.originalTransactionId as string) || "";
     const productId = (transactionData.productId as string) || "";
     const bundleId = (transactionData.bundleId as string) || "";
-    const signedDateMs = (transactionData.signedDate as number) || null; // milliseconds from Apple
-    const expiresDateMs = (transactionData.expiresDate as number) || null; // milliseconds from Apple
+    const signedDateMs = transactionData.signedDate != null ? (transactionData.signedDate as number) : null; // milliseconds from Apple
+    const expiresDateMs = transactionData.expiresDate != null ? (transactionData.expiresDate as number) : null; // milliseconds from Apple
 
     // appAccountToken comes from outer notification (Apple includes it at top level)
     const appAccountToken = notification.appAccountToken || "";
