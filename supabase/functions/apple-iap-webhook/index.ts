@@ -140,12 +140,35 @@ Deno.serve(async (req) => {
       // Test mode: for testing, construct minimal transactionData from notification fields
       // This allows tests to exercise deduplication, timestamp, and concurrency logic
       if (notification.originalTransactionId && notification.productId) {
+        // SECURITY: No defaults — if fields are missing, notification is malformed
+        if (!notification.bundleId) {
+          console.error("[webhook] TEST MODE: Missing bundleId in unsigned notification");
+          return new Response(
+            JSON.stringify({ ok: false, error: "Missing bundleId" }),
+            { status: 400, headers: { "Content-Type": "application/json" } }
+          );
+        }
+        if (!notification.signedDate) {
+          console.error("[webhook] TEST MODE: Missing signedDate in unsigned notification");
+          return new Response(
+            JSON.stringify({ ok: false, error: "Missing signedDate (mandatory for subscription-modifying notifications)" }),
+            { status: 400, headers: { "Content-Type": "application/json" } }
+          );
+        }
+        if (!notification.expirationDate) {
+          console.error("[webhook] TEST MODE: Missing expirationDate in unsigned notification");
+          return new Response(
+            JSON.stringify({ ok: false, error: "Missing expirationDate" }),
+            { status: 400, headers: { "Content-Type": "application/json" } }
+          );
+        }
+
         transactionData = {
           originalTransactionId: notification.originalTransactionId,
           productId: notification.productId,
-          bundleId: notification.bundleId || "com.pathway.coach",
-          signedDate: notification.signedDate || Date.now(),
-          expiresDate: notification.expirationDate || Date.now() + 30 * 24 * 60 * 60 * 1000
+          bundleId: notification.bundleId,
+          signedDate: notification.signedDate,
+          expiresDate: notification.expirationDate
         };
       }
 

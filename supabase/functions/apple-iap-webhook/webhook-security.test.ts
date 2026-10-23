@@ -88,7 +88,10 @@ Deno.test("TEST 2: Duplicate notifications deduplicated", async () => {
       originalTransactionId: txId,
       productId: "coach.plan.basic.monthly",
       appAccountToken: "test-user-" + Date.now(),
-      signedDate: Date.now()
+      bundleId: "com.pathway.coach",
+      signedDate: Date.now(),
+      expirationDate: Date.now() + 30 * 24 * 60 * 60 * 1000,
+      environment: "Sandbox"
     }
   };
 
@@ -160,7 +163,10 @@ Deno.test("TEST 3: Stale events ignored via timestamp", async () => {
         originalTransactionId: txId,
         productId: "coach.plan.basic.monthly",
         appAccountToken: appToken,
-        signedDate: recentDate
+        bundleId: "com.pathway.coach",
+        signedDate: recentDate,
+        expirationDate: recentDate + 30 * 24 * 60 * 60 * 1000,
+        environment: "Sandbox"
       }
     })
   });
@@ -182,7 +188,10 @@ Deno.test("TEST 3: Stale events ignored via timestamp", async () => {
         originalTransactionId: txId,
         productId: "coach.plan.basic.monthly",
         appAccountToken: appToken,
-        signedDate: staleDate // Older timestamp
+        bundleId: "com.pathway.coach",
+        signedDate: staleDate, // Older timestamp
+        expirationDate: staleDate + 30 * 24 * 60 * 60 * 1000,
+        environment: "Sandbox"
       }
     })
   });
@@ -228,7 +237,10 @@ Deno.test("TEST 4: Test mode accepts only from localhost", async () => {
         originalTransactionId: "test-tx-loc-" + Date.now(),
         productId: "coach.plan.basic.monthly",
         appAccountToken: "test-user-" + Date.now(),
-        signedDate: Date.now()
+        bundleId: "com.pathway.coach",
+        signedDate: Date.now(),
+        expirationDate: Date.now() + 30 * 24 * 60 * 60 * 1000,
+        environment: "Sandbox"
       }
     })
   });
@@ -270,7 +282,10 @@ Deno.test("TEST 5: Equal timestamps — later writer wins (atomic UPDATE)", asyn
         originalTransactionId: txId,
         productId: "coach.plan.basic.monthly",
         appAccountToken: appToken,
-        signedDate: sameTimestamp
+        bundleId: "com.pathway.coach",
+        signedDate: sameTimestamp,
+        expirationDate: sameTimestamp + 30 * 24 * 60 * 60 * 1000,
+        environment: "Sandbox"
       }
     })
   });
@@ -295,7 +310,10 @@ Deno.test("TEST 5: Equal timestamps — later writer wins (atomic UPDATE)", asyn
         originalTransactionId: txId,
         productId: "coach.plan.basic.monthly",
         appAccountToken: appToken,
-        signedDate: sameTimestamp // Same timestamp
+        bundleId: "com.pathway.coach",
+        signedDate: sameTimestamp, // Same timestamp
+        expirationDate: sameTimestamp + 30 * 24 * 60 * 60 * 1000,
+        environment: "Sandbox"
       }
     })
   });
