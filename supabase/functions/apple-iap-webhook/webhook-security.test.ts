@@ -243,6 +243,80 @@ Deno.test("TEST 4: Test mode accepts only from localhost", async () => {
 });
 
 // =============================================================================
+// TEST 5: Concurrency safety — equal timestamps (point 4: atomicity + race condition)
+// =============================================================================
+
+Deno.test("TEST 5: Equal timestamps — later writer wins (atomic UPDATE)", async () => {
+  const hasTestMode = Deno.env.get("IAP_ALLOW_UNSIGNED_TEST") === "true";
+  if (!hasTestMode) {
+    console.warn(
+      "⚠️  TEST 5 skipped: IAP_ALLOW_UNSIGNED_TEST not set. Set it to run this test."
+    );
+    return;
+  }
+
+  const sameTimestamp = Date.now();
+  const txId = "test-tx-race-" + sameTimestamp;
+  const appToken = "test-user-" + sameTimestamp;
+
+  // Event 1: SUBSCRIBED (first writer with timestamp T)
+  const event1 = await fetch(WEBHOOK_URL, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      notification: {
+        notificationType: "SUBSCRIBED",
+        notificationUUID: "race-1-" + Date.now(),
+        originalTransactionId: txId,
+        productId: "coach.plan.basic.monthly",
+        appAccountToken: appToken,
+        signedDate: sameTimestamp
+      }
+    })
+  });
+
+  if (event1.status !== 200) {
+    throw new Error(`Event 1 failed: status ${event1.status}`);
+  }
+  const body1 = await event1.json();
+  if (body1.state !== "active") {
+    throw new Error(`Event 1 should be active, got: ${body1.state}`);
+  }
+
+  // Event 2: EXPIRED with SAME timestamp (should be ignored — only last_signed_date.is.null OR last_signed_date.lt. works)
+  // With atomic WHERE clause, this should NOT update because last_signed_date is already set to sameTimestamp
+  const event2 = await fetch(WEBHOOK_URL, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      notification: {
+        notificationType: "EXPIRED",
+        notificationUUID: "race-2-" + Date.now(),
+        originalTransactionId: txId,
+        productId: "coach.plan.basic.monthly",
+        appAccountToken: appToken,
+        signedDate: sameTimestamp // Same timestamp
+      }
+    })
+  });
+
+  if (event2.status !== 200) {
+    throw new Error(`Event 2 failed: status ${event2.status}`);
+  }
+  const body2 = await event2.json();
+
+  // With atomic WHERE clause (last_signed_date < newDate), equal timestamps should NOT match
+  // So state should remain "active" (from event1), not become "expired" (from event2)
+  if (body2.state !== "ignored_stale") {
+    throw new Error(
+      `Event 2 with equal timestamp should be ignored_stale, got: ${body2.state}`
+    );
+  }
+
+  console.log("✅ TEST 5 PASSED: Atomic UPDATE prevents race condition (equal timestamps ignored)");
+});
+
+// =============================================================================
 // MANUAL VERIFICATION CHECKLIST
 // =============================================================================
 

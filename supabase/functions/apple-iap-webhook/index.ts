@@ -117,6 +117,10 @@ Deno.serve(async (req) => {
         );
       }
 
+      // POINT 1: Assign unsigned notification explicitly
+      notification = body.notification;
+      notificationType = notification.notificationType || "";
+
       console.log("[webhook] TEST MODE: Accepting unsigned notification (local testing only)");
     }
 
@@ -235,11 +239,20 @@ Deno.serve(async (req) => {
       );
     }
 
+    // POINT 2: Extract Apple data from VALIDATED JWS payloads (not fallback to notification)
     // transactionData is present — extract subscription-modifying fields
     const originalTransactionId = (transactionData.originalTransactionId as string) || "";
     const productId = (transactionData.productId as string) || "";
     const bundleId = (transactionData.bundleId as string) || "";
+    const signedDateMs = (transactionData.signedDate as number) || null; // milliseconds from Apple
+    const expiresDateMs = (transactionData.expiresDate as number) || null; // milliseconds from Apple
+
+    // appAccountToken comes from outer notification (Apple includes it at top level)
     const appAccountToken = notification.appAccountToken || "";
+
+    // environment comes from outer notification
+    const notificationEnvironment = (notification as any).environment || "Production";
+    const expectedEnvironment = Deno.env.get("IAP_ENVIRONMENT") || "Production";
 
     if (!originalTransactionId || !notificationType || !notificationUUID) {
       return new Response(
@@ -248,10 +261,20 @@ Deno.serve(async (req) => {
       );
     }
 
-    // SECURITY: Validate environment and bundle consistency
-    // bundleId MUST match expected production bundle or be empty (development only)
+    // POINT 7: Validate bundleId MUST be present and match expected value for subscription notifications
+    // POINT 6: signedDate MUST be present in validated transactionData for subscription modifications
     const expectedBundleId = "com.pathway.coach";
-    if (bundleId && bundleId !== expectedBundleId) {
+
+    // bundleId is REQUIRED and must match (not optional/empty for subscription notifications)
+    if (!bundleId) {
+      console.error(`[webhook] Missing bundleId in transaction (required for subscription notifications)`);
+      return new Response(
+        JSON.stringify({ ok: false, error: "Missing bundleId in transaction data" }),
+        { status: 400, headers: { "Content-Type": "application/json" } }
+      );
+    }
+
+    if (bundleId !== expectedBundleId) {
       console.error(`[webhook] Invalid bundleId: ${bundleId} (expected: ${expectedBundleId})`);
       return new Response(
         JSON.stringify({ ok: false, error: "Invalid bundle ID" }),
@@ -259,14 +282,22 @@ Deno.serve(async (req) => {
       );
     }
 
-    // Validate environment (Sandbox vs Production)
-    // Apple notifications include environment field: must match expected environment
-    const expectedEnvironment = Deno.env.get("IAP_ENVIRONMENT") || "Production";
-    const notificationEnvironment = (notification as any).environment || "Production";
+    // POINT 7: environment MUST match expected environment (Production vs Sandbox)
+    // Do not accept missing environment as default Production
     if (notificationEnvironment !== expectedEnvironment) {
       console.error(`[webhook] Invalid environment: ${notificationEnvironment} (expected: ${expectedEnvironment})`);
       return new Response(
         JSON.stringify({ ok: false, error: "Invalid environment" }),
+        { status: 400, headers: { "Content-Type": "application/json" } }
+      );
+    }
+
+    // POINT 6: signedDate MUST be present in validated transaction data (from JWS)
+    // Subscription modifications cannot use current time as fallback
+    if (!signedDateMs) {
+      console.error("[webhook] Missing signedDate in transaction data (required for subscription modifications)");
+      return new Response(
+        JSON.stringify({ ok: false, error: "Missing signedDate in transaction data" }),
         { status: 400, headers: { "Content-Type": "application/json" } }
       );
     }
@@ -286,9 +317,10 @@ Deno.serve(async (req) => {
 
     // IDEMPOTENCY: Check if we've already processed this specific notification UUID
     // Apple guarantees notificationUUID is unique per notification
+    // POINT 5: Include notification_count in initial select for atomic increment
     const { data: existingNotif } = await client
       .from("usuarios_suscripciones_iap")
-      .select("id, latest_notification_uuid")
+      .select("id, latest_notification_uuid, notification_count")
       .eq("original_transaction_id", originalTransactionId)
       .single();
 
@@ -325,10 +357,10 @@ Deno.serve(async (req) => {
       });
     }
 
-    // Calculate expiration date
+    // Calculate expiration date from validated transaction data
     let expiresAt = null;
-    if (notification.expirationDate) {
-      expiresAt = new Date(notification.expirationDate).toISOString();
+    if (expiresDateMs) {
+      expiresAt = new Date(expiresDateMs).toISOString();
     } else if (notification.gracePeriodExpiresDate) {
       expiresAt = new Date(notification.gracePeriodExpiresDate).toISOString();
     } else if (newState === "active" || newState === "grace_period") {
@@ -341,11 +373,9 @@ Deno.serve(async (req) => {
       expiresAt = new Date().toISOString();
     }
 
-    // Extract signedDate from Apple notification (milliseconds since epoch)
-    // If missing, use current time as fallback
-    const notificationDate = notification.signedDate
-      ? new Date(notification.signedDate)
-      : new Date();
+    // POINT 6: Use signedDate from validated transaction data (already validated above)
+    // This is guaranteed to exist from our prior check
+    const notificationDate = new Date(signedDateMs!);
 
     // Update or insert subscription
     const { data: existing } = await client
