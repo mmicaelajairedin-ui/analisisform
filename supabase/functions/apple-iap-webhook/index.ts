@@ -283,8 +283,9 @@ Deno.serve(async (req) => {
         );
       }
 
-      // Update only if timestamp is newer (or no previous date)
-      const { error: updateError } = await client
+      // ATOMIC UPDATE: Only update if this event is newer (or first event)
+      // Use WHERE clause to prevent race condition: last_signed_date IS NULL OR last_signed_date < new_date
+      const { data: updateResult, error: updateError, count } = await client
         .from("usuarios_suscripciones_iap")
         .update({
           state: newState,
@@ -300,7 +301,10 @@ Deno.serve(async (req) => {
               : true,
           updated_at: new Date().toISOString(),
         })
-        .eq("original_transaction_id", originalTransactionId);
+        .eq("original_transaction_id", originalTransactionId)
+        // ATOMIC: Only match if no previous date OR previous date is older than this event
+        .or(`last_signed_date.is.null,last_signed_date.lt.${notificationDate.toISOString()}`)
+        .select();
 
       if (updateError) {
         console.error("[webhook] Update error:", updateError);
@@ -308,6 +312,23 @@ Deno.serve(async (req) => {
           status: 500,
           headers: { "Content-Type": "application/json" },
         });
+      }
+
+      // If count is 0, this event was stale (already have newer event)
+      if (!count || count === 0) {
+        console.log(
+          `[webhook] Ignoring stale event: ${notificationType} ` +
+          `(${notificationDate.toISOString()} is before existing event)`
+        );
+
+        return new Response(
+          JSON.stringify({
+            ok: true,
+            state: "ignored_stale",
+            reason: "Event timestamp is older than last processed event (atomic check)"
+          }),
+          { status: 200, headers: { "Content-Type": "application/json" } }
+        );
       }
 
       // Update user's plan projection based on new state

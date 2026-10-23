@@ -67,24 +67,52 @@ async function test_duplicateNotificationIdempotent() {
   const name = "TEST 2: Duplicate notifications idempotent";
 
   try {
-    // Note: This test requires a real JWS from Apple or TEST_MODE enabled
-    // For now, we document the expected behavior:
+    // Scenario: Send same webhook 3× with IAP_ALLOW_UNSIGNED_TEST=true
+    // Expected: 1 database row (idempotent via notificationUUID)
 
-    const notificationUUID = "test-uuid-" + Math.random().toString(36).slice(2);
+    const notificationUUID = "test-uuid-duplicate-" + Date.now();
+    const txId = "test-tx-duplicate-" + Date.now();
 
-    // In production with signed JWS, sending the same webhook 3× should:
-    // - First time: creates/updates row
-    // - Second time: returns 200 OK, no change (duplicate)
-    // - Third time: returns 200 OK, no change (duplicate)
+    const payload = {
+      notification: {
+        notificationType: "SUBSCRIBED",
+        notificationUUID,
+        originalTransactionId: txId,
+        productId: "coach.plan.basic.monthly",
+        appAccountToken: "test-user-" + Date.now(),
+        signedDate: Date.now() // Current timestamp
+      }
+    };
 
-    // Database state: should be 1 row, not 3
+    // Send 3 times
+    let firstResponse, secondResponse, thirdResponse;
+    for (let i = 0; i < 3; i++) {
+      const res = await fetch("http://localhost:54321/functions/v1/apple-iap-webhook", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload)
+      });
+      if (i === 0) firstResponse = res;
+      if (i === 1) secondResponse = res;
+      if (i === 2) thirdResponse = res;
+    }
+
+    // All three should succeed (200 OK)
+    const allOk = firstResponse?.status === 200 &&
+                  secondResponse?.status === 200 &&
+                  thirdResponse?.status === 200;
+
+    // Second and third should indicate duplicate
+    const secondBody = await secondResponse?.json();
+    const isDuplicate = secondBody?.duplicate === true;
 
     results.push({
       name,
-      passed: true,
+      passed: allOk && isDuplicate,
       details: {
-        note: "Requires real JWS from Apple Sandbox",
-        expectedBehavior: "3 identical webhooks = 1 database row"
+        note: "Requires IAP_ALLOW_UNSIGNED_TEST=true",
+        firstStatus: firstResponse?.status,
+        secondIsDuplicate: isDuplicate
       }
     });
   } catch (err) {
@@ -101,20 +129,62 @@ async function test_staleEventIgnored() {
 
   try {
     // Scenario:
-    // 1. Subscription active with recent timestamp (2026-10-23 15:00)
-    // 2. Old webhook "EXPIRED" arrives with timestamp (2026-10-23 14:50)
-    // 3. Should be ignored (event is stale)
+    // 1. Send RECENT event (notificationType=SUBSCRIBED, signedDate=now)
+    // 2. Send OLD event (notificationType=EXPIRED, signedDate=10 seconds ago)
+    // 3. Should ignore old event (state stays SUBSCRIBED, not EXPIRED)
 
-    // Expected: 200 OK with state: "ignored_stale"
-    // Expected: DB row still has state: "active" (not reverted)
+    const recentDate = Date.now();
+    const staleDate = recentDate - 10000; // 10 seconds older
+
+    const txId = "test-tx-stale-" + Date.now();
+    const appToken = "test-user-" + Date.now();
+
+    // First: send RECENT SUBSCRIBED event
+    const recentPayload = {
+      notification: {
+        notificationType: "SUBSCRIBED",
+        notificationUUID: "test-uuid-recent-" + Date.now(),
+        originalTransactionId: txId,
+        productId: "coach.plan.basic.monthly",
+        appAccountToken: appToken,
+        signedDate: recentDate
+      }
+    };
+
+    const recentRes = await fetch("http://localhost:54321/functions/v1/apple-iap-webhook", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(recentPayload)
+    });
+
+    // Second: send STALE EXPIRED event (should be ignored)
+    const stalePayload = {
+      notification: {
+        notificationType: "EXPIRED",
+        notificationUUID: "test-uuid-stale-" + Date.now(),
+        originalTransactionId: txId,
+        productId: "coach.plan.basic.monthly",
+        appAccountToken: appToken,
+        signedDate: staleDate // Older timestamp
+      }
+    };
+
+    const staleRes = await fetch("http://localhost:54321/functions/v1/apple-iap-webhook", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(stalePayload)
+    });
+
+    const staleBody = await staleRes?.json();
 
     results.push({
       name,
-      passed: true,
+      passed: recentRes?.status === 200 && staleRes?.status === 200 && staleBody?.state === "ignored_stale",
       details: {
-        note: "Requires real JWS from Apple or TEST_MODE with signedDate",
-        scenario: "Old event (timestamp < current) should not revert state",
-        expectedBehavior: "Returns 200 OK with state: ignored_stale"
+        note: "Requires IAP_ALLOW_UNSIGNED_TEST=true",
+        recentStatus: recentRes?.status,
+        staleStatus: staleRes?.status,
+        staleState: staleBody?.state
       }
     });
   } catch (err) {
@@ -138,9 +208,11 @@ async function test_unsignedAllowedInTestMode() {
       body: JSON.stringify({
         notification: {
           notificationType: "SUBSCRIBED",
-          originalTransactionId: "test-tx-unsigned-ok",
+          notificationUUID: "test-uuid-unsigned-" + Date.now(),
+          originalTransactionId: "test-tx-unsigned-" + Date.now(),
           productId: "coach.plan.basic.monthly",
-          appAccountToken: "test-user-uuid"
+          appAccountToken: "test-user-" + Date.now(),
+          signedDate: Date.now()
         }
       })
     });
@@ -148,15 +220,14 @@ async function test_unsignedAllowedInTestMode() {
     // In test mode: should accept and insert/update
     // Expected: 200 OK
 
-    if (response.status === 200) {
-      results.push({ name, passed: true });
-    } else {
-      results.push({
-        name,
-        passed: response.status === 400, // Pass if blocked (normal in production)
-        details: { status: response.status, note: "Expected 200 if TEST_MODE enabled" }
-      });
-    }
+    results.push({
+      name,
+      passed: response.status === 200,
+      details: {
+        status: response.status,
+        note: "Expected 200 if TEST_MODE enabled; expected 400 in production"
+      }
+    });
   } catch (err) {
     results.push({ name, passed: false, error: String(err) });
   }
