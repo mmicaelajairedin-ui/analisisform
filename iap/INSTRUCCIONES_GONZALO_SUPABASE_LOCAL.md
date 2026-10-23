@@ -230,20 +230,25 @@ supabase status
 **Test Run 1: Con `IAP_ALLOW_UNSIGNED_TEST=true` (test local permitido)**
 
 ```bash
-# Terminal 1: funciones en ejecución
-supabase functions serve
+# Terminal 1: levantar funciones CON --env-file
+supabase functions serve --env-file supabase/functions/apple-iap-webhook/.env.test
 
-# Terminal 2: ejecutar tests con env variables locales
+# Terminal 2: contar filas ANTES
+psql postgresql://postgres:postgres@localhost:54322/postgres -c "SELECT COUNT(*) as before_count FROM usuarios_suscripciones_iap;" > /tmp/tier1-run1-before.txt
+
+# Terminal 2: ejecutar tests con variable de entorno (permite payloads sin firma para local)
 cd supabase/functions/apple-iap-webhook
-deno test --env-file=.env.test webhook-security.test.ts
+IAP_ALLOW_UNSIGNED_TEST=true deno test --allow-net --allow-env webhook-security.test.ts > /tmp/tier1-run1-output.txt 2>&1
+
+# Terminal 2: contar filas DESPUÉS
+psql postgresql://postgres:postgres@localhost:54322/postgres -c "SELECT COUNT(*) as after_count FROM usuarios_suscripciones_iap;" > /tmp/tier1-run1-after.txt
 ```
 
 **Resultados esperados:**
-```
-ok | 7 passed | 0 failed (279ms)
-```
+- `ok | X passed | 0 failed` (todos pasan)
+- Conteo antes ≈ conteo después (DB intacta después de los tests)
 
-Estos 7 tests validan:
+Estos tests validan:
 - Deduplicación por NotificationUUID
 - Rechazo de eventos stale (older signedDate)
 - Validación en test mode (campos requeridos)
@@ -251,8 +256,9 @@ Estos 7 tests validan:
 - Validación de hostname whitelist
 
 **Guarda:**
-- Screenshot de salida exitosa
-- Salida completa del deno test
+- `/tmp/tier1-run1-output.txt` (salida de deno test)
+- `/tmp/tier1-run1-before.txt` (conteo DB antes)
+- `/tmp/tier1-run1-after.txt` (conteo DB después)
 
 ---
 
@@ -260,21 +266,29 @@ Estos 7 tests validan:
 
 **Acción:**
 ```bash
-# Terminal 1 sigue corriendo funciones
-# Terminal 2: ejecutar tests SIN env file (simula producción)
+# Terminal 1: levantar funciones SIN --env-file (usa .env del sistema)
+supabase functions serve
 
+# Terminal 2: contar filas ANTES
+psql postgresql://postgres:postgres@localhost:54322/postgres -c "SELECT COUNT(*) as before_count FROM usuarios_suscripciones_iap;" > /tmp/tier1-run2-before.txt
+
+# Terminal 2: ejecutar tests sin pasar IAP_ALLOW_UNSIGNED_TEST (modo producción)
 cd supabase/functions/apple-iap-webhook
-deno test webhook-security.test.ts
+deno test --allow-net --allow-env webhook-security.test.ts > /tmp/tier1-run2-output.txt 2>&1
+
+# Terminal 2: contar filas DESPUÉS
+psql postgresql://postgres:postgres@localhost:54322/postgres -c "SELECT COUNT(*) as after_count FROM usuarios_suscripciones_iap;" > /tmp/tier1-run2-after.txt
 ```
 
 **Resultados esperados:**
-- Los tests que requieren `IAP_ALLOW_UNSIGNED_TEST=true` fallan con mensaje claro
-- El comportamiento es más estricto (sin defaults en test mode)
-- Ningún test debería corromper la BD
+- El comportamiento es diferente a Run 1 (más estricto)
+- Tests que dependen de `IAP_ALLOW_UNSIGNED_TEST=true` pueden fallar
+- Conteo antes ≈ conteo después (DB intacta)
 
 **Guarda:**
-- Screenshot de salida
-- Confirmar que el comportamiento es diferente al Test Run 1
+- `/tmp/tier1-run2-output.txt` (salida de deno test)
+- `/tmp/tier1-run2-before.txt` (conteo DB antes)
+- `/tmp/tier1-run2-after.txt` (conteo DB después)
 
 ---
 
