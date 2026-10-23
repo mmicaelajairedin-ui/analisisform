@@ -1,37 +1,7 @@
 -- LOCAL-ONLY BOOTSTRAP FILE — NEVER DEPLOYED TO PRODUCTION
--- This file creates stub auth schema + base usuarios table for local development
--- Run manually BEFORE supabase migrations: psql postgresql://postgres:postgres@localhost:54322/postgres < bootstrap_local.sql
-
--- Create auth schema if needed (for auth.users, auth.uid(), etc)
-CREATE SCHEMA IF NOT EXISTS auth;
-
--- Stub auth.users table for local testing
-CREATE TABLE IF NOT EXISTS auth.users (
-  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  email VARCHAR(255) UNIQUE,
-  created_at TIMESTAMPTZ DEFAULT now()
-);
-
--- Stub auth.uid() function for RLS policies
-CREATE OR REPLACE FUNCTION auth.uid() RETURNS UUID AS $$
-  SELECT current_setting('request.jwt.claims', true)::jsonb ->> 'sub'::text;
-$$ LANGUAGE SQL STABLE;
-
--- Create base roles for RLS
-DO $$
-BEGIN
-  IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'anon') THEN
-    CREATE ROLE anon;
-  END IF;
-
-  IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'authenticated') THEN
-    CREATE ROLE authenticated;
-  END IF;
-
-  IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'service_role') THEN
-    CREATE ROLE service_role;
-  END IF;
-END $$;
+-- This file creates the base usuarios table for local development.
+-- The auth schema, auth.users, auth.uid(), and roles are provided by supabase start.
+-- Run manually BEFORE supabase migrations: docker exec <container_id> psql postgresql://postgres:postgres@localhost:5432/postgres < bootstrap_local.sql
 
 -- Base usuarios table
 CREATE TABLE IF NOT EXISTS usuarios (

@@ -71,9 +71,19 @@ Service Role Key: eyJhbGc...
 
 **IMPORTANTE: Este paso se ejecuta UNA SOLA VEZ al inicio, DESPUÉS de `supabase start` y ANTES de las migraciones**
 
+Primero, obtén el ID del contenedor PostgreSQL:
+
 ```bash
 # Espera ~30 segundos después de `supabase start` para que la DB esté lista
-psql postgresql://postgres:postgres@localhost:54322/postgres < supabase/bootstrap_local.sql
+CONTAINER_ID=$(docker ps --filter="label=com.docker.compose.service=db" --format="{{.ID}}" | head -1)
+echo "Container ID: $CONTAINER_ID"
+```
+
+Luego aplica el bootstrap:
+
+```bash
+# Ejecutar bootstrap dentro del contenedor Docker
+docker exec $CONTAINER_ID psql -U postgres -d postgres < supabase/bootstrap_local.sql
 ```
 
 **Qué hace:**
@@ -93,20 +103,51 @@ COMMENT
 
 ---
 
-## 6. Aplicar Migraciones IAP
+## 6. Aplicar Migraciones IAP (Manualmente)
+
+**⚠️ IMPORTANTE: NO usar `db reset` ni `migration up` — hay conflictos de versiones en migraciones viejas. Aplicar solo las migraciones IAP manualmente.**
+
+Obtén el ID del contenedor nuevamente (si es necesario):
 
 ```bash
-# Después del bootstrap, habilita migraciones nuevamente
-# En supabase/config.toml, cambiar [db.migrations] enabled = true
-
-# Luego resetea la BD (aplica todas las migraciones sobre la base de usuarios ya creada)
-supabase db reset
+CONTAINER_ID=$(docker ps --filter="label=com.docker.compose.service=db" --format="{{.ID}}" | head -1)
 ```
 
-Esto ejecutará:
-- **`supabase/migrations/20261001_iap_subscriptions.sql`** — Crea tabla `usuarios_suscripciones_iap` (FK a usuarios funciona)
+Aplica las dos migraciones IAP **en orden** con docker exec:
 
-**⚠️ IMPORTANTE:** Usar `db reset` (recrea toda la BD aplicando todas las migraciones sobre la tabla usuarios que creó bootstrap_local.sql).
+```bash
+# 1. Crear tabla usuarios_suscripciones_iap
+docker exec $CONTAINER_ID psql -U postgres -d postgres < supabase/migrations/20261001_iap_subscriptions.sql
+
+# 2. Agregar columna last_signed_date para deduplicación atómica
+docker exec $CONTAINER_ID psql -U postgres -d postgres < supabase/migrations/20261023_add_last_signed_date.sql
+```
+
+**Qué hace:**
+- **`20261001_iap_subscriptions.sql`** — Crea tabla `usuarios_suscripciones_iap` con FK a `usuarios.id`, índices, RLS policies
+- **`20261023_add_last_signed_date.sql`** — Agrega columna `last_signed_date` para validación atómica de webhooks duplicados
+
+**Salida esperada:**
+```
+CREATE TABLE
+CREATE INDEX
+CREATE INDEX
+CREATE INDEX
+CREATE INDEX
+CREATE POLICY
+CREATE POLICY
+CREATE POLICY
+CREATE POLICY
+ALTER TABLE
+```
+
+**Verificación (contar filas):**
+
+```bash
+# Antes de tests, verificar que tabla existe
+docker exec $CONTAINER_ID psql -U postgres -d postgres -c "SELECT COUNT(*) as row_count FROM usuarios_suscripciones_iap;"
+# Debería retornar: 0 (tabla creada, vacía)
+```
 
 **✅ Seguridad en Producción:**
 - `bootstrap_local.sql` está FUERA de `supabase/migrations/`
@@ -227,6 +268,13 @@ supabase status
 
 ### Ejecutar Tests de Seguridad Webhook
 
+**Setup: Obtén el Container ID (una sola vez)**
+
+```bash
+CONTAINER_ID=$(docker ps --filter="label=com.docker.compose.service=db" --format="{{.ID}}" | head -1)
+echo "Container ID: $CONTAINER_ID"
+```
+
 **Test Run 1: Con `IAP_ALLOW_UNSIGNED_TEST=true` (test local permitido)**
 
 ```bash
@@ -234,14 +282,14 @@ supabase status
 supabase functions serve --env-file supabase/functions/apple-iap-webhook/.env.test
 
 # Terminal 2: contar filas ANTES
-psql postgresql://postgres:postgres@localhost:54322/postgres -c "SELECT COUNT(*) as before_count FROM usuarios_suscripciones_iap;" > /tmp/tier1-run1-before.txt
+docker exec $CONTAINER_ID psql -U postgres -d postgres -c "SELECT COUNT(*) as before_count FROM usuarios_suscripciones_iap;" > /tmp/tier1-run1-before.txt
 
 # Terminal 2: ejecutar tests con variable de entorno (permite payloads sin firma para local)
 cd supabase/functions/apple-iap-webhook
 IAP_ALLOW_UNSIGNED_TEST=true deno test --allow-net --allow-env webhook-security.test.ts > /tmp/tier1-run1-output.txt 2>&1
 
 # Terminal 2: contar filas DESPUÉS
-psql postgresql://postgres:postgres@localhost:54322/postgres -c "SELECT COUNT(*) as after_count FROM usuarios_suscripciones_iap;" > /tmp/tier1-run1-after.txt
+docker exec $CONTAINER_ID psql -U postgres -d postgres -c "SELECT COUNT(*) as after_count FROM usuarios_suscripciones_iap;" > /tmp/tier1-run1-after.txt
 ```
 
 **Resultados esperados:**
@@ -270,14 +318,14 @@ Estos tests validan:
 supabase functions serve
 
 # Terminal 2: contar filas ANTES
-psql postgresql://postgres:postgres@localhost:54322/postgres -c "SELECT COUNT(*) as before_count FROM usuarios_suscripciones_iap;" > /tmp/tier1-run2-before.txt
+docker exec $CONTAINER_ID psql -U postgres -d postgres -c "SELECT COUNT(*) as before_count FROM usuarios_suscripciones_iap;" > /tmp/tier1-run2-before.txt
 
 # Terminal 2: ejecutar tests sin pasar IAP_ALLOW_UNSIGNED_TEST (modo producción)
 cd supabase/functions/apple-iap-webhook
 deno test --allow-net --allow-env webhook-security.test.ts > /tmp/tier1-run2-output.txt 2>&1
 
 # Terminal 2: contar filas DESPUÉS
-psql postgresql://postgres:postgres@localhost:54322/postgres -c "SELECT COUNT(*) as after_count FROM usuarios_suscripciones_iap;" > /tmp/tier1-run2-after.txt
+docker exec $CONTAINER_ID psql -U postgres -d postgres -c "SELECT COUNT(*) as after_count FROM usuarios_suscripciones_iap;" > /tmp/tier1-run2-after.txt
 ```
 
 **Resultados esperados:**
@@ -422,233 +470,12 @@ Si algo falla:
 
 ---
 
-# DEPLOY A PRODUCCIÓN — Runbook para Micaela
+## ⚠️ Nota sobre Deploy a Producción
 
-**Estado:** ⏸️ **NO DESPLEGAR AÚN.** Esperando confirmación explícita de Micaela.
+**Los comandos de deploy a producción están en documento separado:** `iap/DEPLOY_PRODUCCION_NO_EJECUTAR_SIN_AUTORIZACION.md`
 
-**Requisitos previos antes de ejecutar:**
-1. Todas las correcciones de código (Swift + JS) están en rama `fix/iap-webhook-security` y mergeadas a `main`
-2. Supabase CLI instalado localmente: `supabase --version`
-3. Acceso autenticado: `supabase projects list` debe mostrar `analisisform` (proyecto de producción)
-4. Testing local completado (si aplica)
+**IMPORTANTE:** No ejecutar ningún comando de `supabase db push`, `supabase functions deploy --project-ref`, ni ningún comando con `--project-ref ddxnrsnjdvtqhxunxnwj` desde este documento. Son para producción y requieren autorización explícita de Micaela.
+
+Este documento (`INSTRUCCIONES_GONZALO_SUPABASE_LOCAL.md`) es **SOLO para testing local en Mac**.
 
 ---
-
-## Paso 1: Aplicar Migración a Producción
-
-**Comando (ejecutar desde raíz del repositorio):**
-
-```bash
-supabase db push --project-ref ddxnrsnjdvtqhxunxnwj
-```
-
-**Qué hace:**
-- Detecta `supabase/migrations/20261001_iap_subscriptions.sql` (nunca antes aplicada a producción)
-- Aplica la migración idempotente en la tabla `public`
-- Crea:
-  - Tabla `usuarios_suscripciones_iap` (con FK a `usuarios.id`)
-  - Índices (usuario_id, app_account_token, product_id, state, expires_at)
-  - RLS policies (SELECT/UPDATE para service_role, restrictivo para anon/authenticated)
-  - Columnas: usuario_id, original_transaction_id, app_account_token, product_id, state, expires_at, created_at, updated_at, latest_notification_uuid, notification_count
-
-**Salida esperada:**
-```
-Pushing migrations to analisisform (ddxnrsnjdvtqhxunxnwj)...
-Staging migrations...
-  [20261001_iap_subscriptions.sql]
-Applying migrations...
-✓ 20261001_iap_subscriptions
-```
-
-**Verificación (post-deploy):**
-```bash
-supabase db remote diff --project-ref ddxnrsnjdvtqhxunxnwj | head -20
-# Debería estar vacío (no hay cambios pendientes)
-```
-
----
-
-## Paso 2: Desplegar 3 Edge Functions a Producción
-
-**Comando (ejecutar secuencialmente desde raíz):**
-
-```bash
-# 1. validate-iap
-supabase functions deploy validate-iap --project-ref ddxnrsnjdvtqhxunxnwj
-
-# 2. check-entitlement
-supabase functions deploy check-entitlement --project-ref ddxnrsnjdvtqhxunxnwj
-
-# 3. apple-iap-webhook
-supabase functions deploy apple-iap-webhook --project-ref ddxnrsnjdvtqhxunxnwj
-```
-
-**Salida esperada (para cada una):**
-```
-Deploying function 'validate-iap'...
-✓ Function deployed at https://api.pathwaycareercoach.com/functions/v1/validate-iap
-```
-
-**Verificación (post-deploy):**
-```bash
-supabase functions list --project-ref ddxnrsnjdvtqhxunxnwj | grep -E "(validate-iap|check-entitlement|apple-iap-webhook)"
-# Debería mostrar 3 funciones en status "ACTIVE"
-```
-
----
-
-## Paso 3: Configurar Secretos en Producción
-
-**Prerequisitos:**
-- Micaela debe tener credenciales Apple Sandbox/Production de App Store Connect
-- No compartir claves privadas en chat (comunicación privada/segura)
-
-**Comando para cada secreto (ejecutar desde raíz):**
-
-```bash
-supabase secrets set --project-ref ddxnrsnjdvtqhxunxnwj \
-  APPLE_ISSUER_ID="<issuer_id_de_Micaela>"
-
-supabase secrets set --project-ref ddxnrsnjdvtqhxunxnwj \
-  APPLE_KEY_ID="<key_id_de_Micaela>"
-
-supabase secrets set --project-ref ddxnrsnjdvtqhxunxnwj \
-  APPLE_PRIVATE_KEY_P8="<contenido_del_p8_de_Micaela>"
-
-supabase secrets set --project-ref ddxnrsnjdvtqhxunxnwj \
-  APPLE_BUNDLE_ID="com.pathwaycareercoach.twa"
-
-supabase secrets set --project-ref ddxnrsnjdvtqhxunxnwj \
-  APPLE_ENVIRONMENT="sandbox"  # Cambiar a "production" solo cuando se lance a App Store
-```
-
-**Lista completa de secretos requeridos:**
-| Secreto | Descripción | Origen | Requerido |
-|---------|-------------|--------|----------|
-| `APPLE_ISSUER_ID` | Issuer ID de App Store Connect | Micaela (App Store Connect) | ✅ |
-| `APPLE_KEY_ID` | Key ID de In-App Purchase (10 chars) | Micaela (App Store Connect) | ✅ |
-| `APPLE_PRIVATE_KEY_P8` | Clave privada P8 (líneas sin saltos) | Micaela (descarga .p8) | ✅ |
-| `APPLE_BUNDLE_ID` | Bundle ID de la app (com.pathway...) | Fijo en código | ✅ |
-| `APPLE_ENVIRONMENT` | "sandbox" o "production" | Controlado por desplegador | ✅ |
-| `SUPABASE_URL` | Auto (variables de entorno de Supabase) | Sistema | ✅ Auto |
-| `SUPABASE_ANON_KEY` | Auto | Sistema | ✅ Auto |
-| `SUPABASE_SERVICE_ROLE_KEY` | Auto | Sistema | ✅ Auto |
-
-**Verificación:**
-```bash
-supabase secrets list --project-ref ddxnrsnjdvtqhxunxnwj
-# Debería mostrar 5 secretos (APPLE_* + BUNDLE_ID)
-```
-
----
-
-## Paso 4: Habilitar Workflow de Deploy en GitHub
-
-**IMPORTANTE:** El workflow de deploy en CI está **deshabilitado** (paso de deploy comentado en `.github/workflows/`).
-
-**Para habilitar (Micaela autoriza):**
-
-1. Abrir `.github/workflows/deploy-iap-functions.yml` (si existe) o el workflow relevante
-2. Buscar la línea con condición de deploy:
-   ```yaml
-   - name: Deploy IAP Functions
-     if: false  # ← Cambiar a `if: github.ref == 'refs/heads/main'`
-   ```
-3. Cambiar `if: false` a `if: github.ref == 'refs/heads/main'`
-4. Commit + push a `main`
-5. El próximo push a `main` ejecutará el deploy automáticamente
-
-**Alternativa (sin workflow):**
-Ejecutar manualmente los pasos 1-3 desde terminal (no depende de CI).
-
----
-
-## Rollback — Reversión de Cambios
-
-**⚠️ IMPORTANTE:** Una vez desplegados, los cambios son en VIVO. El rollback debe ser planeado.
-
-### Opción A: Revertir Función (rápido, recomendado)
-
-```bash
-# Desplegar versión anterior desde rama/commit anterior
-git checkout <commit_anterior_antes_de_iap>
-supabase functions deploy validate-iap --project-ref ddxnrsnjdvtqhxunxnwj
-# Repetir para check-entitlement y apple-iap-webhook
-```
-
-### Opción B: Deshabilitar Función (sin revertir código)
-
-```bash
-# Eliminar función (deja la tabla intacta)
-supabase functions delete validate-iap --project-ref ddxnrsnjdvtqhxunxnwj
-supabase functions delete check-entitlement --project-ref ddxnrsnjdvtqhxunxnwj
-supabase functions delete apple-iap-webhook --project-ref ddxnrsnjdvtqhxunxnwj
-```
-
-**Consecuencia:** Las apps iOS verán errores 404 al llamar a las funciones. Clientes en la pantalla de compra no podrán proceder (fallback a Stripe).
-
-### Opción C: Revertir Migración (máximo cuidado)
-
-```bash
-# Crear migración de reversión (manual)
-touch supabase/migrations/$(date +%Y%m%d%H%M%S)_rollback_iap.sql
-# Contenido: DROP TABLE IF EXISTS usuarios_suscripciones_iap CASCADE;
-# Luego: supabase db push
-```
-
-**Riesgo:** Borra datos si ya hay compras en la tabla. Usar solo en caso de error crítico.
-
----
-
-## Monitoreo Post-Deploy
-
-**Logs en Supabase:**
-```bash
-# Ver errores de funciones en últimas 24h
-supabase functions logs validate-iap --project-ref ddxnrsnjdvtqhxunxnwj --tail
-supabase functions logs check-entitlement --project-ref ddxnrsnjdvtqhxunxnwj --tail
-supabase functions logs apple-iap-webhook --project-ref ddxnrsnjdvtqhxunxnwj --tail
-```
-
-**Tabla de diagnostics en DB:**
-- `usuarios_suscripciones_iap`: registros de compras (verificar que se registren)
-- `client_errors` (si existe): reporta errores del lado del cliente
-
-**Health check manual:**
-```bash
-# Probar que validate-iap responde (requiere JWT válido)
-JWT_COACH=$(supabase auth admin create-user --email test@example.com --password Test123! --project-ref ddxnrsnjdvtqhxunxnwj | jq -r '.user_id')
-curl -X POST https://api.pathwaycareercoach.com/functions/v1/validate-iap \
-  -H "Authorization: Bearer $JWT_COACH" \
-  -H "Content-Type: application/json" \
-  -d '{}'
-# Respuesta esperada: { "ok": true, "appAccountToken": "<uuid>" }
-```
-
----
-
-## Checklist Pre-Deploy
-
-- [ ] Código Swift en `ios/CoachPlansViewModel.swift` con fixes de Oct 19 (commit c5038d6+)
-- [ ] Código JS en `pw-capgo-iap.js` con fixes de Oct 19 (JWT, appAccountToken)
-- [ ] Bootstrap local (`supabase/bootstrap_local.sql`) NO está en `supabase/migrations/` (comprobado)
-- [ ] Migración `20261001_iap_subscriptions.sql` está en `supabase/migrations/`
-- [ ] Edge Functions (`validate-iap`, `check-entitlement`, `apple-iap-webhook`) compiladas sin errores Deno
-- [ ] `.env.local` en rama con credenciales Apple **reales** para testing
-- [ ] Tests locales ejecutados y validados (Test Run 1 y Test Run 2 pasan)
-- [ ] Micaela autoriza deploy con palabra clave: "AUTORIZO DEPLOY IAP"
-- [ ] Micaela proporciona credenciales Apple Sandbox (Issuer ID, Key ID, .p8)
-
----
-
-## Próximos Pasos
-
-1. **Hoy:** Consolidar todos los fixes en rama `fix/iap-webhook-security`
-2. **Testing local (Gonzalo):** Ejecutar suite de tests con Supabase local
-3. **Micaela autoriza:** Ejecutar comandos de deploy cuando esté lista
-4. **Post-deploy:** Monitoreo 48h, validar que transacciones se registran en DB
-5. **App Store:** Habilitar compras reales solo después de validación completa
-
----
-
-**Preguntas antes de ejecutar?** Escribir en el thread del proyecto. **No hacer deploy sin autorización explícita de Micaela.**
