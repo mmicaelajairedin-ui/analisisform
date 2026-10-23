@@ -87,6 +87,32 @@ jobs:
         env:
           SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
 
+      - name: Check for unexpected migrations
+        run: |
+          echo "🔍 Checking pending migrations in production..."
+          supabase migration list --linked > /tmp/migrations.txt 2>&1
+          cat /tmp/migrations.txt
+
+          # Look for pending migrations (marked with *)
+          if grep -q "^\*" /tmp/migrations.txt; then
+            echo ""
+            echo "⚠️  WARNING: Found pending migrations:"
+            grep "^\*" /tmp/migrations.txt
+
+            # Check if any pending migration is NOT the IAP one
+            if grep "^\*" /tmp/migrations.txt | grep -qv "20261001_iap_subscriptions"; then
+              echo ""
+              echo "❌ ERROR: Found unexpected pending migrations (not IAP)"
+              echo "Only 20261001_iap_subscriptions should be pending."
+              echo "Aborting deployment for safety."
+              exit 1
+            fi
+          else
+            echo "✅ No pending migrations (already applied or empty)"
+          fi
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+
       - name: Push migration to production
         run: |
           echo "📦 Pushing IAP migration to production..."
