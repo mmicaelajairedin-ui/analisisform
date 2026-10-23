@@ -199,30 +199,31 @@ const PW_CAPGO_IAP = {
    */
   async checkCurrentEntitlement() {
     if (!IAP_STATE.isInitialized) await this.init();
-    
+
     try {
-      const user = this._getCurrentUser();
-      if (!user || !user.app_account_token) {
+      // Get JWT from Supabase Auth session (works with email, Google, Apple)
+      const session = await this._getAuthSession();
+      if (!session || !session.access_token) {
+        console.log('[PW_CAPGO_IAP] No session/JWT, skipping entitlement check');
+        return null;
+      }
+
+      const appAccountToken = session.user.id;  // Auth ID, not usuarios.id
+      if (!appAccountToken) {
         console.log('[PW_CAPGO_IAP] No appAccountToken, skipping entitlement check');
         return null;
       }
       
-      const jwt = localStorage.getItem('mj_auth');
-      if (!jwt) {
-        console.log('[PW_CAPGO_IAP] No JWT, skipping entitlement check');
-        return null;
-      }
-      
       console.log('[PW_CAPGO_IAP] Checking entitlement...');
-      
+
       const response = await fetch('/functions/v1/check-entitlement', {
         method: 'POST',
         headers: {
-          'Authorization': 'Bearer ' + jwt,
+          'Authorization': 'Bearer ' + session.access_token,
           'Content-Type': 'application/json'
         },
         body: JSON.stringify({
-          appAccountToken: user.app_account_token
+          appAccountToken: appAccountToken
         })
       });
       
@@ -236,7 +237,7 @@ const PW_CAPGO_IAP = {
       if (result.hasAccess) {
         IAP_STATE.currentSubscription = {
           productId: result.productId,
-          appAccountToken: user.app_account_token,
+          appAccountToken: appAccountToken,
           expiryDate: new Date(result.expiryDate),
           status: result.status,
           verifiedAt: new Date()
@@ -275,7 +276,69 @@ const PW_CAPGO_IAP = {
   isLoading() {
     return IAP_STATE.isLoading;
   },
-  
+
+  /**
+   * Restore previously purchased subscriptions
+   * Shows Spanish feedback messages on success/failure
+   */
+  async restorePurchases() {
+    if (!IAP_STATE.isInitialized) await this.init();
+
+    try {
+      IAP_STATE.isLoading = true;
+      console.log('[PW_CAPGO_IAP] Restoring purchases...');
+
+      const NativePurchases = window.Capacitor.Plugins.NativePurchases;
+      const result = await NativePurchases.restorePurchases();
+
+      // Case 1: Apple has no purchases
+      if (!result || !result.length) {
+        console.log('[PW_CAPGO_IAP] No purchases found on Apple');
+        return {
+          success: false,
+          message: 'No encontramos compras previas en tu cuenta de Apple.'
+        };
+      }
+
+      // Case 2 & 3: Apple has purchases; verify with backend
+      console.log('[PW_CAPGO_IAP] Found purchases, verifying with backend...');
+      try {
+        const verifyResult = await this.checkCurrentEntitlement();
+        if (verifyResult && verifyResult.success) {
+          // Case 3: Backend verified successfully
+          console.log('[PW_CAPGO_IAP] ✅ Purchase restored and verified');
+          return {
+            success: true,
+            message: '✅ Compra restaurada correctamente.'
+          };
+        } else {
+          // Case 2: Backend verification failed or returned error
+          console.warn('[PW_CAPGO_IAP] Backend verification failed:', verifyResult);
+          return {
+            success: false,
+            message: 'No pudimos verificar tu compra. El backend no respondió. Reintentá en unos minutos.'
+          };
+        }
+      } catch (backendErr) {
+        // Case 2: Backend error (timeout, 404, etc.)
+        console.warn('[PW_CAPGO_IAP] Backend verification error:', backendErr);
+        return {
+          success: false,
+          message: 'No pudimos verificar tu compra. Reintentá en unos minutos.'
+        };
+      }
+
+    } catch (err) {
+      console.error('[PW_CAPGO_IAP] Restore purchases error:', err);
+      return {
+        success: false,
+        message: '⚠️ Error al buscar compras. Intentá de nuevo más tarde.'
+      };
+    } finally {
+      IAP_STATE.isLoading = false;
+    }
+  },
+
   // ========================================================================
   // Private Methods
   // ========================================================================
@@ -284,15 +347,15 @@ const PW_CAPGO_IAP = {
    * Validate purchase with backend before showing purchase sheet
    * Checks: Stripe mutual exclusivity, coach eligibility, etc.
    */
-  async _validateBeforePurchase(productId, appAccountToken) {
+  async validateBeforePurchase(productId, appAccountToken) {
     try {
-      const jwt = localStorage.getItem('mj_auth');
-      if (!jwt) throw new Error('No JWT available');
-      
+      const session = await this._getAuthSession();
+      if (!session || !session.access_token) throw new Error('Sin sesión disponible');
+
       const response = await fetch('/functions/v1/validate-iap', {
         method: 'POST',
         headers: {
-          'Authorization': 'Bearer ' + jwt,
+          'Authorization': 'Bearer ' + session.access_token,
           'Content-Type': 'application/json'
         },
         body: JSON.stringify({
@@ -300,33 +363,41 @@ const PW_CAPGO_IAP = {
           appAccountToken
         })
       });
-      
+
       if (response.status === 409) {
-        // Conflict: Stripe already active
         return {
           allowed: false,
-          reason: 'Cannot purchase IAP while active Stripe subscription exists'
+          reason: 'Ya tenés una suscripción activa. Cancelala primero para usar la compra en la app.'
         };
       }
-      
+
+      if (response.status === 404) {
+        console.warn('[PW_CAPGO_IAP] validate-iap not available (404 - backend not deployed yet)');
+        return {
+          allowed: false,
+          reason: 'Servicio no disponible. Intentá más tarde.'
+        };
+      }
+
       if (!response.ok) {
+        console.error('[PW_CAPGO_IAP] validate-iap error:', response.status);
         return {
           allowed: false,
-          reason: `Backend error: ${response.status}`
+          reason: 'Servicio no disponible. Intentá más tarde.'
         };
       }
-      
+
       const result = await response.json();
       return {
         allowed: result.allowed !== false,
         reason: result.reason
       };
-      
+
     } catch (err) {
-      console.error('[PW_CAPGO_IAP] _validateBeforePurchase error:', err);
+      console.error('[PW_CAPGO_IAP] validateBeforePurchase error:', err);
       return {
         allowed: false,
-        reason: err.message
+        reason: 'Servicio no disponible. Intentá más tarde.'
       };
     }
   },
@@ -336,13 +407,13 @@ const PW_CAPGO_IAP = {
    */
   async _verifyReceiptWithBackend(receipt, appAccountToken) {
     try {
-      const jwt = localStorage.getItem('mj_auth');
-      if (!jwt) throw new Error('No JWT available');
-      
+      const session = await this._getAuthSession();
+      if (!session || !session.access_token) throw new Error('Sin sesión disponible');
+
       const response = await fetch('/functions/v1/check-entitlement', {
         method: 'POST',
         headers: {
-          'Authorization': 'Bearer ' + jwt,
+          'Authorization': 'Bearer ' + session.access_token,
           'Content-Type': 'application/json'
         },
         body: JSON.stringify({
@@ -350,14 +421,20 @@ const PW_CAPGO_IAP = {
           appAccountToken
         })
       });
-      
-      if (!response.ok) {
-        throw new Error(`Verification failed: ${response.status}`);
+
+      if (response.status === 404) {
+        console.warn('[PW_CAPGO_IAP] check-entitlement not available (404 - backend not deployed yet)');
+        throw new Error('Servicio no disponible. Intentá más tarde.');
       }
-      
+
+      if (!response.ok) {
+        console.error('[PW_CAPGO_IAP] check-entitlement error:', response.status);
+        throw new Error('Servicio no disponible. Intentá más tarde.');
+      }
+
       const result = await response.json();
       return result;
-      
+
     } catch (err) {
       console.error('[PW_CAPGO_IAP] _verifyReceiptWithBackend error:', err);
       throw err;
@@ -372,6 +449,24 @@ const PW_CAPGO_IAP = {
       const userStr = localStorage.getItem('mj_user');
       return userStr ? JSON.parse(userStr) : null;
     } catch (err) {
+      return null;
+    }
+  },
+
+  /**
+   * Get current auth session from Supabase
+   * Works with email, Google, Apple logins
+   */
+  async _getAuthSession() {
+    try {
+      if (!window.sb || !window.sb.auth) {
+        throw new Error('Supabase client not available');
+      }
+      const { data, error } = await window.sb.auth.getSession();
+      if (error) throw error;
+      return data?.session || null;
+    } catch (err) {
+      console.error('[PW_CAPGO_IAP] _getAuthSession error:', err);
       return null;
     }
   }

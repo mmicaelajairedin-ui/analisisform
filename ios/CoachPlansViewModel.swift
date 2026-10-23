@@ -42,6 +42,11 @@ class CoachPlansViewModel: NSObject, ObservableObject {
 
     // Setup listener for transaction updates from StoreKit 2
     setupTransactionListener()
+
+    // Retry any unfinished transactions on app launch
+    Task {
+      await self.retryUnfinishedTransactions()
+    }
   }
 
   /// Setup listener for StoreKit 2 transaction updates
@@ -49,6 +54,38 @@ class CoachPlansViewModel: NSObject, ObservableObject {
     updateListenerTask = Task.detached { [weak self] in
       for await update in StoreKit.Transaction.updates {
         await self?.handleTransactionUpdate(update)
+      }
+    }
+  }
+
+  /// Retry any unfinished transactions on app launch
+  private func retryUnfinishedTransactions() async {
+    print("[CoachPlansVM] Checking for unfinished transactions...")
+
+    for await transaction in StoreKit.Transaction.unfinished {
+      print("[CoachPlansVM] Found unfinished transaction: \(transaction.unsafePayloadValue.productID)")
+
+      do {
+        // Verify with backend
+        try await verifyReceiptWithBackend(
+          transaction: transaction,
+          appAccountToken: appAccountToken,
+          jwt: jwt
+        )
+
+        // If successful, finalize the transaction
+        if case .verified(let tx) = transaction {
+          await tx.finish()
+        }
+
+        // Update entitlement
+        checkCurrentEntitlement()
+
+        print("[CoachPlansVM] ✅ Unfinished transaction completed: \(transaction.unsafePayloadValue.productID)")
+
+      } catch {
+        // Transaction still can't be verified - keep it unfinished for retry on next launch
+        print("[CoachPlansVM] ⏳ Transaction still pending: \(error)")
       }
     }
   }
@@ -90,62 +127,72 @@ class CoachPlansViewModel: NSObject, ObservableObject {
     }
   }
 
+  /// Check current entitlement from backend (async, returns result)
+  /// Used by restore purchases to determine success/failure
+  private func checkCurrentEntitlementAsync() async -> EntitlementResult {
+    do {
+      guard !jwt.isEmpty else {
+        print("[CoachPlansVM] No JWT for entitlement check")
+        return .error
+      }
+
+      guard !appAccountToken.isEmpty else {
+        print("[CoachPlansVM] No appAccountToken")
+        return .error
+      }
+
+      let url = URL(string: "\(backendBaseUrl)/functions/v1/check-entitlement")!
+      var request = URLRequest(url: url)
+      request.httpMethod = "POST"
+      request.setValue("Bearer \(jwt)", forHTTPHeaderField: "Authorization")
+      request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+
+      let body = ["appAccountToken": appAccountToken]
+      request.httpBody = try JSONEncoder().encode(body)
+
+      let (data, response) = try await URLSession.shared.data(for: request)
+
+      guard let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200 else {
+        print("[CoachPlansVM] Entitlement check failed with status \(String(describing: (response as? HTTPURLResponse)?.statusCode))")
+
+        // Retry any pending transaction from last purchase
+        if let pendingJws = userDefaults.string(forKey: "iap_pending_jws") {
+          await self.retryPendingTransaction(jws: pendingJws)
+        }
+        return .backendFailed
+      }
+
+      // Clear pending transaction on success
+      userDefaults.removeObject(forKey: "iap_pending_jws")
+
+      let result = try JSONDecoder().decode(EntitlementResponse.self, from: data)
+
+      if result.hasAccess {
+        self.currentSubscription = SubscriptionInfo(
+          productId: result.productId,
+          status: result.status,
+          expiryDate: ISO8601DateFormatter().date(from: result.expiryDate) ?? Date()
+        )
+        print("[CoachPlansVM] ✅ Active subscription: \(result.productId)")
+        return .success
+      } else {
+        self.currentSubscription = nil
+        print("[CoachPlansVM] No active subscription")
+        // Backend returned 200 but no access = Apple has no purchases or they expired
+        return .noTransactions
+      }
+
+    } catch {
+      print("[CoachPlansVM] Entitlement check error: \(error)")
+      return .error
+    }
+  }
+
   /// Check current entitlement from backend
   /// Also retries any pending purchases saved locally
   func checkCurrentEntitlement() {
     Task {
-      do {
-        guard !jwt.isEmpty else {
-          print("[CoachPlansVM] No JWT for entitlement check")
-          return
-        }
-
-        guard !appAccountToken.isEmpty else {
-          print("[CoachPlansVM] No appAccountToken")
-          return
-        }
-
-        let url = URL(string: "\(backendBaseUrl)/functions/v1/check-entitlement")!
-        var request = URLRequest(url: url)
-        request.httpMethod = "POST"
-        request.setValue("Bearer \(jwt)", forHTTPHeaderField: "Authorization")
-        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-
-        let body = ["appAccountToken": appAccountToken]
-        request.httpBody = try JSONEncoder().encode(body)
-
-        let (data, response) = try await URLSession.shared.data(for: request)
-
-        guard let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200 else {
-          print("[CoachPlansVM] Entitlement check failed with status \(String(describing: (response as? HTTPURLResponse)?.statusCode))")
-
-          // Retry any pending transaction from last purchase
-          if let pendingJws = userDefaults.string(forKey: "iap_pending_jws") {
-            await self.retryPendingTransaction(jws: pendingJws)
-          }
-          return
-        }
-
-        // Clear pending transaction on success
-        userDefaults.removeObject(forKey: "iap_pending_jws")
-
-        let result = try JSONDecoder().decode(EntitlementResponse.self, from: data)
-
-        if result.hasAccess {
-          self.currentSubscription = SubscriptionInfo(
-            productId: result.productId,
-            status: result.status,
-            expiryDate: ISO8601DateFormatter().date(from: result.expiryDate) ?? Date()
-          )
-          print("[CoachPlansVM] ✅ Active subscription: \(result.productId)")
-        } else {
-          self.currentSubscription = nil
-          print("[CoachPlansVM] No active subscription")
-        }
-
-      } catch {
-        print("[CoachPlansVM] Entitlement check error: \(error)")
-      }
+      _ = await checkCurrentEntitlementAsync()
     }
   }
 
@@ -201,17 +248,12 @@ class CoachPlansViewModel: NSObject, ObservableObject {
         isPurchasing = true
         errorMessage = nil
 
-        // Step 1: Validate with backend
-        let canPurchase = try await validateBeforePurchase(
+        // Step 1: Validate with backend (throws on 409/404/error)
+        _ = try await validateBeforePurchase(
           productId: selectedProductId,
           appAccountToken: appAccountToken,
           jwt: jwt
         )
-
-        if !canPurchase {
-          self.errorMessage = "No puedes activar IAP (verificar Stripe)"
-          return
-        }
 
         // Step 2: Show native purchase sheet via StoreKit 2
         try await purchaseViaCapacitor(
@@ -235,14 +277,40 @@ class CoachPlansViewModel: NSObject, ObservableObject {
         isPurchasing = true
         errorMessage = nil
 
-        // Capacitor plugin: restorePurchases()
-        // In a real app, you'd call the Capacitor plugin here
-        try await restoreViaCapsitor()
+        // Sync purchases from App Store
+        try await restoreViaCapacitor()
 
-        checkCurrentEntitlement()
+        // Verify entitlement and check result
+        let result = await checkCurrentEntitlementAsync()
+
+        switch result {
+        case .success:
+          // Backend verified subscription successfully
+          if let subscription = currentSubscription {
+            errorMessage = "✅ Compra restaurada correctamente"
+            print("[CoachPlansVM] ✅ Compra restaurada correctamente: \(subscription.productId)")
+          } else {
+            errorMessage = nil
+          }
+
+        case .noTransactions:
+          // Backend confirmed no purchases found in Apple account
+          errorMessage = "No encontramos compras previas en tu cuenta de Apple."
+          print("[CoachPlansVM] No previous purchases found")
+
+        case .backendFailed:
+          // Apple has transactions but backend verification failed
+          errorMessage = "No pudimos verificar tu compra. Reintentá en unos minutos."
+          print("[CoachPlansVM] Backend verification failed during restore")
+
+        case .error:
+          // Network or parsing error
+          errorMessage = "No pudimos verificar tus compras. Reintentá en unos segundos."
+          print("[CoachPlansVM] Error checking entitlement")
+        }
 
       } catch {
-        errorMessage = "Error restaurando compras"
+        errorMessage = "No pudimos verificar tus compras. Reintentá en unos segundos."
         print("[CoachPlansVM] Restore error: \(error)")
       }
       isPurchasing = false
@@ -272,21 +340,38 @@ class CoachPlansViewModel: NSObject, ObservableObject {
     let (data, response) = try await URLSession.shared.data(for: request)
 
     guard let httpResponse = response as? HTTPURLResponse else {
-      throw NSError(domain: "Network", code: -1)
+      throw NSError(domain: "Network", code: -1, userInfo: [
+        NSLocalizedDescriptionKey: "Servicio no disponible. Intentá más tarde."
+      ])
     }
 
     if httpResponse.statusCode == 409 {
       throw NSError(domain: "Conflict", code: 409, userInfo: [
-        NSLocalizedDescriptionKey: "Active Stripe subscription exists"
+        NSLocalizedDescriptionKey: "Ya tenés una suscripción activa. Cancelala primero para usar la compra en la app."
+      ])
+    }
+
+    if httpResponse.statusCode == 404 {
+      throw NSError(domain: "Backend", code: 404, userInfo: [
+        NSLocalizedDescriptionKey: "Servicio no disponible. Intentá más tarde."
       ])
     }
 
     guard httpResponse.statusCode == 200 else {
-      throw NSError(domain: "Backend", code: httpResponse.statusCode)
+      throw NSError(domain: "Backend", code: httpResponse.statusCode, userInfo: [
+        NSLocalizedDescriptionKey: "Servicio no disponible. Intentá más tarde."
+      ])
     }
 
     let result = try JSONDecoder().decode(ValidateResponse.self, from: data)
-    return result.allowed != false
+
+    if result.allowed == false {
+      throw NSError(domain: "Validation", code: -1, userInfo: [
+        NSLocalizedDescriptionKey: result.reason ?? "Servicio no disponible. Intentá más tarde."
+      ])
+    }
+
+    return true
   }
 
   /// Execute real purchase via StoreKit 2
@@ -372,7 +457,7 @@ class CoachPlansViewModel: NSObject, ObservableObject {
       "receipt": transaction.jwsRepresentation,
       "appAccountToken": appAccountToken,
       "productId": txPayload.productID,
-      "originalTransactionId": txPayload.originalTransactionID
+      "originalTransactionId": String(txPayload.originalID)
     ]
     request.httpBody = try JSONSerialization.data(withJSONObject: body)
 
@@ -422,7 +507,7 @@ class CoachPlansViewModel: NSObject, ObservableObject {
   }
 
   /// Restore purchases via StoreKit
-  private func restoreViaCapsitor() async throws {
+  private func restoreViaCapacitor() async throws {
     print("[CoachPlansVM] Restoring purchases...")
 
     // Sync all transactions from App Store
@@ -436,6 +521,13 @@ class CoachPlansViewModel: NSObject, ObservableObject {
 }
 
 // MARK: - Data Models
+enum EntitlementResult {
+  case success          // Backend verified, entitlement active
+  case backendFailed    // Apple has transactions but backend verification failed
+  case noTransactions   // Backend confirmed no purchases in Apple account
+  case error            // Error (credentials, network, etc)
+}
+
 struct SubscriptionInfo {
   let productId: String
   let status: String

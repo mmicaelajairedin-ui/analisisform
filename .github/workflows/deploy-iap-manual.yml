@@ -1,0 +1,184 @@
+name: Deploy IAP Backend (Manual)
+
+# DESCRIPCION:
+# Workflow INDEPENDIENTE para desplegar SOLO los recursos de In-App Purchase (IAP):
+# - Migración: usuarios_suscripciones_iap (creación de tabla + RLS)
+# - Funciones: validate-iap, check-entitlement, apple-iap-webhook
+#
+# SEGURIDAD:
+# - workflow_dispatch: ejecución MANUAL SOLO, no automática
+# - Aplica SOLO la migración IAP (identidad: 20261001_iap_subscriptions.sql)
+# - Despliega SOLO las 3 funciones IAP, ninguna otra
+# - Requiere: SUPABASE_ACCESS_TOKEN en GitHub Secrets
+# - NO afecta otras funciones, migraciones, ni tablas
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Target environment'
+        required: true
+        default: 'production'
+        type: choice
+        options:
+          - production
+          - staging
+
+env:
+  SUPABASE_PROJECT_REF: ddxnrsnjdvtqhxunxnwj
+  SUPABASE_PROJECT_URL: https://api.pathwaycareercoach.com
+  SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+  SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+
+jobs:
+  validate:
+    name: Pre-deployment validation
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Validate migration exists
+        run: |
+          if [ ! -f "supabase/migrations/20261001_iap_subscriptions.sql" ]; then
+            echo "❌ ERROR: Migration 20261001_iap_subscriptions.sql not found"
+            exit 1
+          fi
+          echo "✅ Migration found"
+
+      - name: Validate IAP functions exist
+        run: |
+          functions=("validate-iap" "check-entitlement" "apple-iap-webhook")
+          for func in "${functions[@]}"; do
+            if [ ! -f "supabase/functions/$func/index.ts" ]; then
+              echo "❌ ERROR: Function $func not found"
+              exit 1
+            fi
+            echo "✅ Function $func exists"
+          done
+
+      - name: Verify SUPABASE_ACCESS_TOKEN is set
+        run: |
+          if [ -z "${{ secrets.SUPABASE_ACCESS_TOKEN }}" ]; then
+            echo "❌ ERROR: SUPABASE_ACCESS_TOKEN is not configured in GitHub Secrets"
+            echo "Setup: Go to GitHub → Settings → Secrets and variables → Actions → New repository secret"
+            exit 1
+          fi
+          echo "✅ SUPABASE_ACCESS_TOKEN is configured"
+
+  deploy-migration:
+    name: Deploy migration
+    runs-on: ubuntu-latest
+    needs: validate
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Supabase CLI
+        uses: supabase/setup-cli@v1
+        with:
+          version: latest
+
+      - name: Link Supabase project
+        run: |
+          supabase link \
+            --project-ref ${{ env.SUPABASE_PROJECT_REF }} \
+            --api-url ${{ env.SUPABASE_PROJECT_URL }}
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+
+      - name: Check for unexpected migrations
+        run: |
+          echo "🔍 Checking pending migrations in production..."
+          supabase migration list --linked > /tmp/migrations.txt 2>&1
+          cat /tmp/migrations.txt
+
+          # Look for pending migrations (marked with *)
+          if grep -q "^\*" /tmp/migrations.txt; then
+            echo ""
+            echo "⚠️  WARNING: Found pending migrations:"
+            grep "^\*" /tmp/migrations.txt
+
+            # Check if any pending migration is NOT the IAP one
+            if grep "^\*" /tmp/migrations.txt | grep -qv "20261001_iap_subscriptions"; then
+              echo ""
+              echo "❌ ERROR: Found unexpected pending migrations (not IAP)"
+              echo "Only 20261001_iap_subscriptions should be pending."
+              echo "Aborting deployment for safety."
+              exit 1
+            fi
+          else
+            echo "✅ No pending migrations (already applied or empty)"
+          fi
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+
+      - name: Push migration to production
+        run: |
+          echo "📦 Pushing IAP migration to production..."
+          supabase db push --linked
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+
+  deploy-functions:
+    name: Deploy IAP functions
+    runs-on: ubuntu-latest
+    needs: deploy-migration
+    strategy:
+      matrix:
+        function: [ validate-iap, check-entitlement, apple-iap-webhook ]
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Supabase CLI
+        uses: supabase/setup-cli@v1
+        with:
+          version: latest
+
+      - name: Deploy function - ${{ matrix.function }}
+        run: |
+          echo "🚀 Deploying ${{ matrix.function }}..."
+          supabase functions deploy ${{ matrix.function }} \
+            --project-ref ${{ env.SUPABASE_PROJECT_REF }} \
+            --no-verify-jwt
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+
+  verify:
+    name: Verify deployment
+    runs-on: ubuntu-latest
+    needs: deploy-functions
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Supabase CLI
+        uses: supabase/setup-cli@v1
+        with:
+          version: latest
+
+      - name: Verify functions deployed
+        run: |
+          functions=("validate-iap" "check-entitlement" "apple-iap-webhook")
+          for func in "${functions[@]}"; do
+            echo "Checking $func..."
+            supabase functions list --project-ref ${{ env.SUPABASE_PROJECT_REF }} | grep -q "$func" && \
+              echo "✅ $func deployed" || \
+              echo "⚠️  Could not verify $func (may still be deploying)"
+          done
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+
+      - name: Deployment complete
+        run: |
+          echo "✅ IAP Backend deployment complete!"
+          echo ""
+          echo "What was deployed:"
+          echo "  • Migration: usuarios_suscripciones_iap (table + RLS policies)"
+          echo "  • Functions: validate-iap, check-entitlement, apple-iap-webhook"
+          echo ""
+          echo "Next steps:"
+          echo "  1. Test check-entitlement with Apple sandbox credentials"
+          echo "  2. Merge PR #1344 to main"
+          echo "  3. Test web flow with iPad simulator"
