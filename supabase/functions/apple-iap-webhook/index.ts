@@ -75,13 +75,23 @@ Deno.serve(async (req) => {
     const signedPayload = body.signedPayload;
 
     // SECURITY: Require signedPayload (JWS signed by Apple) in production
-    // Allow unsigned notifications ONLY in local test mode (IAP_ALLOW_UNSIGNED_TEST=true)
+    // Allow unsigned notifications ONLY in local test mode with multiple validation gates
     const allowUnsignedTest = Deno.env.get("IAP_ALLOW_UNSIGNED_TEST") === "true";
+
+    // Test mode requires BOTH env var AND WHITELIST of localhost hosts
+    // Only these hosts are safe for unsigned notifications: localhost, 127.0.0.1, host.docker.internal, kong
+    // Any other host (including production Supabase) is rejected
+    const supabaseUrl = Deno.env.get("SUPABASE_URL") || "";
+    const isLocalHost = supabaseUrl.includes("localhost") ||
+                       supabaseUrl.includes("127.0.0.1") ||
+                       supabaseUrl.includes("host.docker.internal") ||
+                       supabaseUrl.includes("kong");
+    const isLocalTestMode = allowUnsignedTest && isLocalHost;
 
     if (!signedPayload) {
       // Production: REQUIRE signed payload (reject by default)
-      if (!allowUnsignedTest) {
-        console.warn("[webhook] Unsigned notification rejected (not in test mode)");
+      if (!isLocalTestMode) {
+        console.warn("[webhook] Unsigned notification rejected (not in local test mode)");
         return new Response(
           JSON.stringify({
             ok: false,
@@ -106,9 +116,11 @@ Deno.serve(async (req) => {
     // App Store Server Notifications V2 are JWS (JSON Web Signature) with x5c certificate chain
     // Spec: https://developer.apple.com/documentation/appstoreserverapi/jwsrenewalinfo
 
-    let notification = body.notification;
+    // SECURITY: Prevent bypass — notification must be extracted ONLY from validated signedPayload
+    // If both are present, signedPayload takes precedence and notification is ignored
+    let notification: AppleNotification | null = null;
 
-    if (!notification && signedPayload) {
+    if (signedPayload) {
       try {
         // Validate JWS signature (x5c chain + ES256 verification)
         const validation = await validateJWS(signedPayload);
@@ -285,6 +297,7 @@ Deno.serve(async (req) => {
 
       // ATOMIC UPDATE: Only update if this event is newer (or first event)
       // Use WHERE clause to prevent race condition: last_signed_date IS NULL OR last_signed_date < new_date
+      // Must request count explicitly to know if update matched any rows
       const { data: updateResult, error: updateError, count } = await client
         .from("usuarios_suscripciones_iap")
         .update({
@@ -304,7 +317,7 @@ Deno.serve(async (req) => {
         .eq("original_transaction_id", originalTransactionId)
         // ATOMIC: Only match if no previous date OR previous date is older than this event
         .or(`last_signed_date.is.null,last_signed_date.lt.${notificationDate.toISOString()}`)
-        .select();
+        .select("id", { count: "exact" });
 
       if (updateError) {
         console.error("[webhook] Update error:", updateError);

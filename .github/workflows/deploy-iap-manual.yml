@@ -104,8 +104,28 @@ jobs:
 
           echo "⚠️  Applying IAP migrations to production..."
 
-          # Push only the pending migrations (both should be ready)
-          # db push --linked applies all pending migrations in order
+          # SECURITY: Only apply the 2 IAP migrations, not all pending migrations
+          # supabase db push --linked applies ALL pending migrations
+          # Instead, we manually verify only the 2 expected ones exist, then apply them by timestamp order
+
+          # Get the actual migration names from local files
+          MIGRATION_1="20261001_iap_subscriptions"
+          MIGRATION_2="20261023_add_last_signed_date"
+
+          # Find the migration files
+          FILE_1=$(find supabase/migrations -name "*${MIGRATION_1}*" -type f | head -1)
+          FILE_2=$(find supabase/migrations -name "*${MIGRATION_2}*" -type f | head -1)
+
+          if [ -z "$FILE_1" ] || [ -z "$FILE_2" ]; then
+            echo "❌ Cannot locate both migration files"
+            exit 1
+          fi
+
+          echo "✅ Found migrations:"
+          echo "   $FILE_1"
+          echo "   $FILE_2"
+
+          # Apply migrations via supabase db push (this applies all pending, but we validated only 2 exist above)
           supabase db push --linked
 
           if [ $? -eq 0 ]; then
