@@ -30,6 +30,7 @@ interface JWSPayload {
 
 interface AppleNotification {
   notificationType: string;
+  notificationUUID?: string;
   originalTransactionId: string;
   productId: string;
   appAccountToken?: string;
@@ -40,6 +41,10 @@ interface AppleNotification {
   isUpgrade?: boolean;
   bundleId?: string;
   signedDate?: number;
+  data?: {
+    signedTransactionInfo?: string;
+    signedRenewalInfo?: string;
+  };
 }
 
 interface WebhookPayload {
@@ -74,23 +79,103 @@ Deno.serve(async (req) => {
     const body: WebhookPayload = await req.json();
     const signedPayload = body.signedPayload;
 
-    if (!signedPayload) {
-      // If no signed payload, check if we're in test mode (notification directly provided)
-      if (!body.notification) {
-        return new Response(JSON.stringify({ ok: false, error: "No payload" }), {
-          status: 400,
-          headers: { "Content-Type": "application/json" },
-        });
-      }
+    // SECURITY: Require signedPayload (JWS signed by Apple) in production
+    // Allow unsigned notifications ONLY in local test mode with multiple validation gates
+    const allowUnsignedTest = Deno.env.get("IAP_ALLOW_UNSIGNED_TEST") === "true";
+
+    // Test mode requires BOTH env var AND WHITELIST of localhost hosts
+    // Only these hosts are safe for unsigned notifications: localhost, 127.0.0.1, host.docker.internal, kong
+    // Any other host (including production Supabase) is rejected
+    const supabaseUrl = Deno.env.get("SUPABASE_URL") || "";
+
+    let isLocalHost = false;
+    try {
+      const url = new URL(supabaseUrl);
+      const hostname = url.hostname;
+      const allowedLocalHosts = ["localhost", "127.0.0.1", "host.docker.internal", "kong"];
+      isLocalHost = allowedLocalHosts.includes(hostname);
+    } catch (e) {
+      // Invalid URL format — reject test mode
+      console.error("[webhook] Invalid SUPABASE_URL format:", e);
+      isLocalHost = false;
     }
+    const isLocalTestMode = allowUnsignedTest && isLocalHost;
 
     // Parse and validate JWS from Apple
     // App Store Server Notifications V2 are JWS (JSON Web Signature) with x5c certificate chain
     // Spec: https://developer.apple.com/documentation/appstoreserverapi/jwsrenewalinfo
 
-    let notification = body.notification;
+    // SECURITY: Prevent bypass — notification must be extracted ONLY from validated signedPayload
+    // If both are present, signedPayload takes precedence and notification is ignored
+    let notification: AppleNotification | null = null;
+    let notificationType = "";
+    let transactionData: Record<string, unknown> | null = null;
+    let renewalData: Record<string, unknown> | null = null;
 
-    if (!notification && signedPayload) {
+    if (!signedPayload) {
+      // Production: REQUIRE signed payload (reject by default)
+      if (!isLocalTestMode) {
+        console.warn("[webhook] Unsigned notification rejected (not in local test mode)");
+        return new Response(
+          JSON.stringify({
+            ok: false,
+            error: "Webhook requires signedPayload (JWS signed by Apple App Store)"
+          }),
+          { status: 400, headers: { "Content-Type": "application/json" } }
+        );
+      }
+
+      // Test mode: allow direct notification for local testing
+      if (!body.notification) {
+        return new Response(
+          JSON.stringify({ ok: false, error: "No payload or notification" }),
+          { status: 400, headers: { "Content-Type": "application/json" } }
+        );
+      }
+
+      // POINT 1: Assign unsigned notification explicitly
+      notification = body.notification;
+      notificationType = notification.notificationType || "";
+
+      // Test mode: for testing, construct minimal transactionData from notification fields
+      // This allows tests to exercise deduplication, timestamp, and concurrency logic
+      if (notification.originalTransactionId && notification.productId) {
+        // SECURITY: No defaults — if fields are missing, notification is malformed
+        if (!notification.bundleId) {
+          console.error("[webhook] TEST MODE: Missing bundleId in unsigned notification");
+          return new Response(
+            JSON.stringify({ ok: false, error: "Missing bundleId" }),
+            { status: 400, headers: { "Content-Type": "application/json" } }
+          );
+        }
+        if (!notification.signedDate) {
+          console.error("[webhook] TEST MODE: Missing signedDate in unsigned notification");
+          return new Response(
+            JSON.stringify({ ok: false, error: "Missing signedDate (mandatory for subscription-modifying notifications)" }),
+            { status: 400, headers: { "Content-Type": "application/json" } }
+          );
+        }
+        if (!notification.expirationDate) {
+          console.error("[webhook] TEST MODE: Missing expirationDate in unsigned notification");
+          return new Response(
+            JSON.stringify({ ok: false, error: "Missing expirationDate" }),
+            { status: 400, headers: { "Content-Type": "application/json" } }
+          );
+        }
+
+        transactionData = {
+          originalTransactionId: notification.originalTransactionId,
+          productId: notification.productId,
+          bundleId: notification.bundleId,
+          signedDate: notification.signedDate,
+          expiresDate: notification.expirationDate
+        };
+      }
+
+      console.log("[webhook] TEST MODE: Accepting unsigned notification (local testing only)");
+    }
+
+    if (signedPayload) {
       try {
         // Validate JWS signature (x5c chain + ES256 verification)
         const validation = await validateJWS(signedPayload);
@@ -103,10 +188,15 @@ Deno.serve(async (req) => {
           );
         }
 
-        notification = validation.payload as AppleNotification;
+        notification = validation.payload as unknown as AppleNotification;
 
-        // If signedTransactionInfo exists, validate it as nested JWS
+        // SECURITY: Validate and extract data from nested JWS payloads
+        // In Apple V2 notifications, transaction details are inside signedTransactionInfo
+        // Some notification types (TEST, SUMMARY, unknown) don't include it — handle those without 400
+        notificationType = notification.notificationType || "";
+
         if (notification.data?.signedTransactionInfo) {
+          // Validate signedTransactionInfo as nested JWS and extract payload
           const txnValidation = await validateNestedJWS(notification.data.signedTransactionInfo);
           if (!txnValidation.valid) {
             console.error("[webhook] signedTransactionInfo validation failed:", txnValidation.error);
@@ -115,9 +205,40 @@ Deno.serve(async (req) => {
               { status: 400, headers: { "Content-Type": "application/json" } }
             );
           }
+          transactionData = txnValidation.payload as Record<string, unknown>;
+        } else {
+          // signedTransactionInfo missing — only valid for certain notification types
+          const typesWithoutTransaction = ["TEST", "SUMMARY"];
+          const isSafeType = typesWithoutTransaction.includes(notificationType);
+
+          if (!isSafeType && notificationType) {
+            // Type SHOULD have signedTransactionInfo but doesn't — subscription-related types must have it
+            // Only reject subscription-modifying types; unknown types are safe to skip
+            const subscriptionModifyingTypes = [
+              "SUBSCRIBED",
+              "RENEWED",
+              "EXPIRED",
+              "REVOKED",
+              "BILLING_RETRY",
+              "GRACE_PERIOD",
+              "DID_FAIL_TO_RENEW",
+              "DID_CHANGE_RENEWAL_STATUS",
+              "DID_CHANGE_RENEWAL_PREF",
+              "REFUND",
+              "REFUND_DECLINED"
+            ];
+
+            if (subscriptionModifyingTypes.includes(notificationType)) {
+              console.error(`[webhook] Missing signedTransactionInfo for subscription-modifying type: ${notificationType}`);
+              return new Response(
+                JSON.stringify({ ok: false, error: "Missing transaction info for subscription notification" }),
+                { status: 400, headers: { "Content-Type": "application/json" } }
+              );
+            }
+          }
         }
 
-        // If signedRenewalInfo exists, validate it as nested JWS
+        // If signedRenewalInfo exists, validate it as nested JWS and use its payload
         if (notification.data?.signedRenewalInfo) {
           const renewalValidation = await validateNestedJWS(notification.data.signedRenewalInfo);
           if (!renewalValidation.valid) {
@@ -127,6 +248,7 @@ Deno.serve(async (req) => {
               { status: 400, headers: { "Content-Type": "application/json" } }
             );
           }
+          renewalData = renewalValidation.payload as Record<string, unknown>;
         }
       } catch (e) {
         console.error("[webhook] JWS parse error:", e);
@@ -144,16 +266,86 @@ Deno.serve(async (req) => {
       });
     }
 
-    // Extract fields
-    const notificationType = notification.notificationType || "";
-    const originalTransactionId = notification.originalTransactionId || "";
+    // Extract fields from VALIDATED nested JWS payload (if present)
     const notificationUUID = notification.notificationUUID || "";
-    const productId = notification.productId || "";
+
+    // If transactionData is null (TEST, SUMMARY, or other non-subscription types without signedTransactionInfo)
+    if (!transactionData) {
+      // These types are acknowledged but don't modify subscription state
+      console.log(`[webhook] Received non-subscription notification: ${notificationType}`);
+      return new Response(
+        JSON.stringify({ ok: true, state: "acknowledged_no_transaction", type: notificationType }),
+        { status: 200, headers: { "Content-Type": "application/json" } }
+      );
+    }
+
+    // POINT 2: Extract Apple data from VALIDATED JWS payloads (not fallback to notification)
+    // transactionData is present — extract subscription-modifying fields
+    const originalTransactionId = (transactionData.originalTransactionId as string) || "";
+    const productId = (transactionData.productId as string) || "";
+    const bundleId = (transactionData.bundleId as string) || "";
+    const signedDateMs = transactionData.signedDate != null ? (transactionData.signedDate as number) : null; // milliseconds from Apple
+    const expiresDateMs = transactionData.expiresDate != null ? (transactionData.expiresDate as number) : null; // milliseconds from Apple
+
+    // appAccountToken comes from outer notification (Apple includes it at top level)
     const appAccountToken = notification.appAccountToken || "";
+
+    // environment MUST come from outer notification (no defaults)
+    const notificationEnvironment = (notification as any).environment;
+    const expectedEnvironment = Deno.env.get("IAP_ENVIRONMENT") || "Production";
+
+    if (!notificationEnvironment) {
+      console.error("[webhook] Missing environment in notification");
+      return new Response(
+        JSON.stringify({ ok: false, error: "Missing environment field in notification" }),
+        { status: 400, headers: { "Content-Type": "application/json" } }
+      );
+    }
 
     if (!originalTransactionId || !notificationType || !notificationUUID) {
       return new Response(
-        JSON.stringify({ ok: false, error: "Missing required fields" }),
+        JSON.stringify({ ok: false, error: "Missing required fields (transaction validation)" }),
+        { status: 400, headers: { "Content-Type": "application/json" } }
+      );
+    }
+
+    // POINT 7: Validate bundleId MUST be present and match expected value for subscription notifications
+    // POINT 6: signedDate MUST be present in validated transactionData for subscription modifications
+    const expectedBundleId = "com.pathway.coach";
+
+    // bundleId is REQUIRED and must match (not optional/empty for subscription notifications)
+    if (!bundleId) {
+      console.error(`[webhook] Missing bundleId in transaction (required for subscription notifications)`);
+      return new Response(
+        JSON.stringify({ ok: false, error: "Missing bundleId in transaction data" }),
+        { status: 400, headers: { "Content-Type": "application/json" } }
+      );
+    }
+
+    if (bundleId !== expectedBundleId) {
+      console.error(`[webhook] Invalid bundleId: ${bundleId} (expected: ${expectedBundleId})`);
+      return new Response(
+        JSON.stringify({ ok: false, error: "Invalid bundle ID" }),
+        { status: 400, headers: { "Content-Type": "application/json" } }
+      );
+    }
+
+    // POINT 7: environment MUST match expected environment (Production vs Sandbox)
+    // Do not accept missing environment as default Production
+    if (notificationEnvironment !== expectedEnvironment) {
+      console.error(`[webhook] Invalid environment: ${notificationEnvironment} (expected: ${expectedEnvironment})`);
+      return new Response(
+        JSON.stringify({ ok: false, error: "Invalid environment" }),
+        { status: 400, headers: { "Content-Type": "application/json" } }
+      );
+    }
+
+    // POINT 6: signedDate MUST be present in validated transaction data (from JWS)
+    // Subscription modifications cannot use current time as fallback
+    if (!signedDateMs) {
+      console.error("[webhook] Missing signedDate in transaction data (required for subscription modifications)");
+      return new Response(
+        JSON.stringify({ ok: false, error: "Missing signedDate in transaction data" }),
         { status: 400, headers: { "Content-Type": "application/json" } }
       );
     }
@@ -173,9 +365,10 @@ Deno.serve(async (req) => {
 
     // IDEMPOTENCY: Check if we've already processed this specific notification UUID
     // Apple guarantees notificationUUID is unique per notification
+    // POINT 5: Include notification_count in initial select for atomic increment
     const { data: existingNotif } = await client
       .from("usuarios_suscripciones_iap")
-      .select("id, latest_notification_uuid")
+      .select("id, latest_notification_uuid, notification_count")
       .eq("original_transaction_id", originalTransactionId)
       .single();
 
@@ -191,7 +384,7 @@ Deno.serve(async (req) => {
     }
 
     // Map notification type to subscription state
-    let newState = NOTIFICATION_TO_STATE[notificationType];
+    let newState = NOTIFICATION_TO_STATE[notificationType as keyof typeof NOTIFICATION_TO_STATE];
 
     // Handle special cases
     if (
@@ -212,10 +405,10 @@ Deno.serve(async (req) => {
       });
     }
 
-    // Calculate expiration date
+    // Calculate expiration date from validated transaction data
     let expiresAt = null;
-    if (notification.expirationDate) {
-      expiresAt = new Date(notification.expirationDate).toISOString();
+    if (expiresDateMs) {
+      expiresAt = new Date(expiresDateMs).toISOString();
     } else if (notification.gracePeriodExpiresDate) {
       expiresAt = new Date(notification.gracePeriodExpiresDate).toISOString();
     } else if (newState === "active" || newState === "grace_period") {
@@ -228,23 +421,53 @@ Deno.serve(async (req) => {
       expiresAt = new Date().toISOString();
     }
 
+    // POINT 6: Use signedDate from validated transaction data (already validated above)
+    // This is guaranteed to exist from our prior check
+    const notificationDate = new Date(signedDateMs!);
+
     // Update or insert subscription
     const { data: existing } = await client
       .from("usuarios_suscripciones_iap")
-      .select("id, usuario_id")
+      .select("id, usuario_id, last_signed_date")
       .eq("original_transaction_id", originalTransactionId)
       .single();
 
     if (existing) {
-      // Update
-      const { error: updateError } = await client
+      // SECURITY: Only update if this event is newer (or first event)
+      // Prevents old/stale webhooks from reverting recent state changes
+      const lastSignedDate = existing.last_signed_date
+        ? new Date(existing.last_signed_date)
+        : null;
+
+      if (lastSignedDate && notificationDate < lastSignedDate) {
+        // Event is older than what we already have
+        console.log(
+          `[webhook] Ignoring stale event: ${notificationType} ` +
+          `(${notificationDate.toISOString()} is before ${lastSignedDate.toISOString()})`
+        );
+
+        return new Response(
+          JSON.stringify({
+            ok: true,
+            state: "ignored_stale",
+            reason: "Event timestamp is older than last processed event"
+          }),
+          { status: 200, headers: { "Content-Type": "application/json" } }
+        );
+      }
+
+      // ATOMIC UPDATE: Only update if this event is newer (or first event)
+      // Use WHERE clause to prevent race condition: last_signed_date IS NULL OR last_signed_date < new_date
+      // Select the updated row to know if update matched any rows
+      const { data: updateResult, error: updateError } = await client
         .from("usuarios_suscripciones_iap")
         .update({
           state: newState,
           expires_at: expiresAt,
           latest_notification_uuid: notificationUUID,
           last_notification_type: notificationType,
-          last_notification_at: new Date().toISOString(),
+          last_notification_at: notificationDate.toISOString(),
+          last_signed_date: notificationDate.toISOString(),
           notification_count: (existingNotif?.notification_count || 0) + 1,
           auto_renew_status:
             notification.autoRenewStatus !== undefined
@@ -252,7 +475,10 @@ Deno.serve(async (req) => {
               : true,
           updated_at: new Date().toISOString(),
         })
-        .eq("original_transaction_id", originalTransactionId);
+        .eq("original_transaction_id", originalTransactionId)
+        // ATOMIC: Only match if no previous date OR previous date is older than this event
+        .or(`last_signed_date.is.null,last_signed_date.lt.${notificationDate.toISOString()}`)
+        .select("id")
 
       if (updateError) {
         console.error("[webhook] Update error:", updateError);
@@ -260,6 +486,23 @@ Deno.serve(async (req) => {
           status: 500,
           headers: { "Content-Type": "application/json" },
         });
+      }
+
+      // If no rows updated, this event was stale (already have newer event)
+      if (!updateResult || updateResult.length === 0) {
+        console.log(
+          `[webhook] Ignoring stale event: ${notificationType} ` +
+          `(${notificationDate.toISOString()} is before existing event)`
+        );
+
+        return new Response(
+          JSON.stringify({
+            ok: true,
+            state: "ignored_stale",
+            reason: "Event timestamp is older than last processed event (atomic check)"
+          }),
+          { status: 200, headers: { "Content-Type": "application/json" } }
+        );
       }
 
       // Update user's plan projection based on new state
