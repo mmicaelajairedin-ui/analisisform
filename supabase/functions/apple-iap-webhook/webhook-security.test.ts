@@ -7,26 +7,51 @@
  * 3. Test mode requires localhost (FIX 3)
  * 4. Nested JWS data extracted and validated
  *
+ * REQUIRED DENO ENVIRONMENT VARIABLES (Criterion 4: Database Verification):
+ *   - SUPABASE_URL: Local Supabase instance URL (default: http://localhost:54321)
+ *   - SUPABASE_ANON_KEY: Anon key with SELECT permission on usuarios_suscripciones_iap
+ *     (must have RLS policy allowing SELECT from tests)
+ *   - SUPABASE_SERVICE_ROLE_KEY: Service role key for seeding users/subscriptions
+ *     (required for test data setup; errors if missing)
+ *
  * HOW TO RUN (TIER 1 LOCAL TESTS):
  *
  * For unsigned rejection test (TEST 1):
  *   supabase functions serve --no-verify-jwt (do NOT set IAP_ALLOW_UNSIGNED_TEST)
  *   deno test --allow-net webhook-security.test.ts
  *
- * For test mode tests (TEST 2, 3, 4):
+ * For test mode tests (TEST 2, 3, 4, 5):
  *   export IAP_ALLOW_UNSIGNED_TEST=true
  *   supabase functions serve --no-verify-jwt
  *   deno test --allow-net webhook-security.test.ts
+ *
+ * EXPECTED BEHAVIOR:
+ *   - If SUPABASE_SERVICE_ROLE_KEY missing: tests fail immediately (seed error)
+ *   - If RLS denies SELECT on usuarios_suscripciones_iap: SELECT assertions fail
+ *   - All 5 tests must pass with valid credentials and RLS policies
  */
 
 import { createClient } from "jsr:@supabase/supabase-js@2";
 
 const WEBHOOK_URL = "http://localhost:54321/functions/v1/apple-iap-webhook";
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL") || "http://localhost:54321";
-const SUPABASE_ANON_KEY = Deno.env.get("SUPABASE_ANON_KEY") || "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImxvbmtzeGZxbnZ0aXN3bWZsdmsiLCJyb2xlIjoiYW5vbiIsImlhdCI6MTY4NzQ4NTc0MCwiZXhwIjoxNzA0MTU1NzQwfQ.7rAKP8dg-9FLhNCELNBvPT7yGC5j1Ng-1MFpFPx-qeg";
+const SUPABASE_ANON_KEY = Deno.env.get("SUPABASE_ANON_KEY");
 
 // Initialize Supabase client for test verification (Criterion 4: database assertions)
-const supabaseClient = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+// CRITICAL: This client must have RLS permissions to SELECT from usuarios_suscripciones_iap
+// If SUPABASE_ANON_KEY is not provided, tests requiring DB verification will fail
+function getSupabaseClient() {
+  if (!SUPABASE_ANON_KEY) {
+    throw new Error(
+      "SUPABASE_ANON_KEY is required for Criterion 4 (database assertion) tests. " +
+      "Set SUPABASE_ANON_KEY env var with an anon key that has SELECT permission on usuarios_suscripciones_iap. " +
+      "Check RLS policies: the policy must allow SELECT for role 'anon' or 'authenticated'."
+    );
+  }
+  return createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+}
+
+let supabaseClient: ReturnType<typeof createClient> | null = null;
 
 // Helper: Generate a proper UUID for test appAccountToken
 function generateTestUUID(): string {
@@ -41,7 +66,11 @@ function uniqueNotificationUUID(prefix: string): string {
 // Helper: Seed usuarios table with test data
 // THROWS if service role key is missing (required for test data setup)
 // Creates user in auth.users FIRST, then links via auth_id
-async function seedTestUsuario(usuarioId: string): Promise<void> {
+// THROWS if suscripción insert fails (ensures test data is complete)
+// Parameters:
+//   - usuarioId: UUID for the test user (appAccountToken in webhook)
+//   - originalTransactionId: Transaction ID for the suscripción (must match webhook request)
+async function seedTestUsuario(usuarioId: string, originalTransactionId: string): Promise<void> {
   const supabaseUrl = Deno.env.get("SUPABASE_URL") || "http://localhost:54321";
   const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
 
@@ -72,15 +101,16 @@ async function seedTestUsuario(usuarioId: string): Promise<void> {
 
       authUserId = authUser.id;
     } catch (authErr) {
-      // If user already exists, try to retrieve it
-      const { data: existingUser, error: lookupError } = await client.auth.admin.getUserById(
-        usuarioId
-      );
+      // If user already exists, retrieve by email (not by usuarioId, which is appAccountToken UUID)
+      const { data: { users: existingUsers }, error: lookupError } =
+        await client.auth.admin.listUsers();
+
+      const existingUser = existingUsers?.find(u => u.email === testEmail);
       if (existingUser) {
         authUserId = existingUser.id;
       } else {
         throw new Error(
-          `Failed to create or retrieve auth user: ${(authErr as Error).message}`
+          `Failed to create or retrieve auth user by email ${testEmail}: ${(authErr as Error).message}`
         );
       }
     }
@@ -102,11 +132,12 @@ async function seedTestUsuario(usuarioId: string): Promise<void> {
 
     // STEP 3: Create a test suscripción record for webhook idempotency tests
     // This ensures the webhook has data to update (testing UPDATE path, not just INSERT)
-    await client
+    // CRITICAL: originalTransactionId MUST match the one the test will send to webhook
+    const { error: subError } = await client
       .from("usuarios_suscripciones_iap")
       .insert({
         usuario_id: usuarioId,
-        original_transaction_id: `test-initial-${usuarioId}`,
+        original_transaction_id: originalTransactionId, // MUST match webhook request
         product_id: "coach.plan.basic.monthly",
         state: "active",
         expires_at: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
@@ -115,10 +146,16 @@ async function seedTestUsuario(usuarioId: string): Promise<void> {
         auto_renew_status: true,
         billing_cycle: "monthly",
         price_usd: 29.99
-      })
-      .catch(() => {
-        // Ignore if suscripción already exists
       });
+
+    // CRITERION 2: Do NOT silently ignore errors. If suscripción insert fails, the test must fail.
+    // This prevents false-positive test passes when seed data is incomplete.
+    if (subError && !subError.message.includes("duplicate key")) {
+      throw new Error(
+        `Failed to seed suscripción with originalTransactionId=${originalTransactionId}: ${subError.message}. ` +
+        `Check RLS policies on usuarios_suscripciones_iap and that SUPABASE_SERVICE_ROLE_KEY has INSERT permission.`
+      );
+    }
   } catch (error) {
     if (error instanceof Error && !error.message.includes("duplicate key")) {
       throw new Error(`Failed to seed test data for ${usuarioId}: ${error.message}`);
@@ -177,8 +214,8 @@ Deno.test({
     const txId = "test-tx-dup-" + Date.now();
     const appToken = generateTestUUID(); // Generate proper UUID
 
-    // Seed usuarios table with test user
-    await seedTestUsuario(appToken);
+    // Seed usuarios table with test user + suscripción with SAME originalTransactionId that test will use
+    await seedTestUsuario(appToken, txId);
 
     const payload = {
       notification: {
@@ -231,6 +268,7 @@ Deno.test({
     }
 
     // CRITERION 4: Verify database state — only 1 row created despite 3 identical notifications
+    if (!supabaseClient) supabaseClient = getSupabaseClient();
     const { data: rowAfterDup, error: selectError } = await supabaseClient
       .from("usuarios_suscripciones_iap")
       .select("*")
@@ -274,8 +312,8 @@ Deno.test({
     const txId = "test-tx-stale-" + Date.now();
     const appToken = generateTestUUID(); // Generate proper UUID
 
-    // Seed usuarios table with test user
-    await seedTestUsuario(appToken);
+    // Seed usuarios table with test user + suscripción with SAME originalTransactionId that test will use
+    await seedTestUsuario(appToken, txId);
 
   // Send RECENT SUBSCRIBED event
   const recentRes = await fetch(WEBHOOK_URL, {
@@ -303,6 +341,7 @@ Deno.test({
   }
 
   // CRITERION 4: Capture state and last_signed_date after RECENT event
+  if (!supabaseClient) supabaseClient = getSupabaseClient();
   const { data: rowAfterRecent, error: selectError1 } = await supabaseClient
     .from("usuarios_suscripciones_iap")
     .select("state, last_signed_date")
@@ -418,19 +457,25 @@ Deno.test({
 });
 
 // =============================================================================
-// TEST 5: Concurrency safety — equal timestamps (point 4: atomicity + race condition)
+// TEST 5: Atomic UPDATE with equal timestamps — sequential events (not concurrent)
 // =============================================================================
+// DESCRIPTION: Tests that the WHERE clause (last_signed_date IS NULL OR last_signed_date < newDate)
+// correctly rejects updates when signedDate equals the existing last_signed_date.
+// Events are sent SEQUENTIALLY (not concurrently), but the atomic WHERE ensures that
+// equal timestamps cannot mutate state. This simulates the worst-case for timestamp-based ordering.
+// NOTE: This is NOT a real concurrency test (which would require parallel execution).
+// For real concurrency verification, run two webhook requests simultaneously from separate processes.
 
 Deno.test({
-  name: "TEST 5: Equal timestamps — later writer wins (atomic UPDATE)",
+  name: "TEST 5: Atomic UPDATE with equal timestamps (sequential events, state unchanged)",
   ignore: Deno.env.get("IAP_ALLOW_UNSIGNED_TEST") !== "true", // SKIP if test mode not set
   fn: async () => {
     const sameTimestamp = Date.now();
     const txId = "test-tx-race-" + sameTimestamp;
     const appToken = generateTestUUID(); // Generate proper UUID
 
-    // Seed usuarios table with test user
-    await seedTestUsuario(appToken);
+    // Seed usuarios table with test user + suscripción with SAME originalTransactionId that test will use
+    await seedTestUsuario(appToken, txId);
 
     // Event 1: SUBSCRIBED (first writer with timestamp T)
     const event1 = await fetch(WEBHOOK_URL, {
@@ -460,6 +505,7 @@ Deno.test({
     }
 
     // CRITERION 4: Verify database state after event 1
+    if (!supabaseClient) supabaseClient = getSupabaseClient();
     const { data: rowAfterEvent1, error: selectError1 } = await supabaseClient
       .from("usuarios_suscripciones_iap")
       .select("state, last_signed_date")
