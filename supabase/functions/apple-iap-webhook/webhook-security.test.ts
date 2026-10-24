@@ -10,147 +10,181 @@
  * HOW TO RUN (TIER 1 LOCAL TESTS):
  *
  * For unsigned rejection test (TEST 1):
- *   supabase functions serve (do NOT set IAP_ALLOW_UNSIGNED_TEST)
+ *   supabase functions serve --no-verify-jwt (do NOT set IAP_ALLOW_UNSIGNED_TEST)
  *   deno test --allow-net webhook-security.test.ts
  *
  * For test mode tests (TEST 2, 3, 4):
  *   export IAP_ALLOW_UNSIGNED_TEST=true
- *   supabase functions serve
+ *   supabase functions serve --no-verify-jwt
  *   deno test --allow-net webhook-security.test.ts
  */
 
+import { createClient } from "jsr:@supabase/supabase-js@2";
+
 const WEBHOOK_URL = "http://localhost:54321/functions/v1/apple-iap-webhook";
+
+// Helper: Generate a proper UUID for test appAccountToken
+function generateTestUUID(): string {
+  return crypto.randomUUID();
+}
+
+// Helper: Seed usuarios table with test data
+async function seedTestUsuario(usuarioId: string): Promise<void> {
+  try {
+    const supabaseUrl = Deno.env.get("SUPABASE_URL") || "http://localhost:54321";
+    const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || "";
+
+    if (!serviceRoleKey) {
+      console.warn(
+        "⚠️  SUPABASE_SERVICE_ROLE_KEY not set — seeding skipped. Test may fail with FK errors."
+      );
+      return;
+    }
+
+    const client = createClient(supabaseUrl, serviceRoleKey);
+
+    // Insert test usuario (will fail silently if already exists due to PK conflict)
+    await client
+      .from("usuarios")
+      .insert({
+        id: usuarioId,
+        email: `test-${usuarioId}@pathway.test`,
+        nombre: "Test User",
+        plan: "basic"
+      })
+      .select()
+      .single()
+      .catch(() => {
+        // Ignore if user already exists
+      });
+  } catch (error) {
+    console.warn(`⚠️  Failed to seed usuario ${usuarioId}:`, error);
+  }
+}
 
 // =============================================================================
 // TEST 1: Unsigned notification rejected (production mode)
 // =============================================================================
 
-Deno.test("TEST 1: Unsigned notification rejected without test mode", async () => {
-  // PRECONDITION: IAP_ALLOW_UNSIGNED_TEST must NOT be set
-  const hasTestMode = Deno.env.get("IAP_ALLOW_UNSIGNED_TEST") === "true";
-  if (hasTestMode) {
-    console.warn(
-      "⚠️  TEST 1 skipped: IAP_ALLOW_UNSIGNED_TEST is set. Run without setting it."
-    );
-    return; // Skip if test mode is active
+Deno.test({
+  name: "TEST 1: Unsigned notification rejected without test mode",
+  ignore: Deno.env.get("IAP_ALLOW_UNSIGNED_TEST") === "true", // SKIP if test mode is active
+  fn: async () => {
+    const response = await fetch(WEBHOOK_URL, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        notification: {
+          notificationType: "SUBSCRIBED",
+          originalTransactionId: "fake-tx-123",
+          productId: "coach.plan.basic.monthly",
+          appAccountToken: "test-user-uuid"
+        }
+      })
+    });
+
+    // Should reject with 400 in production
+    if (response.status !== 400) {
+      throw new Error(
+        `Expected 400, got ${response.status}. Unsigned notification was not rejected!`
+      );
+    }
+
+    const body = await response.json();
+    if (!body.error || !body.error.includes("signedPayload")) {
+      throw new Error(
+        `Expected 'signedPayload' in error, got: ${body.error}`
+      );
+    }
+
+    console.log("✅ TEST 1 PASSED: Unsigned notification correctly rejected");
   }
-
-  const response = await fetch(WEBHOOK_URL, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      notification: {
-        notificationType: "SUBSCRIBED",
-        originalTransactionId: "fake-tx-123",
-        productId: "coach.plan.basic.monthly",
-        appAccountToken: "test-user-uuid"
-      }
-    })
-  });
-
-  // Should reject with 400 in production
-  if (response.status !== 400) {
-    throw new Error(
-      `Expected 400, got ${response.status}. Unsigned notification was not rejected!`
-    );
-  }
-
-  const body = await response.json();
-  if (!body.error || !body.error.includes("signedPayload")) {
-    throw new Error(
-      `Expected 'signedPayload' in error, got: ${body.error}`
-    );
-  }
-
-  console.log("✅ TEST 1 PASSED: Unsigned notification correctly rejected");
 });
 
 // =============================================================================
 // TEST 2: Idempotency via notificationUUID (test mode)
 // =============================================================================
 
-Deno.test("TEST 2: Duplicate notifications deduplicated", async () => {
-  const hasTestMode = Deno.env.get("IAP_ALLOW_UNSIGNED_TEST") === "true";
-  if (!hasTestMode) {
-    console.warn(
-      "⚠️  TEST 2 skipped: IAP_ALLOW_UNSIGNED_TEST not set. Set it to run this test."
-    );
-    return;
-  }
+Deno.test({
+  name: "TEST 2: Duplicate notifications deduplicated",
+  ignore: Deno.env.get("IAP_ALLOW_UNSIGNED_TEST") !== "true", // SKIP if test mode not set
+  fn: async () => {
+    const notificationUUID = "test-dup-" + Date.now();
+    const txId = "test-tx-dup-" + Date.now();
+    const appToken = generateTestUUID(); // Generate proper UUID
 
-  const notificationUUID = "test-dup-" + Date.now();
-  const txId = "test-tx-dup-" + Date.now();
+    // Seed usuarios table with test user
+    await seedTestUsuario(appToken);
 
-  const payload = {
-    notification: {
-      notificationType: "SUBSCRIBED",
-      notificationUUID,
-      originalTransactionId: txId,
-      productId: "coach.plan.basic.monthly",
-      appAccountToken: "test-user-" + Date.now(),
-      bundleId: "com.pathway.coach",
-      signedDate: Date.now(),
-      expirationDate: Date.now() + 30 * 24 * 60 * 60 * 1000,
-      environment: "Sandbox"
+    const payload = {
+      notification: {
+        notificationType: "SUBSCRIBED",
+        notificationUUID,
+        originalTransactionId: txId,
+        productId: "coach.plan.basic.monthly",
+        appAccountToken: appToken,
+        bundleId: "com.pathway.coach",
+        signedDate: Date.now(),
+        expirationDate: Date.now() + 30 * 24 * 60 * 60 * 1000,
+        environment: "Sandbox"
+      }
+    };
+
+    // Send 3 times
+    const responses = [];
+    for (let i = 0; i < 3; i++) {
+      const res = await fetch(WEBHOOK_URL, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload)
+      });
+      responses.push(res);
     }
-  };
 
-  // Send 3 times
-  const responses = [];
-  for (let i = 0; i < 3; i++) {
-    const res = await fetch(WEBHOOK_URL, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload)
-    });
-    responses.push(res);
-  }
+    // All should be 200 OK
+    for (let i = 0; i < responses.length; i++) {
+      if (responses[i].status !== 200) {
+        throw new Error(
+          `Request ${i + 1} failed with status ${responses[i].status}`
+        );
+      }
+    }
 
-  // All should be 200 OK
-  for (let i = 0; i < responses.length; i++) {
-    if (responses[i].status !== 200) {
+    // Second and third should indicate duplicate
+    const secondBody = await responses[1].json();
+    const thirdBody = await responses[2].json();
+
+    if (secondBody.duplicate !== true) {
       throw new Error(
-        `Request ${i + 1} failed with status ${responses[i].status}`
+        `Request 2 should indicate duplicate, got: ${JSON.stringify(secondBody)}`
       );
     }
+
+    if (thirdBody.duplicate !== true) {
+      throw new Error(
+        `Request 3 should indicate duplicate, got: ${JSON.stringify(thirdBody)}`
+      );
+    }
+
+    console.log("✅ TEST 2 PASSED: Duplicate notifications correctly deduplicated");
   }
-
-  // Second and third should indicate duplicate
-  const secondBody = await responses[1].json();
-  const thirdBody = await responses[2].json();
-
-  if (secondBody.duplicate !== true) {
-    throw new Error(
-      `Request 2 should indicate duplicate, got: ${JSON.stringify(secondBody)}`
-    );
-  }
-
-  if (thirdBody.duplicate !== true) {
-    throw new Error(
-      `Request 3 should indicate duplicate, got: ${JSON.stringify(thirdBody)}`
-    );
-  }
-
-  console.log("✅ TEST 2 PASSED: Duplicate notifications correctly deduplicated");
 });
 
 // =============================================================================
 // TEST 3: Stale events ignored (test mode)
 // =============================================================================
 
-Deno.test("TEST 3: Stale events ignored via timestamp", async () => {
-  const hasTestMode = Deno.env.get("IAP_ALLOW_UNSIGNED_TEST") === "true";
-  if (!hasTestMode) {
-    console.warn(
-      "⚠️  TEST 3 skipped: IAP_ALLOW_UNSIGNED_TEST not set. Set it to run this test."
-    );
-    return;
-  }
+Deno.test({
+  name: "TEST 3: Stale events ignored via timestamp",
+  ignore: Deno.env.get("IAP_ALLOW_UNSIGNED_TEST") !== "true", // SKIP if test mode not set
+  fn: async () => {
+    const recentDate = Date.now();
+    const staleDate = recentDate - 10000; // 10 seconds older
+    const txId = "test-tx-stale-" + Date.now();
+    const appToken = generateTestUUID(); // Generate proper UUID
 
-  const recentDate = Date.now();
-  const staleDate = recentDate - 10000; // 10 seconds older
-  const txId = "test-tx-stale-" + Date.now();
-  const appToken = "test-user-" + Date.now();
+    // Seed usuarios table with test user
+    await seedTestUsuario(appToken);
 
   // Send RECENT SUBSCRIBED event
   const recentRes = await fetch(WEBHOOK_URL, {
@@ -196,21 +230,22 @@ Deno.test("TEST 3: Stale events ignored via timestamp", async () => {
     })
   });
 
-  if (staleRes.status !== 200) {
-    throw new Error(
-      `Stale event failed: status ${staleRes.status}`
-    );
+    if (staleRes.status !== 200) {
+      throw new Error(
+        `Stale event failed: status ${staleRes.status}`
+      );
+    }
+
+    const staleBody = await staleRes.json();
+
+    if (staleBody.state !== "ignored_stale") {
+      throw new Error(
+        `Stale event should be ignored, got state: ${staleBody.state}`
+      );
+    }
+
+    console.log("✅ TEST 3 PASSED: Stale events correctly ignored");
   }
-
-  const staleBody = await staleRes.json();
-
-  if (staleBody.state !== "ignored_stale") {
-    throw new Error(
-      `Stale event should be ignored, got state: ${staleBody.state}`
-    );
-  }
-
-  console.log("✅ TEST 3 PASSED: Stale events correctly ignored");
 });
 
 // =============================================================================
@@ -258,80 +293,79 @@ Deno.test("TEST 4: Test mode accepts only from localhost", async () => {
 // TEST 5: Concurrency safety — equal timestamps (point 4: atomicity + race condition)
 // =============================================================================
 
-Deno.test("TEST 5: Equal timestamps — later writer wins (atomic UPDATE)", async () => {
-  const hasTestMode = Deno.env.get("IAP_ALLOW_UNSIGNED_TEST") === "true";
-  if (!hasTestMode) {
-    console.warn(
-      "⚠️  TEST 5 skipped: IAP_ALLOW_UNSIGNED_TEST not set. Set it to run this test."
-    );
-    return;
+Deno.test({
+  name: "TEST 5: Equal timestamps — later writer wins (atomic UPDATE)",
+  ignore: Deno.env.get("IAP_ALLOW_UNSIGNED_TEST") !== "true", // SKIP if test mode not set
+  fn: async () => {
+    const sameTimestamp = Date.now();
+    const txId = "test-tx-race-" + sameTimestamp;
+    const appToken = generateTestUUID(); // Generate proper UUID
+
+    // Seed usuarios table with test user
+    await seedTestUsuario(appToken);
+
+    // Event 1: SUBSCRIBED (first writer with timestamp T)
+    const event1 = await fetch(WEBHOOK_URL, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        notification: {
+          notificationType: "SUBSCRIBED",
+          notificationUUID: "race-1-" + Date.now(),
+          originalTransactionId: txId,
+          productId: "coach.plan.basic.monthly",
+          appAccountToken: appToken,
+          bundleId: "com.pathway.coach",
+          signedDate: sameTimestamp,
+          expirationDate: sameTimestamp + 30 * 24 * 60 * 60 * 1000,
+          environment: "Sandbox"
+        }
+      })
+    });
+
+    if (event1.status !== 200) {
+      throw new Error(`Event 1 failed: status ${event1.status}`);
+    }
+    const body1 = await event1.json();
+    if (body1.state !== "active") {
+      throw new Error(`Event 1 should be active, got: ${body1.state}`);
+    }
+
+    // Event 2: EXPIRED with SAME timestamp (should be ignored — only last_signed_date.is.null OR last_signed_date.lt. works)
+    // With atomic WHERE clause, this should NOT update because last_signed_date is already set to sameTimestamp
+    const event2 = await fetch(WEBHOOK_URL, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        notification: {
+          notificationType: "EXPIRED",
+          notificationUUID: "race-2-" + Date.now(),
+          originalTransactionId: txId,
+          productId: "coach.plan.basic.monthly",
+          appAccountToken: appToken,
+          bundleId: "com.pathway.coach",
+          signedDate: sameTimestamp, // Same timestamp
+          expirationDate: sameTimestamp + 30 * 24 * 60 * 60 * 1000,
+          environment: "Sandbox"
+        }
+      })
+    });
+
+    if (event2.status !== 200) {
+      throw new Error(`Event 2 failed: status ${event2.status}`);
+    }
+    const body2 = await event2.json();
+
+    // With atomic WHERE clause (last_signed_date < newDate), equal timestamps should NOT match
+    // So state should remain "active" (from event1), not become "expired" (from event2)
+    if (body2.state !== "ignored_stale") {
+      throw new Error(
+        `Event 2 with equal timestamp should be ignored_stale, got: ${body2.state}`
+      );
+    }
+
+    console.log("✅ TEST 5 PASSED: Atomic UPDATE prevents race condition (equal timestamps ignored)");
   }
-
-  const sameTimestamp = Date.now();
-  const txId = "test-tx-race-" + sameTimestamp;
-  const appToken = "test-user-" + sameTimestamp;
-
-  // Event 1: SUBSCRIBED (first writer with timestamp T)
-  const event1 = await fetch(WEBHOOK_URL, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      notification: {
-        notificationType: "SUBSCRIBED",
-        notificationUUID: "race-1-" + Date.now(),
-        originalTransactionId: txId,
-        productId: "coach.plan.basic.monthly",
-        appAccountToken: appToken,
-        bundleId: "com.pathway.coach",
-        signedDate: sameTimestamp,
-        expirationDate: sameTimestamp + 30 * 24 * 60 * 60 * 1000,
-        environment: "Sandbox"
-      }
-    })
-  });
-
-  if (event1.status !== 200) {
-    throw new Error(`Event 1 failed: status ${event1.status}`);
-  }
-  const body1 = await event1.json();
-  if (body1.state !== "active") {
-    throw new Error(`Event 1 should be active, got: ${body1.state}`);
-  }
-
-  // Event 2: EXPIRED with SAME timestamp (should be ignored — only last_signed_date.is.null OR last_signed_date.lt. works)
-  // With atomic WHERE clause, this should NOT update because last_signed_date is already set to sameTimestamp
-  const event2 = await fetch(WEBHOOK_URL, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      notification: {
-        notificationType: "EXPIRED",
-        notificationUUID: "race-2-" + Date.now(),
-        originalTransactionId: txId,
-        productId: "coach.plan.basic.monthly",
-        appAccountToken: appToken,
-        bundleId: "com.pathway.coach",
-        signedDate: sameTimestamp, // Same timestamp
-        expirationDate: sameTimestamp + 30 * 24 * 60 * 60 * 1000,
-        environment: "Sandbox"
-      }
-    })
-  });
-
-  if (event2.status !== 200) {
-    throw new Error(`Event 2 failed: status ${event2.status}`);
-  }
-  const body2 = await event2.json();
-
-  // With atomic WHERE clause (last_signed_date < newDate), equal timestamps should NOT match
-  // So state should remain "active" (from event1), not become "expired" (from event2)
-  if (body2.state !== "ignored_stale") {
-    throw new Error(
-      `Event 2 with equal timestamp should be ignored_stale, got: ${body2.state}`
-    );
-  }
-
-  console.log("✅ TEST 5 PASSED: Atomic UPDATE prevents race condition (equal timestamps ignored)");
 });
 
 // =============================================================================
