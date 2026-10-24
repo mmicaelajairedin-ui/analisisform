@@ -360,7 +360,31 @@ Deno.serve(async (req) => {
       );
     }
 
-    const userId = user.id;
+    // RESOLVE AUTH ID TO USUARIOS ID
+    // user.id is the Auth UUID; usuarios.id might differ. Resolve via usuarios.auth_id
+    const authUserId = user.id;
+    const { data: usuarioRow, error: usuarioError } = await serviceClient
+      .from("usuarios")
+      .select("id")
+      .eq("auth_id", authUserId)
+      .single();
+
+    if (usuarioError || !usuarioRow?.id) {
+      console.error(
+        `[check-entitlement] Usuario not found for auth_id ${authUserId}:`,
+        usuarioError
+      );
+      return new Response(
+        JSON.stringify({
+          ok: false,
+          access: false,
+          message: "User record not found",
+        }),
+        { status: 403, headers: { "Content-Type": "application/json" } }
+      );
+    }
+
+    const userId = usuarioRow.id;
 
     // SECURITY GATE 6: Verify appAccountToken belongs to authenticated user
     // appAccountToken should be a UUID that links the transaction to this user

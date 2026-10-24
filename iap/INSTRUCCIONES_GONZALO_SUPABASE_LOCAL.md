@@ -210,8 +210,10 @@ Gonzalo solicita a Micaela las credenciales de Sandbox desde su cuenta App Store
 En otra terminal (desde `analisisform/`):
 
 ```bash
-supabase functions serve
+supabase functions serve --no-verify-jwt
 ```
+
+⚠️ **IMPORTANTE:** El flag `--no-verify-jwt` es OBLIGATORIO. Sin él, el gateway local devuelve 401 antes de que el código de la función sea ejecutado, y los tests fallan. En producción, JWT se verifica normalmente.
 
 **Salida esperada:**
 ```
@@ -278,8 +280,8 @@ echo "Container ID: $CONTAINER_ID"
 **Test Run 1: Con `IAP_ALLOW_UNSIGNED_TEST=true` (test local permitido)**
 
 ```bash
-# Terminal 1: levantar funciones CON --env-file
-supabase functions serve --env-file supabase/functions/apple-iap-webhook/.env.test
+# Terminal 1: levantar funciones CON --env-file Y --no-verify-jwt
+supabase functions serve --no-verify-jwt --env-file supabase/functions/apple-iap-webhook/.env.test
 
 # Terminal 2: contar filas ANTES
 docker exec $CONTAINER_ID psql -v ON_ERROR_STOP=1 -U postgres -d postgres -c "SELECT COUNT(*) as before_count FROM usuarios_suscripciones_iap;" > /tmp/tier1-run1-before.txt
@@ -314,8 +316,8 @@ Estos tests validan:
 
 **Acción:**
 ```bash
-# Terminal 1: levantar funciones SIN --env-file (usa .env del sistema)
-supabase functions serve
+# Terminal 1: levantar funciones SIN --env-file (usa .env del sistema) Y CON --no-verify-jwt
+supabase functions serve --no-verify-jwt
 
 # Terminal 2: contar filas ANTES
 docker exec $CONTAINER_ID psql -v ON_ERROR_STOP=1 -U postgres -d postgres -c "SELECT COUNT(*) as before_count FROM usuarios_suscripciones_iap;" > /tmp/tier1-run2-before.txt

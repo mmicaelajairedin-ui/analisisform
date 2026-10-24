@@ -69,6 +69,8 @@ supabase functions deploy check-entitlement --project-ref ddxnrsnjdvtqhxunxnwj
 supabase functions deploy apple-iap-webhook --project-ref ddxnrsnjdvtqhxunxnwj
 ```
 
+⚠️ **NOTA:** El webhook en producción rechaza JWTs estándar (Apple envía JWS firmados, no JWTs). La validación de firma JWS dentro del código del webhook reemplaza la validación JWT del gateway. Verify JWT debe estar ACTIVO en producción (es el default).
+
 **Salida esperada (para cada una):**
 ```
 Deploying function 'validate-iap'...
