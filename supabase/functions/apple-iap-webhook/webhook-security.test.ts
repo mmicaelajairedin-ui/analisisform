@@ -22,10 +22,20 @@
 import { createClient } from "jsr:@supabase/supabase-js@2";
 
 const WEBHOOK_URL = "http://localhost:54321/functions/v1/apple-iap-webhook";
+const SUPABASE_URL = Deno.env.get("SUPABASE_URL") || "http://localhost:54321";
+const SUPABASE_ANON_KEY = Deno.env.get("SUPABASE_ANON_KEY") || "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImxvbmtzeGZxbnZ0aXN3bWZsdmsiLCJyb2xlIjoiYW5vbiIsImlhdCI6MTY4NzQ4NTc0MCwiZXhwIjoxNzA0MTU1NzQwfQ.7rAKP8dg-9FLhNCELNBvPT7yGC5j1Ng-1MFpFPx-qeg";
+
+// Initialize Supabase client for test verification (Criterion 4: database assertions)
+const supabaseClient = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
 // Helper: Generate a proper UUID for test appAccountToken
 function generateTestUUID(): string {
   return crypto.randomUUID();
+}
+
+// Helper: Generate unique notificationUUID to avoid test data collision
+function uniqueNotificationUUID(prefix: string): string {
+  return `${prefix}-${Date.now()}-${Math.random().toString(36).substring(7)}`;
 }
 
 // Helper: Seed usuarios table with test data
@@ -160,10 +170,10 @@ Deno.test({
 // =============================================================================
 
 Deno.test({
-  name: "TEST 2: Duplicate notifications deduplicated",
+  name: "TEST 2: Duplicate notifications deduplicated (DB verified)",
   ignore: Deno.env.get("IAP_ALLOW_UNSIGNED_TEST") !== "true", // SKIP if test mode not set
   fn: async () => {
-    const notificationUUID = "test-dup-" + Date.now();
+    const notificationUUID = uniqueNotificationUUID("test-dup");
     const txId = "test-tx-dup-" + Date.now();
     const appToken = generateTestUUID(); // Generate proper UUID
 
@@ -220,7 +230,34 @@ Deno.test({
       );
     }
 
-    console.log("✅ TEST 2 PASSED: Duplicate notifications correctly deduplicated");
+    // CRITERION 4: Verify database state — only 1 row created despite 3 identical notifications
+    const { data: rowAfterDup, error: selectError } = await supabaseClient
+      .from("usuarios_suscripciones_iap")
+      .select("*")
+      .eq("original_transaction_id", txId);
+
+    if (selectError) {
+      throw new Error(`SELECT after dedup failed: ${selectError.message}`);
+    }
+
+    if (!rowAfterDup || rowAfterDup.length !== 1) {
+      throw new Error(
+        `Expected 1 row after 3 identical notifications, got ${rowAfterDup?.length || 0} rows`
+      );
+    }
+
+    const row = rowAfterDup[0];
+    if (row.latest_notification_uuid !== notificationUUID) {
+      throw new Error(
+        `UUID mismatch: expected ${notificationUUID}, got ${row.latest_notification_uuid}`
+      );
+    }
+
+    if (row.state !== "active") {
+      throw new Error(`Expected state='active', got state='${row.state}'`);
+    }
+
+    console.log(`✅ TEST 2 PASSED: 1 row created, duplicates ignored, UUID and state verified in DB`);
   }
 });
 
@@ -229,7 +266,7 @@ Deno.test({
 // =============================================================================
 
 Deno.test({
-  name: "TEST 3: Stale events ignored via timestamp",
+  name: "TEST 3: Stale events ignored via timestamp (DB verified)",
   ignore: Deno.env.get("IAP_ALLOW_UNSIGNED_TEST") !== "true", // SKIP if test mode not set
   fn: async () => {
     const recentDate = Date.now();
@@ -247,7 +284,7 @@ Deno.test({
     body: JSON.stringify({
       notification: {
         notificationType: "SUBSCRIBED",
-        notificationUUID: "recent-" + Date.now(),
+        notificationUUID: uniqueNotificationUUID("recent"),
         originalTransactionId: txId,
         productId: "coach.plan.basic.monthly",
         appAccountToken: appToken,
@@ -265,6 +302,23 @@ Deno.test({
     );
   }
 
+  // CRITERION 4: Capture state and last_signed_date after RECENT event
+  const { data: rowAfterRecent, error: selectError1 } = await supabaseClient
+    .from("usuarios_suscripciones_iap")
+    .select("state, last_signed_date")
+    .eq("original_transaction_id", txId)
+    .single();
+
+  if (selectError1) {
+    throw new Error(`SELECT after recent event failed: ${selectError1.message}`);
+  }
+
+  if (!rowAfterRecent || rowAfterRecent.state !== "active") {
+    throw new Error(`Expected state='active' after SUBSCRIBED, got '${rowAfterRecent?.state}'`);
+  }
+
+  const originalLastSignedDate = rowAfterRecent.last_signed_date;
+
   // Send STALE EXPIRED event (older timestamp)
   const staleRes = await fetch(WEBHOOK_URL, {
     method: "POST",
@@ -272,7 +326,7 @@ Deno.test({
     body: JSON.stringify({
       notification: {
         notificationType: "EXPIRED",
-        notificationUUID: "stale-" + Date.now(),
+        notificationUUID: uniqueNotificationUUID("stale"),
         originalTransactionId: txId,
         productId: "coach.plan.basic.monthly",
         appAccountToken: appToken,
@@ -298,7 +352,31 @@ Deno.test({
       );
     }
 
-    console.log("✅ TEST 3 PASSED: Stale events correctly ignored");
+    // CRITERION 4: Verify database state — row NOT updated by stale event
+    const { data: rowAfterStale, error: selectError2 } = await supabaseClient
+      .from("usuarios_suscripciones_iap")
+      .select("state, last_signed_date")
+      .eq("original_transaction_id", txId)
+      .single();
+
+    if (selectError2) {
+      throw new Error(`SELECT after stale event failed: ${selectError2.message}`);
+    }
+
+    if (rowAfterStale.state !== "active") {
+      throw new Error(
+        `State should remain 'active' after stale event, got '${rowAfterStale.state}'`
+      );
+    }
+
+    if (rowAfterStale.last_signed_date !== originalLastSignedDate) {
+      throw new Error(
+        `last_signed_date should NOT change when stale event is ignored. ` +
+        `Before: ${originalLastSignedDate}, After: ${rowAfterStale.last_signed_date}`
+      );
+    }
+
+    console.log("✅ TEST 3 PASSED: Stale event ignored, state and last_signed_date unchanged in DB");
   }
 });
 
@@ -306,15 +384,10 @@ Deno.test({
 // TEST 4: Test mode localhost whitelist
 // =============================================================================
 
-Deno.test("TEST 4: Test mode accepts only from localhost", async () => {
-  const hasTestMode = Deno.env.get("IAP_ALLOW_UNSIGNED_TEST") === "true";
-  if (!hasTestMode) {
-    console.warn(
-      "⚠️  TEST 4 skipped: IAP_ALLOW_UNSIGNED_TEST not set. Set it to run this test."
-    );
-    return;
-  }
-
+Deno.test({
+  name: "TEST 4: Test mode accepts unsigned only from localhost",
+  ignore: Deno.env.get("IAP_ALLOW_UNSIGNED_TEST") !== "true",
+  fn: async () => {
   // POSITIVE: With test mode on and localhost Supabase, unsigned should be accepted
   const response = await fetch(WEBHOOK_URL, {
     method: "POST",
@@ -322,10 +395,10 @@ Deno.test("TEST 4: Test mode accepts only from localhost", async () => {
     body: JSON.stringify({
       notification: {
         notificationType: "SUBSCRIBED",
-        notificationUUID: "test-loc-" + Date.now(),
+        notificationUUID: uniqueNotificationUUID("test-loc"),
         originalTransactionId: "test-tx-loc-" + Date.now(),
         productId: "coach.plan.basic.monthly",
-        appAccountToken: "test-user-" + Date.now(),
+        appAccountToken: generateTestUUID(),
         bundleId: "com.pathway.coach",
         signedDate: Date.now(),
         expirationDate: Date.now() + 30 * 24 * 60 * 60 * 1000,
@@ -341,6 +414,7 @@ Deno.test("TEST 4: Test mode accepts only from localhost", async () => {
   }
 
   console.log("✅ TEST 4 PASSED: Test mode accepts unsigned from localhost");
+  }
 });
 
 // =============================================================================
@@ -365,7 +439,7 @@ Deno.test({
       body: JSON.stringify({
         notification: {
           notificationType: "SUBSCRIBED",
-          notificationUUID: "race-1-" + Date.now(),
+          notificationUUID: uniqueNotificationUUID("race-1"),
           originalTransactionId: txId,
           productId: "coach.plan.basic.monthly",
           appAccountToken: appToken,
@@ -385,6 +459,25 @@ Deno.test({
       throw new Error(`Event 1 should be active, got: ${body1.state}`);
     }
 
+    // CRITERION 4: Verify database state after event 1
+    const { data: rowAfterEvent1, error: selectError1 } = await supabaseClient
+      .from("usuarios_suscripciones_iap")
+      .select("state, last_signed_date")
+      .eq("original_transaction_id", txId)
+      .single();
+
+    if (selectError1) {
+      throw new Error(`SELECT after event 1 failed: ${selectError1.message}`);
+    }
+
+    if (!rowAfterEvent1 || rowAfterEvent1.state !== "active") {
+      throw new Error(
+        `Expected state='active' after event 1, got '${rowAfterEvent1?.state}'`
+      );
+    }
+
+    const lastSignedDateAfterEvent1 = rowAfterEvent1.last_signed_date;
+
     // Event 2: EXPIRED with SAME timestamp (should be ignored — only last_signed_date.is.null OR last_signed_date.lt. works)
     // With atomic WHERE clause, this should NOT update because last_signed_date is already set to sameTimestamp
     const event2 = await fetch(WEBHOOK_URL, {
@@ -393,7 +486,7 @@ Deno.test({
       body: JSON.stringify({
         notification: {
           notificationType: "EXPIRED",
-          notificationUUID: "race-2-" + Date.now(),
+          notificationUUID: uniqueNotificationUUID("race-2"),
           originalTransactionId: txId,
           productId: "coach.plan.basic.monthly",
           appAccountToken: appToken,
@@ -418,7 +511,31 @@ Deno.test({
       );
     }
 
-    console.log("✅ TEST 5 PASSED: Atomic UPDATE prevents race condition (equal timestamps ignored)");
+    // CRITERION 4: Verify database state after event 2 — should be unchanged
+    const { data: rowAfterEvent2, error: selectError2 } = await supabaseClient
+      .from("usuarios_suscripciones_iap")
+      .select("state, last_signed_date")
+      .eq("original_transaction_id", txId)
+      .single();
+
+    if (selectError2) {
+      throw new Error(`SELECT after event 2 failed: ${selectError2.message}`);
+    }
+
+    if (rowAfterEvent2.state !== "active") {
+      throw new Error(
+        `State should remain 'active' after event 2 with equal timestamp, got '${rowAfterEvent2.state}'`
+      );
+    }
+
+    if (rowAfterEvent2.last_signed_date !== lastSignedDateAfterEvent1) {
+      throw new Error(
+        `last_signed_date should NOT change with equal timestamp. ` +
+        `Before: ${lastSignedDateAfterEvent1}, After: ${rowAfterEvent2.last_signed_date}`
+      );
+    }
+
+    console.log("✅ TEST 5 PASSED: Atomic UPDATE prevents race condition (equal timestamps ignored, state and date unchanged in DB)");
   }
 });
 
