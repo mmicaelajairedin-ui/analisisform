@@ -35,23 +35,26 @@ import { createClient } from "jsr:@supabase/supabase-js@2";
 
 const WEBHOOK_URL = "http://localhost:54321/functions/v1/apple-iap-webhook";
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL") || "http://localhost:54321";
-const SUPABASE_ANON_KEY = Deno.env.get("SUPABASE_ANON_KEY");
+const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
 
 // Initialize Supabase client for test verification (Criterion 4: database assertions)
-// CRITICAL: This client must have RLS permissions to SELECT from usuarios_suscripciones_iap
-// If SUPABASE_ANON_KEY is not provided, tests requiring DB verification will fail
-function getSupabaseClient() {
-  if (!SUPABASE_ANON_KEY) {
+// CRITICAL: Uses SERVICE ROLE key, NOT anon key, because RLS strict policies will return 0 rows
+// silently with anon key, causing false-positive test passes.
+// Service role bypasses RLS and provides authoritative verification of database state.
+// If SUPABASE_SERVICE_ROLE_KEY is not provided, tests requiring DB verification will fail.
+function getVerificationClient() {
+  if (!SUPABASE_SERVICE_ROLE_KEY) {
     throw new Error(
-      "SUPABASE_ANON_KEY is required for Criterion 4 (database assertion) tests. " +
-      "Set SUPABASE_ANON_KEY env var with an anon key that has SELECT permission on usuarios_suscripciones_iap. " +
-      "Check RLS policies: the policy must allow SELECT for role 'anon' or 'authenticated'."
+      "SUPABASE_SERVICE_ROLE_KEY is required for Criterion 4 (database assertion) tests. " +
+      "Set SUPABASE_SERVICE_ROLE_KEY env var with the service role key. " +
+      "This key bypasses RLS and allows authoritative verification of webhook effects. " +
+      "⚠️  LOCAL ONLY: Never use production service role key in tests."
     );
   }
-  return createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+  return createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
 }
 
-let supabaseClient: ReturnType<typeof createClient> | null = null;
+let verificationClient: ReturnType<typeof createClient> | null = null;
 
 // Helper: Generate a proper UUID for test appAccountToken
 function generateTestUUID(): string {
@@ -268,8 +271,8 @@ Deno.test({
     }
 
     // CRITERION 4: Verify database state — only 1 row created despite 3 identical notifications
-    if (!supabaseClient) supabaseClient = getSupabaseClient();
-    const { data: rowAfterDup, error: selectError } = await supabaseClient
+    if (!verificationClient) verificationClient = getVerificationClient();
+    const { data: rowAfterDup, error: selectError } = await verificationClient
       .from("usuarios_suscripciones_iap")
       .select("*")
       .eq("original_transaction_id", txId);
@@ -341,8 +344,8 @@ Deno.test({
   }
 
   // CRITERION 4: Capture state and last_signed_date after RECENT event
-  if (!supabaseClient) supabaseClient = getSupabaseClient();
-  const { data: rowAfterRecent, error: selectError1 } = await supabaseClient
+  if (!verificationClient) verificationClient = getVerificationClient();
+  const { data: rowAfterRecent, error: selectError1 } = await verificationClient
     .from("usuarios_suscripciones_iap")
     .select("state, last_signed_date")
     .eq("original_transaction_id", txId)
@@ -392,7 +395,7 @@ Deno.test({
     }
 
     // CRITERION 4: Verify database state — row NOT updated by stale event
-    const { data: rowAfterStale, error: selectError2 } = await supabaseClient
+    const { data: rowAfterStale, error: selectError2 } = await verificationClient
       .from("usuarios_suscripciones_iap")
       .select("state, last_signed_date")
       .eq("original_transaction_id", txId)
@@ -505,8 +508,8 @@ Deno.test({
     }
 
     // CRITERION 4: Verify database state after event 1
-    if (!supabaseClient) supabaseClient = getSupabaseClient();
-    const { data: rowAfterEvent1, error: selectError1 } = await supabaseClient
+    if (!verificationClient) verificationClient = getVerificationClient();
+    const { data: rowAfterEvent1, error: selectError1 } = await verificationClient
       .from("usuarios_suscripciones_iap")
       .select("state, last_signed_date")
       .eq("original_transaction_id", txId)
@@ -558,7 +561,7 @@ Deno.test({
     }
 
     // CRITERION 4: Verify database state after event 2 — should be unchanged
-    const { data: rowAfterEvent2, error: selectError2 } = await supabaseClient
+    const { data: rowAfterEvent2, error: selectError2 } = await verificationClient
       .from("usuarios_suscripciones_iap")
       .select("state, last_signed_date")
       .eq("original_transaction_id", txId)
