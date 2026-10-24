@@ -17,7 +17,22 @@
 
 ---
 
-## Paso 1: Aplicar Migración a Producción
+## Paso 1: Auditar Usuarios sin Match en Auth (PRE-DEPLOY)
+
+**ANTES de aplicar migraciones, verificar que todos los usuarios en producción tienen correspondencia en `auth.users`:**
+
+```bash
+# Desde SQL Editor de Supabase console (proyecto analisisform)
+SELECT id, email, auth_id
+FROM usuarios
+WHERE auth_id IS NULL OR auth_id NOT IN (SELECT id FROM auth.users);
+```
+
+Si hay resultados, resolver manualmente antes de continuar. La migración 20261024 deja `auth_id` como nullable, pero `check-entitlement` requiere una correspondencia válida.
+
+---
+
+## Paso 2: Aplicar Migraciones a Producción
 
 **Comando (ejecutar desde raíz del repositorio):**
 
@@ -28,11 +43,13 @@ supabase db push --project-ref ddxnrsnjdvtqhxunxnwj
 **Qué hace:**
 - Detecta `supabase/migrations/20261001_iap_subscriptions.sql` (nunca antes aplicada a producción)
 - Detecta `supabase/migrations/20261023_add_last_signed_date.sql` (nunca antes aplicada a producción)
+- Detecta `supabase/migrations/20261024_add_usuarios_auth_id.sql` (nunca antes aplicada a producción)
 - Aplica las migraciones idempotentes en la tabla `public`
 - Crea/modifica:
   - Tabla `usuarios_suscripciones_iap` (con FK a `usuarios.id`)
   - Columna `last_signed_date` para deduplicación atómica de webhooks
-  - Índices (usuario_id, app_account_token, product_id, state, expires_at)
+  - Columna `auth_id` en `usuarios` (nullable, vinculada a `auth.users.id`)
+  - Índices (usuario_id, app_account_token, product_id, state, expires_at, auth_id)
   - RLS policies (SELECT/UPDATE para service_role, restrictivo para anon/authenticated)
 
 **Salida esperada:**
@@ -41,9 +58,11 @@ Pushing migrations to analisisform (ddxnrsnjdvtqhxunxnwj)...
 Staging migrations...
   [20261001_iap_subscriptions.sql]
   [20261023_add_last_signed_date.sql]
+  [20261024_add_usuarios_auth_id.sql]
 Applying migrations...
 ✓ 20261001_iap_subscriptions
 ✓ 20261023_add_last_signed_date
+✓ 20261024_add_usuarios_auth_id
 ```
 
 **Verificación (post-deploy):**
@@ -52,9 +71,11 @@ supabase db remote diff --project-ref ddxnrsnjdvtqhxunxnwj | head -20
 # Debería estar vacío (no hay cambios pendientes)
 ```
 
+**⚠️ CRÍTICO:** La migración 20261024 **debe aplicarse ANTES de desplegar `check-entitlement`** (Paso 3). Sin la columna `auth_id`, `check-entitlement` fallará al resolver usuarios.
+
 ---
 
-## Paso 2: Desplegar 3 Edge Functions a Producción
+## Paso 3: Desplegar 3 Edge Functions a Producción
 
 **Comando (ejecutar secuencialmente desde raíz):**
 
@@ -85,7 +106,7 @@ supabase functions list --project-ref ddxnrsnjdvtqhxunxnwj | grep -E "(validate-
 
 ---
 
-## Paso 3: Configurar Secretos en Producción
+## Paso 4: Configurar Secretos en Producción
 
 **Prerequisitos:**
 - Micaela debe tener credenciales Apple Sandbox/Production de App Store Connect
@@ -130,7 +151,7 @@ supabase secrets list --project-ref ddxnrsnjdvtqhxunxnwj
 
 ---
 
-## Paso 4: Habilitar Workflow de Deploy en GitHub
+## Paso 5: Habilitar Workflow de Deploy en GitHub
 
 **IMPORTANTE:** El workflow de deploy en CI está **deshabilitado** (paso de deploy comentado en `.github/workflows/`).
 

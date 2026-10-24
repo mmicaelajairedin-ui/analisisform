@@ -22,11 +22,10 @@ SET auth_id = au.id
 FROM auth.users au
 WHERE LOWER(u.email) = LOWER(au.email);
 
--- 4. Make auth_id non-null for data consistency
--- Note: If any usuarios don't have a matching auth.users, they'll fail here
--- In that case, manually link them or use a different strategy
-ALTER TABLE usuarios
-ALTER COLUMN auth_id SET NOT NULL;
+-- 4. Keep auth_id NULLABLE (do NOT add NOT NULL constraint)
+-- Reason: Some usuarios may not have matches in auth.users yet.
+-- Audit before production: SELECT id, email FROM usuarios WHERE auth_id IS NULL;
+-- Production safeguard: check for unlinked usuarios before deploying check-entitlement
 
 -- 5. Update RLS policy to allow check-entitlement to write usuario_id using Auth id
 -- The webhook will insert usuario_id resolved from auth_id lookup, not raw auth.uid()

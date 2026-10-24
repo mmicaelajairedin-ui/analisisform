@@ -29,36 +29,90 @@ function generateTestUUID(): string {
 }
 
 // Helper: Seed usuarios table with test data
+// THROWS if service role key is missing (required for test data setup)
+// Creates user in auth.users FIRST, then links via auth_id
 async function seedTestUsuario(usuarioId: string): Promise<void> {
-  try {
-    const supabaseUrl = Deno.env.get("SUPABASE_URL") || "http://localhost:54321";
-    const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || "";
+  const supabaseUrl = Deno.env.get("SUPABASE_URL") || "http://localhost:54321";
+  const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
 
-    if (!serviceRoleKey) {
-      console.warn(
-        "⚠️  SUPABASE_SERVICE_ROLE_KEY not set — seeding skipped. Test may fail with FK errors."
+  if (!serviceRoleKey) {
+    throw new Error(
+      "SUPABASE_SERVICE_ROLE_KEY is required for test seeding. " +
+      "Tests cannot proceed without proper data setup."
+    );
+  }
+
+  const client = createClient(supabaseUrl, serviceRoleKey);
+
+  try {
+    const testEmail = `test-${usuarioId}@pathway.test`;
+
+    // STEP 1: Create user in auth.users using admin API
+    let authUserId: string;
+    try {
+      const { data: authUser, error: authError } = await client.auth.admin.createUser({
+        email: testEmail,
+        password: "Test123!AuthPassword",
+        email_confirm: true
+      });
+
+      if (authError || !authUser) {
+        throw new Error(`Failed to create auth user: ${authError?.message || "unknown error"}`);
+      }
+
+      authUserId = authUser.id;
+    } catch (authErr) {
+      // If user already exists, try to retrieve it
+      const { data: existingUser, error: lookupError } = await client.auth.admin.getUserById(
+        usuarioId
       );
-      return;
+      if (existingUser) {
+        authUserId = existingUser.id;
+      } else {
+        throw new Error(
+          `Failed to create or retrieve auth user: ${(authErr as Error).message}`
+        );
+      }
     }
 
-    const client = createClient(supabaseUrl, serviceRoleKey);
-
-    // Insert test usuario (will fail silently if already exists due to PK conflict)
-    await client
+    // STEP 2: Insert test usuario with auth_id linked to auth.users.id
+    const { error: insertError } = await client
       .from("usuarios")
       .insert({
         id: usuarioId,
-        email: `test-${usuarioId}@pathway.test`,
+        email: testEmail,
         nombre: "Test User",
-        plan: "basic"
+        plan: "basic",
+        auth_id: authUserId // NOW linked to auth.users.id
+      });
+
+    if (insertError && !insertError.message.includes("duplicate key")) {
+      throw insertError;
+    }
+
+    // STEP 3: Create a test suscripción record for webhook idempotency tests
+    // This ensures the webhook has data to update (testing UPDATE path, not just INSERT)
+    await client
+      .from("usuarios_suscripciones_iap")
+      .insert({
+        usuario_id: usuarioId,
+        original_transaction_id: `test-initial-${usuarioId}`,
+        product_id: "coach.plan.basic.monthly",
+        state: "active",
+        expires_at: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
+        renewal_date: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
+        environment: "Sandbox",
+        auto_renew_status: true,
+        billing_cycle: "monthly",
+        price_usd: 29.99
       })
-      .select()
-      .single()
       .catch(() => {
-        // Ignore if user already exists
+        // Ignore if suscripción already exists
       });
   } catch (error) {
-    console.warn(`⚠️  Failed to seed usuario ${usuarioId}:`, error);
+    if (error instanceof Error && !error.message.includes("duplicate key")) {
+      throw new Error(`Failed to seed test data for ${usuarioId}: ${error.message}`);
+    }
   }
 }
 

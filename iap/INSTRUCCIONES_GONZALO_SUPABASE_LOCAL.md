@@ -40,6 +40,12 @@ enabled = false  # Cambiar a false temporalmente
 
 Esto evita que las migraciones corro automáticamente en `supabase start`. Gonzalo las ejecutará manualmente después del bootstrap.
 
+**⚠️ CRÍTICO ANTES DE MERGE:**
+- Este cambio (`enabled = false`) está en la rama `fix/iap-webhook-security` pero **DEBE revertirse antes de mergear a `main`**
+- El archivo `supabase/config.toml` debe volver a `enabled = true` (o comentarse la sección) antes del merge
+- Las migraciones automáticas se reestablecen en el flujo normal — esto es solo para testing local
+- **Checklist pre-merge:** `git diff main supabase/config.toml` debe estar vacío
+
 ---
 
 ## 4. Levantar Supabase Local
@@ -103,7 +109,33 @@ COMMENT
 
 ---
 
-## 6. Aplicar Migraciones IAP (Manualmente)
+## 6. Verificación PRE-Migración (Seguridad Local)
+
+**ANTES de aplicar migraciones, verificar que la base de datos es SOLO local y no hay datos ajenos:**
+
+```bash
+# Obtén el ID del contenedor
+CONTAINER_ID=$(docker ps --filter="label=com.docker.compose.service=db" --format="{{.ID}}" | head -1)
+echo "Verificando BD local..."
+
+# Verificar que el contenedor es local (no production)
+docker exec $CONTAINER_ID psql -U postgres -d postgres -c "\l" | grep "analisisform"
+# Debería mostrar: "analisisform" (base local de desarrollo)
+
+# Verificar que tablas IAP NO existen aún
+docker exec $CONTAINER_ID psql -U postgres -d postgres -c "SELECT COUNT(*) FROM information_schema.tables WHERE table_name = 'usuarios_suscripciones_iap';"
+# Debería retornar: 0 (tabla no existe)
+
+# Verificar tabla usuarios existe (del bootstrap)
+docker exec $CONTAINER_ID psql -U postgres -d postgres -c "SELECT COUNT(*) FROM information_schema.tables WHERE table_name = 'usuarios';"
+# Debería retornar: 1 (existe desde bootstrap)
+
+echo "✅ Verificación completada. Seguro para aplicar migraciones."
+```
+
+---
+
+## 6B. Aplicar Migraciones IAP (Manualmente)
 
 **⚠️ IMPORTANTE: NO usar `db reset` ni `migration up` — hay conflictos de versiones en migraciones viejas. Aplicar solo las migraciones IAP manualmente.**
 
@@ -113,7 +145,7 @@ Obtén el ID del contenedor nuevamente (si es necesario):
 CONTAINER_ID=$(docker ps --filter="label=com.docker.compose.service=db" --format="{{.ID}}" | head -1)
 ```
 
-Aplica las dos migraciones IAP **en orden** con docker exec:
+Aplica las tres migraciones IAP **en orden** con docker exec:
 
 ```bash
 # 1. Crear tabla usuarios_suscripciones_iap
@@ -121,11 +153,15 @@ docker exec -i $CONTAINER_ID psql -v ON_ERROR_STOP=1 -U postgres -d postgres < s
 
 # 2. Agregar columna last_signed_date para deduplicación atómica
 docker exec -i $CONTAINER_ID psql -v ON_ERROR_STOP=1 -U postgres -d postgres < supabase/migrations/20261023_add_last_signed_date.sql
+
+# 3. Agregar columna auth_id a usuarios para resolver Auth ↔ DB user linking
+docker exec -i $CONTAINER_ID psql -v ON_ERROR_STOP=1 -U postgres -d postgres < supabase/migrations/20261024_add_usuarios_auth_id.sql
 ```
 
 **Qué hace:**
 - **`20261001_iap_subscriptions.sql`** — Crea tabla `usuarios_suscripciones_iap` con FK a `usuarios.id`, índices, RLS policies
 - **`20261023_add_last_signed_date.sql`** — Agrega columna `last_signed_date` para validación atómica de webhooks duplicados
+- **`20261024_add_usuarios_auth_id.sql`** — Agrega columna `auth_id` a `usuarios` para vincular Auth ↔ DB users; RLS actualizado
 
 **Salida esperada:**
 ```
@@ -305,10 +341,28 @@ Estos tests validan:
 - Atomicidad de UPDATE
 - Validación de hostname whitelist
 
+**Consolidar resultados:**
+```bash
+# Guardar salida de Test Run 1 en formato JSON
+cat > /tmp/test-results.json <<'EOF'
+{
+  "tier": "TIER 1",
+  "test_run": 1,
+  "configuration": "IAP_ALLOW_UNSIGNED_TEST=true",
+  "timestamp": "$(date -Iseconds)",
+  "output_file": "/tmp/tier1-run1-output.txt",
+  "db_before": "$(cat /tmp/tier1-run1-before.txt)",
+  "db_after": "$(cat /tmp/tier1-run1-after.txt)",
+  "status": "completed"
+}
+EOF
+```
+
 **Guarda:**
 - `/tmp/tier1-run1-output.txt` (salida de deno test)
 - `/tmp/tier1-run1-before.txt` (conteo DB antes)
 - `/tmp/tier1-run1-after.txt` (conteo DB después)
+- `/tmp/test-results.json` (resumen consolidado)
 
 ---
 
@@ -335,10 +389,29 @@ docker exec $CONTAINER_ID psql -v ON_ERROR_STOP=1 -U postgres -d postgres -c "SE
 - Tests que dependen de `IAP_ALLOW_UNSIGNED_TEST=true` pueden fallar
 - Conteo antes ≈ conteo después (DB intacta)
 
+**Consolidar resultados:**
+```bash
+# Guardar salida de Test Run 2 en formato JSON
+cat >> /tmp/test-results.json <<'EOF'
+,
+{
+  "tier": "TIER 1",
+  "test_run": 2,
+  "configuration": "production_strict (no IAP_ALLOW_UNSIGNED_TEST)",
+  "timestamp": "$(date -Iseconds)",
+  "output_file": "/tmp/tier1-run2-output.txt",
+  "db_before": "$(cat /tmp/tier1-run2-before.txt)",
+  "db_after": "$(cat /tmp/tier1-run2-after.txt)",
+  "status": "completed"
+}
+EOF
+```
+
 **Guarda:**
 - `/tmp/tier1-run2-output.txt` (salida de deno test)
 - `/tmp/tier1-run2-before.txt` (conteo DB antes)
 - `/tmp/tier1-run2-after.txt` (conteo DB después)
+- `/tmp/test-results.json` (resumen consolidado, actualizado)
 
 ---
 
