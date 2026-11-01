@@ -727,7 +727,7 @@ actualizar tambien `ZONA_POR_PAIS`.** Los tres tienen que cubrir los mismos
 paises; hay guardrail para los dos primeros.
 
 ### Contacto: sin WhatsApp propio NO se cae al telefono de Pathway
-`reservar.html` mostraba "Escribir por WhatsApp" con `WA || '34623816019'` (el de
+`reservar.html` mostraba "Escribir por WhatsApp" con `WA || '34611256224'` (el de
 Pathway) y un texto dirigido AL COACH. Ningun coach tiene WhatsApp cargado, asi
 que esos leads le llegaban a Micaela creyendo escribirle a su coach. Ahora sin
 WhatsApp propio va a `/coach/<slug>#contacto` (formulario interno).

@@ -6,7 +6,7 @@
          -> Promise<string html>
    ============================================================ */
 (function(g){
-  var WA  = "https://wa.me/34623816019";
+  var WA  = "https://wa.me/34611256224";
   var CAL = "https://calendly.com/mmicaela-jairedin/30min";
   var WEB = "https://pathwaycareercoach.com";
 

@@ -6054,7 +6054,7 @@ const RULES = [
   {
     name: "reserva: sin WhatsApp propio, el lead NO va al telefono de Pathway",
     bug: "En reservar.html, si el coach no tenia horarios cargados salia un boton " +
-         "'Escribir por WhatsApp'. El numero era `WA || '34623816019'` (el de " +
+         "'Escribir por WhatsApp'. El numero era `WA || '34611256224'` (el de " +
          "Pathway) y el texto iba dirigido AL COACH: 'Hola Daniel, tengo una duda'. " +
          "Ningun coach del directorio tenia WhatsApp cargado, asi que TODOS esos " +
          "leads le llegaban a Micaela creyendo escribirle a su coach. Fix: sin " +
