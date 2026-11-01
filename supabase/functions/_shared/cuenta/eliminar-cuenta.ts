@@ -49,7 +49,7 @@ export type Deps = {
 
 export const SELECT_FILA = "id,email,nombre,rol,org_id,auth_id,configuracion,created_at";
 
-export const WHATSAPP = "34623816019";
+export const WHATSAPP = "34611256224";
 export const CORREO_SOPORTE = "hi@pathwaycareercoach.com";
 
 // Las mismas claves que pinta el panel. Lo que no esté aquí se guarda como "otro".
