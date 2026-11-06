@@ -1,0 +1,69 @@
+name: Comparar Sonnet 4.5 vs 5.5 (llamadas reales)
+
+# Ejecuta las cuatro funciones de texto —la versión anterior y la migrada— con
+# casos INVENTADOS y llamadas REALES a la API de Anthropic, y deja un informe
+# con las dos salidas lado a lado, latencias, tokens y coste.
+#
+# NO TOCA PRODUCCIÓN: Supabase va simulado (ninguna tabla se lee ni se
+# escribe), no se invoca ninguna Edge Function desplegada y no se despliega
+# nada. Lo único real es la llamada al modelo, y CUESTA DINERO (≈ 2-4 USD con
+# 2 repeticiones), con el secreto ANTHROPIC_API_KEY de este repositorio.
+#
+# Por eso NO corre en cada push: solo a mano, o cuando cambia el fichero
+# `scripts/comparar-sonnet-5-5.ejecutar`, que se crea a propósito una vez
+# autorizado el gasto.
+
+on:
+  push:
+    branches: ['claude/**']
+    paths: ['scripts/comparar-sonnet-5-5.ejecutar']
+  workflow_dispatch:
+    inputs:
+      repeticiones:
+        description: 'Repeticiones por caso y modelo'
+        required: false
+        default: '2'
+
+permissions:
+  contents: read
+
+jobs:
+  comparar:
+    runs-on: ubuntu-latest
+    timeout-minutes: 75
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Comprobar que el secreto existe
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: |
+          if [ -z "$ANTHROPIC_API_KEY" ]; then
+            echo "::error::Falta el secreto ANTHROPIC_API_KEY. La comparación no se ejecuta."
+            exit 1
+          fi
+      - name: Comparación
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          REF_ORIGINAL: b39f024
+          REPS: ${{ inputs.repeticiones || '2' }}
+          ADAPTATIVO_LOW: '0'
+        run: |
+          node --experimental-strip-types --no-warnings scripts/comparar-sonnet-4-5-vs-5-5.mjs | tee salida.txt
+          {
+            echo '## Sonnet 4.5 vs 5.5'
+            echo '```'
+            sed -n '/^RESUMEN/,$p' salida.txt
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: comparacion-sonnet-5-5
+          path: |
+            salida.txt
+            resultados-sonnet-5-5/

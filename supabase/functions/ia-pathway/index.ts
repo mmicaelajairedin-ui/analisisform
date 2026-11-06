@@ -19,7 +19,9 @@ const CORS = {
   "Access-Control-Allow-Methods": "POST, OPTIONS",
   "Access-Control-Allow-Headers": "content-type, authorization, apikey, x-client-info",
 };
-const CLAUDE_MODEL = "claude-sonnet-4-5";
+import { ErrorClaudeHttp, llamarClaude } from "../_shared/claude/mensajes.ts";
+// Modelo, razonamiento y lectura de la respuesta: _shared/claude/mensajes.ts
+// (migración a claude-sonnet-5-5; Sonnet 4.5 se retira el 30-11-2026).
 
 function json(d: unknown, s = 200): Response {
   return new Response(JSON.stringify(d), {
@@ -96,26 +98,14 @@ GUÍA REAL DEL PORTAL DEL CLIENTE (respondé "dónde/cómo" con esto):
 - No inventes secciones ni botones que no conozcas.`;
 
 async function callClaude(system: string, messages: { role: string; content: string }[], apiKey: string): Promise<string> {
-  const res = await fetch("https://api.anthropic.com/v1/messages", {
-    method: "POST",
-    headers: {
-      "x-api-key": apiKey,
-      "anthropic-version": "2023-06-01",
-      "content-type": "application/json",
-    },
-    body: JSON.stringify({
-      model: CLAUDE_MODEL,
-      max_tokens: 600,
-      system,
-      messages,
-    }),
-  });
-  if (!res.ok) {
-    const t = await res.text();
-    throw new Error("claude_" + res.status + ": " + t.slice(0, 200));
+  try {
+    const texto = await llamarClaude({ system, messages, maxTokens: 600, apiKey, origen: "ia-pathway" });
+    return texto.trim();
+  } catch (e) {
+    // Se conserva el formato de error que esta función ya devolvía.
+    if (e instanceof ErrorClaudeHttp) throw new Error("claude_" + e.status + ": " + e.cuerpo.slice(0, 200));
+    throw e;
   }
-  const data = await res.json();
-  return (data?.content?.[0]?.text || "").trim();
 }
 
 Deno.serve(async (req: Request) => {

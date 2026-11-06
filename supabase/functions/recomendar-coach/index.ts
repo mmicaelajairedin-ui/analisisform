@@ -13,7 +13,9 @@
 //   → { recomendados: [{ slug, nombre, titulo, foto, razon }] }
 // ============================================================================
 
-const CLAUDE_MODEL = "claude-sonnet-4-5";
+import { llamarClaude } from "../_shared/claude/mensajes.ts";
+// Modelo, razonamiento y lectura de la respuesta: _shared/claude/mensajes.ts
+// (migración a claude-sonnet-5-5; Sonnet 4.5 se retira el 30-11-2026).
 
 const CORS_HEADERS = {
   "Access-Control-Allow-Origin": "*",
@@ -48,14 +50,7 @@ function nichoDe(cfg: Record<string, unknown>, esp: string[]): string {
 }
 
 async function callClaude(system: string, user: string, apiKey: string, maxTokens = 900): Promise<string> {
-  const res = await fetch("https://api.anthropic.com/v1/messages", {
-    method: "POST",
-    headers: { "x-api-key": apiKey, "anthropic-version": "2023-06-01", "content-type": "application/json" },
-    body: JSON.stringify({ model: CLAUDE_MODEL, max_tokens: maxTokens, system, messages: [{ role: "user", content: user }] }),
-  });
-  if (!res.ok) { const err = await res.text(); throw new Error(`Claude API ${res.status}: ${err.slice(0, 300)}`); }
-  const data = await res.json();
-  return data.content?.[0]?.text || "";
+  return await llamarClaude({ system, messages: [{ role: "user", content: user }], maxTokens, apiKey, origen: "recomendar-coach" });
 }
 
 function extractJson(text: string): Record<string, unknown> | null {

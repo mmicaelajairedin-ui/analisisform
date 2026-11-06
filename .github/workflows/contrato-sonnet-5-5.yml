@@ -1,0 +1,55 @@
+name: Contrato migración Sonnet 5.5 (funciones de texto)
+
+# Fija la migración de claude-sonnet-4-5 (se retira el 30-11-2026) a
+# claude-sonnet-5-5 en generar-informe, ia-pathway, recomendar-coach y
+# generar-perfil-coach, que comparten `_shared/claude/mensajes.ts`.
+#
+# Lo que fija: los prompts, mensajes y max_tokens no cambian ni una coma; la
+# petición nueva lleva el modelo, `thinking: between_tools` y effort `high`; la
+# respuesta se lee por TIPO de bloque, así que un `thinking` vacío delante no
+# deja el informe en blanco (y demuestra que la versión anterior sí se rompía);
+# y un rechazo o un error HTTP siguen el mismo camino que antes.
+#
+# Sin red y sin secretos: shimea `Deno`, carga los `index.ts` tal cual y pone
+# detrás una API de Anthropic simulada y un Supabase de mentira. Lleva tres
+# canarios. La referencia es el commit ANTERIOR a la migración (b39f024): por
+# eso necesita el historial completo.
+
+on:
+  push:
+    paths:
+      - 'supabase/functions/generar-informe/**'
+      - 'supabase/functions/ia-pathway/**'
+      - 'supabase/functions/recomendar-coach/**'
+      - 'supabase/functions/generar-perfil-coach/**'
+      - 'supabase/functions/_shared/claude/**'
+      - 'scripts/probar-migracion-sonnet-5-5.mjs'
+      - 'scripts/casos-claude-sonnet-5-5.mjs'
+      - 'scripts/_cargar-funcion-claude.mjs'
+      - '.github/workflows/contrato-sonnet-5-5.yml'
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: contrato-sonnet-5-5-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  contrato:
+    name: Prompts intactos, lectura por tipo de bloque + canarios
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Contrato de la migración
+        env:
+          REF_ORIGINAL: b39f024
+        run: node --experimental-strip-types --no-warnings scripts/probar-migracion-sonnet-5-5.mjs
