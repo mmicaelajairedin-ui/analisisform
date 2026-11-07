@@ -25,7 +25,9 @@ on:
         default: '2'
 
 permissions:
-  contents: read
+  # write SOLO para publicar los resultados en su propia rama
+  # (claude/resultados-sonnet-5-5). No toca main ni la rama de la migración.
+  contents: write
 
 jobs:
   comparar:
@@ -52,6 +54,7 @@ jobs:
           REF_ORIGINAL: b39f024
           REPS: ${{ inputs.repeticiones || '2' }}
           ADAPTATIVO_LOW: '0'
+          PRESUPUESTO_USD: '4'
         run: |
           node --experimental-strip-types --no-warnings scripts/comparar-sonnet-4-5-vs-5-5.mjs | tee salida.txt
           {
@@ -67,3 +70,20 @@ jobs:
           path: |
             salida.txt
             resultados-sonnet-5-5/
+      # El artifact no se puede descargar desde una sesión de Claude (el proxy
+      # deniega su almacenamiento), así que los resultados se publican también
+      # en una rama aparte, huérfana, que solo contiene esto.
+      - name: Publicar resultados en claude/resultados-sonnet-5-5
+        if: always()
+        run: |
+          set -e
+          dir=$(mktemp -d)
+          cp -r resultados-sonnet-5-5 salida.txt "$dir"/ 2>/dev/null || true
+          cd "$dir"
+          git init -q
+          git checkout -q -b claude/resultados-sonnet-5-5
+          git config user.name github-actions
+          git config user.email github-actions@users.noreply.github.com
+          git add -A
+          git commit -qm "Resultados Sonnet 4.5 vs 5.5 · ${GITHUB_SHA::7} · run ${GITHUB_RUN_NUMBER}"
+          git push -qf "https://x-access-token:${{ github.token }}@github.com/${GITHUB_REPOSITORY}.git" claude/resultados-sonnet-5-5

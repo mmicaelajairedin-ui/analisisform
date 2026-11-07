@@ -36,6 +36,12 @@ const REF = process.env.REF_ORIGINAL || 'origin/main';
 const REPS = Number(process.env.REPS || 2);
 const SOLO = (process.env.CASOS || '').split(',').map((s) => s.trim()).filter(Boolean);
 const CLAVE = process.env.ANTHROPIC_API_KEY;
+// Tope de gasto, en USD. Antes de CADA llamada real se estima su peor caso
+// -entrada estimada por longitud + max_tokens completos, al precio de Sonnet
+// 4.5, que es el caro- y si sumado a lo ya gastado pasa del tope, la llamada
+// NO se hace y la fila queda marcada como omitida. El tope no se puede pasar.
+const PRESUPUESTO = Number(process.env.PRESUPUESTO_USD || 4);
+let omitidas = 0;
 if (!CLAVE) { console.error('Falta ANTHROPIC_API_KEY. La comparación no se ejecuta.'); process.exit(2); }
 
 // $ por millón de tokens (entrada / salida), página oficial de precios.
@@ -57,6 +63,14 @@ if (process.env.ADAPTATIVO_LOW === '1') BRAZOS.push({ id: 'sonnet-5-5 · adaptat
 /** Reenvía a la API real y apunta lo que interesa medir. */
 function anthropicReal(registro) {
   return async (url, init) => {
+    const cuerpo = init.body ? JSON.parse(init.body) : {};
+    const entradaEstimada = Math.ceil(JSON.stringify([cuerpo.system, cuerpo.messages]).length / 3);
+    const peorCaso = (entradaEstimada * 3 + (cuerpo.max_tokens || 4000) * 15) / 1e6;
+    if (gasto + peorCaso > PRESUPUESTO) {
+      omitidas++;
+      registro.push({ omitida: true, peorCaso });
+      return new Response(JSON.stringify({ error: { type: 'omitida_por_presupuesto' } }), { status: 599, headers: { 'content-type': 'application/json' } });
+    }
     const headers = new Headers(init.headers || {});
     headers.set('x-api-key', CLAVE);
     const t0 = Date.now();
@@ -70,7 +84,7 @@ function anthropicReal(registro) {
 }
 
 const filas = [];
-let gasto = 0;
+var gasto = 0;
 const casos = SOLO.length ? CASOS.filter((c) => SOLO.includes(c.id)) : CASOS;
 for (const c of casos) {
   for (const b of BRAZOS) {
@@ -85,7 +99,7 @@ for (const c of casos) {
       const coste = ((u.input_tokens || 0) * precio[0] + (u.output_tokens || 0) * precio[1]) / 1e6;
       gasto += coste;
       const fallos = c.comprobar(r.status, r.json);
-      const fila = { caso: c.id, fn: c.fn, brazo: b.id, rep, status: r.status, fallos, msApi: api.ms ?? null, msTotal: r.ms, modelo: api.model, entrada: u.input_tokens, salida: u.output_tokens, coste, stop_reason: api.stop_reason, categoria: api.stop_details?.category ?? null, bloques: api.bloques, errorApi: api.error, avisos: r.avisos.filter((a) => !a.startsWith('[log]')), salidaFuncion: r.json };
+      const fila = { omitidaPorPresupuesto: !!api.omitida, caso: c.id, fn: c.fn, brazo: b.id, rep, status: r.status, fallos, msApi: api.ms ?? null, msTotal: r.ms, modelo: api.model, entrada: u.input_tokens, salida: u.output_tokens, coste, stop_reason: api.stop_reason, categoria: api.stop_details?.category ?? null, bloques: api.bloques, errorApi: api.error, avisos: r.avisos.filter((a) => !a.startsWith('[log]')), salidaFuncion: r.json };
       filas.push(fila);
       console.log(`${c.id.padEnd(24)} ${b.id.padEnd(28)} #${rep} ${String(r.status).padEnd(4)} ${String(api.ms ?? '-').padStart(6)}ms ${String(u.output_tokens ?? '-').padStart(6)}tok ${api.stop_reason || '-'} ${fallos.length ? '✗ ' + fallos.join('; ') : '✓'}`);
     }
@@ -109,7 +123,8 @@ const resumen = BRAZOS.map((b) => {
 });
 console.log('\nRESUMEN');
 for (const r of resumen) console.log(JSON.stringify(r));
-console.log(`\nGasto total: $${gasto.toFixed(4)}`);
+console.log(`\nGasto total: $${gasto.toFixed(4)} · tope $${PRESUPUESTO} · llamadas omitidas por presupuesto: ${omitidas}`);
+if (gasto > PRESUPUESTO) { console.error('PRESUPUESTO SUPERADO'); process.exitCode = 3; }
 
 // ── Informe para leer ────────────────────────────────────────────────────────
 const SAL = join(RAIZ, 'resultados-sonnet-5-5');
@@ -127,9 +142,23 @@ for (const c of casos) {
   for (const b of BRAZOS) {
     const f = filas.find((x) => x.caso === c.id && x.brazo === b.id && x.rep === 1);
     if (!f) continue;
-    md.push(`<details><summary>${b.id} — salida (repetición 1)</summary>`, '', '```json', JSON.stringify(f.salidaFuncion, null, 2).slice(0, 6000), '```', '</details>', '');
+    md.push(`<details><summary>${b.id} — salida (repetición 1)</summary>`, '', '```json', JSON.stringify(f.salidaFuncion, null, 2), '```', '</details>', '');
   }
 }
 writeFileSync(join(SAL, 'informe.md'), md.join('\n'));
+// Un fichero por caso con las DOS respuestas completas de cada repetición,
+// para leerlas lado a lado sin recortes.
+mkdirSync(join(SAL, 'casos'), { recursive: true });
+for (const c of casos) {
+  const out = [`# ${c.id} · \`${c.fn}\``, '', '## Petición (sintética)', '', '```json', JSON.stringify(c.body, null, 2), '```', ''];
+  for (const f of filas.filter((x) => x.caso === c.id)) {
+    out.push(`## ${f.brazo} · repetición ${f.rep}`, '',
+      `HTTP ${f.status} · API ${f.msApi ?? '-'} ms · tokens ${f.entrada ?? '-'}→${f.salida ?? '-'} · $${f.coste.toFixed(4)} · parada ${f.stop_reason || '-'}${f.categoria ? ' · ' + f.categoria : ''} · bloques ${JSON.stringify(f.bloques)}`, '',
+      `Estructura: ${f.fallos.length ? '✗ ' + f.fallos.join('; ') : '✓'}${f.omitidaPorPresupuesto ? ' · OMITIDA POR PRESUPUESTO' : ''}`, '');
+    if (f.avisos.length) out.push('Avisos:', '```', f.avisos.join('\n'), '```', '');
+    out.push('```json', JSON.stringify(f.salidaFuncion, null, 2), '```', '');
+  }
+  writeFileSync(join(SAL, 'casos', `${c.id}.md`), out.join('\n'));
+}
 console.log('Informe:', join(SAL, 'informe.md'));
 process.exit(0);
