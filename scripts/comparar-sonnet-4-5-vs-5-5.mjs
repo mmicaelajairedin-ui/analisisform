@@ -18,7 +18,7 @@
  *
  *   ANTHROPIC_API_KEY=… node --experimental-strip-types scripts/comparar-sonnet-4-5-vs-5-5.mjs
  *
- * Variables: REPS (2) · REF_ORIGINAL (origin/main) · CASOS (ids separados por
+ * Variables: REPS (1) · REF_ORIGINAL (origin/main) · CASOS (ids separados por
  * coma, para repetir solo algunos) · ADAPTATIVO_LOW=1 añade un tercer brazo con
  * Sonnet 5.5 en razonamiento adaptativo y effort `low`, para comparar.
  */
@@ -33,7 +33,7 @@ const AQUI = dirname(fileURLToPath(import.meta.url));
 const RAIZ = resolve(AQUI, '..');
 const FN = join(RAIZ, 'supabase/functions');
 const REF = process.env.REF_ORIGINAL || 'origin/main';
-const REPS = Number(process.env.REPS || 2);
+const REPS = Number(process.env.REPS || 1);
 const SOLO = (process.env.CASOS || '').split(',').map((s) => s.trim()).filter(Boolean);
 const CLAVE = process.env.ANTHROPIC_API_KEY;
 // Tope de gasto, en USD. Antes de CADA llamada real se estima su peor caso
