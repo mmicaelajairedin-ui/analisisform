@@ -1,0 +1,54 @@
+name: Probar Career con max_tokens 8000 (1 llamada real)
+
+# UNA llamada real a Sonnet 5.5 con la función migrada, para comprobar que el
+# informe Career termina completo con el límite nuevo. Coste máximo DURO de
+# 0,05 USD (corte por streaming). Autorizada el 2026-11-08.
+#
+# NO TOCA PRODUCCIÓN: Supabase simulado, datos sintéticos, nada se despliega.
+# Solo corre cuando cambia `scripts/probar-career-8000.ejecutar`.
+
+on:
+  push:
+    branches: ['claude/**']
+    paths: ['scripts/probar-career-8000.ejecutar']
+
+permissions:
+  # write SOLO para publicar el resultado en su propia rama.
+  contents: write
+
+jobs:
+  career:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Comprobar que el secreto existe
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: |
+          if [ -z "$ANTHROPIC_API_KEY" ]; then
+            echo "::error::Falta el secreto ANTHROPIC_API_KEY. La prueba no se ejecuta."
+            exit 1
+          fi
+      - name: Career con max_tokens 8000
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          TOPE_USD: '0.05'
+        run: node --experimental-strip-types --no-warnings scripts/probar-career-8000.mjs | tee salida.txt
+      - name: Publicar resultado en claude/resultados-career-8000
+        if: always()
+        run: |
+          set -e
+          dir=$(mktemp -d)
+          cp -r resultados-career-8000 salida.txt "$dir"/ 2>/dev/null || true
+          cd "$dir"
+          git init -q
+          git checkout -q -b claude/resultados-career-8000
+          git config user.name github-actions
+          git config user.email github-actions@users.noreply.github.com
+          git add -A
+          git commit -qm "Career 8000 · ${GITHUB_SHA::7} · run ${GITHUB_RUN_NUMBER}"
+          git push -qf "https://x-access-token:${{ github.token }}@github.com/${GITHUB_REPOSITORY}.git" claude/resultados-career-8000

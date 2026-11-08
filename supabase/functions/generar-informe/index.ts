@@ -348,11 +348,18 @@ REGLAS CRÍTICAS:
 
 Devolvés SOLO el JSON traducido, sin texto alrededor y sin bloques de código.`;
 
+// El límite por defecto lo usan los tres informes (Career, Fitness, Life) y
+// sugerir_empleos. Pasa de 4000 a 8000 con la migración a Sonnet 5.5: su
+// tokenizador cuenta un 35-42 % más de tokens para el MISMO texto (medido con
+// la entrada, que es idéntica), y en la comparación real un informe Career se
+// cortó en 4000 → 502. Es un techo, no un objetivo: solo se paga lo que se
+// genera, y la longitud la deciden el prompt y el modelo, no este número.
+// CV Express, traducir y LinkedIn pasan su propio límite y no cambian.
 async function callClaude(
   systemPrompt: string,
   userMessage: string,
   apiKey: string,
-  maxTokens = 4000,
+  maxTokens = 8000,
 ): Promise<string> {
   return await llamarClaude({
     system: systemPrompt,

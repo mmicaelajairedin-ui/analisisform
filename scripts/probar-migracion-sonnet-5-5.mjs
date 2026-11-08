@@ -12,7 +12,8 @@
  *
  *   M-1  Misma petición en lo que importa: el prompt de sistema, los mensajes
  *        y el `max_tokens` de cada ruta son IDÉNTICOS a los de `main`. La
- *        migración no toca ni una palabra de los prompts.
+ *        migración no toca ni una palabra de los prompts. La única excepción
+ *        de `max_tokens` es la declarada en M-7, y nada más.
  *   M-2  La petición nueva: modelo `claude-sonnet-5-5`, `thinking:
  *        between_tools`, effort `high`, sin `temperature`/`top_p`/`top_k`,
  *        misma `anthropic-version`.
@@ -24,8 +25,12 @@
  *   M-5  Un rechazo (`stop_reason: refusal`) sigue el mismo camino que ya
  *        seguía `main`, y además queda escrito en el log con su categoría.
  *   M-6  Un error HTTP de la API produce la misma respuesta que en `main`.
+ *   M-7  El límite de los tres informes y de sugerir_empleos pasa EXACTAMENTE
+ *        de 4000 a 8000 (Sonnet 5.5 cuenta un 35-42 % más de tokens para el
+ *        mismo texto, y un Career se cortó en 4000). Cualquier otra ruta
+ *        conserva el suyo: si cambia, falla M-1.
  *
- * Lleva CANARIOS: tres mutaciones del módulo compartido que la prueba tiene
+ * Lleva CANARIOS: cuatro mutaciones del módulo compartido que la prueba tiene
  * que poner en rojo, cada una por su propia aserción.
  *
  *   node --experimental-strip-types scripts/probar-migracion-sonnet-5-5.mjs
@@ -80,15 +85,21 @@ const FORMAS = {
 };
 
 const igual = (a, b) => JSON.stringify(a) === JSON.stringify(b);
+
+// M-7 · el ÚNICO cambio de max_tokens autorizado (2026-11-08), por caso.
+const CAMBIO_LIMITE = {
+  'informe-carrera': [4000, 8000], 'informe-fitness': [4000, 8000],
+  'informe-life': [4000, 8000], 'sugerir-empleos': [4000, 8000],
+};
 // Lo que depende del reloj o de la red no se compara.
 const limpio = (r) => ({ status: r.status, json: r.json });
 
-async function suite(compartido) {
+async function suite(compartido, indices = nuevo) {
   const fallos = [];
   const fallo = (tag, caso, msg) => fallos.push(`[${tag}] ${caso}: ${msg}`);
   const sup = supabaseDePrueba(COACHES);
   const cargar = (version, fn, forma, texto) => cargarFuncion({
-    slug: fn, index: version === 'nuevo' ? nuevo[fn] : original[fn],
+    slug: fn, index: version === 'nuevo' ? indices[fn] : original[fn],
     compartido: version === 'nuevo' ? compartido : undefined,
     anthropic: FORMAS[forma](texto), supabase: sup,
   });
@@ -109,7 +120,13 @@ async function suite(compartido) {
     const po = o45.peticiones[0]?.body, pn = n45.peticiones[0]?.body;
     if (!po || !pn) fallo('M-1', c.id, 'no hubo llamada a la API');
     else {
-      for (const k of ['system', 'messages', 'max_tokens']) if (!igual(po[k], pn[k])) fallo('M-1', c.id, `cambió ${k}`);
+      for (const k of ['system', 'messages']) if (!igual(po[k], pn[k])) fallo('M-1', c.id, `cambió ${k}`);
+      const cambio = CAMBIO_LIMITE[c.id];
+      if (!cambio) {
+        if (po.max_tokens !== pn.max_tokens) fallo('M-1', c.id, `cambió max_tokens (${po.max_tokens} → ${pn.max_tokens})`);
+      } else if (po.max_tokens !== cambio[0] || pn.max_tokens !== cambio[1]) {
+        fallo('M-7', c.id, `max_tokens ${po.max_tokens} → ${pn.max_tokens}; se esperaba ${cambio[0]} → ${cambio[1]}`);
+      }
     }
     // M-2 · la petición nueva
     const h = n45.peticiones[0]?.headers || {};
@@ -147,7 +164,7 @@ console.log(`Casos: ${CASOS.length} · referencia: ${REF}`);
 if (fallos.length) {
   console.log(`\n✗ ${fallos.length} fallos:\n  ` + fallos.join('\n  '));
 } else {
-  console.log('✓ M-1…M-6 en verde para los', CASOS.length, 'casos');
+  console.log('✓ M-1…M-7 en verde para los', CASOS.length, 'casos');
 }
 
 // ── 2 · canarios: cada mutación tiene que poner en rojo SU aserción ─────────
@@ -159,12 +176,24 @@ const CANARIOS = [
   },
   { nombre: 'quitar el thinking between_tools', espera: 'M-2', mutar: (s) => s.replace('thinking: { type: "between_tools" },', '') },
   { nombre: 'volver a claude-sonnet-4-5', espera: 'M-2', mutar: (s) => s.replace('"claude-sonnet-5-5"', '"claude-sonnet-4-5"') },
+  {
+    nombre: 'devolver el límite de los informes a 4000', espera: 'M-7',
+    mutarIndice: ['generar-informe', (s) => s.replace('maxTokens = 8000,', 'maxTokens = 4000,')],
+  },
 ];
 let canariosMal = 0;
 for (const k of CANARIOS) {
-  const mutado = k.mutar(COMPARTIDO);
-  if (mutado === COMPARTIDO) { console.log(`✗ canario «${k.nombre}»: la mutación no se aplicó`); canariosMal++; continue; }
-  const f = await suite(mutado);
+  let compartido = COMPARTIDO, indices = nuevo, aplicada;
+  if (k.mutarIndice) {
+    const [fn, m] = k.mutarIndice;
+    indices = { ...nuevo, [fn]: m(nuevo[fn]) };
+    aplicada = indices[fn] !== nuevo[fn];
+  } else {
+    compartido = k.mutar(COMPARTIDO);
+    aplicada = compartido !== COMPARTIDO;
+  }
+  if (!aplicada) { console.log(`✗ canario «${k.nombre}»: la mutación no se aplicó`); canariosMal++; continue; }
+  const f = await suite(compartido, indices);
   const suya = f.some((x) => x.startsWith(`[${k.espera}]`));
   console.log(`${suya ? '✓' : '✗'} canario «${k.nombre}»: ${suya ? `rojo por ${k.espera}` : `NO lo detecta ${k.espera} (${f.length} fallos)`}`);
   if (!suya) canariosMal++;
