@@ -2,9 +2,10 @@
  * Casos de uso de las cuatro funciones de texto de Claude, para la migración
  * de claude-sonnet-4-5 (se retira el 30-11-2026) a claude-sonnet-5-5.
  *
- * Los usan las DOS pruebas:
- *   · probar-migracion-sonnet-5-5.mjs — contrato, sin red ni clave.
- *   · comparar-sonnet-4-5-vs-5-5.mjs  — comparación real contra la API.
+ * Los usa el contrato offline (probar-migracion-sonnet-5-5.mjs), sin red ni
+ * clave. La comparación real contra la API ya se hizo y se retiró para no
+ * dejar nada que pueda gastar: está en el historial de la rama y sus
+ * resultados en claude/resultados-sonnet-5-5 y claude/resultados-career-8000.
  *
  * Todas las entradas son INVENTADAS: ninguna persona, correo ni coach real.
  * Cubren cada ruta que el frontend usa hoy (comprobado con grep sobre los
