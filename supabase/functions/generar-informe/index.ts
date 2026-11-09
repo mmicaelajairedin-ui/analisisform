@@ -27,7 +27,9 @@ const CORS_HEADERS = {
   "Access-Control-Allow-Headers": "content-type, authorization",
 };
 
-const CLAUDE_MODEL = "claude-sonnet-4-5";
+import { llamarClaude } from "../_shared/claude/mensajes.ts";
+// Modelo, razonamiento y lectura de la respuesta: _shared/claude/mensajes.ts
+// (migración a claude-sonnet-5-5; Sonnet 4.5 se retira el 30-11-2026).
 
 interface CandidatoPayload {
   nombre?: string;
@@ -346,35 +348,26 @@ REGLAS CRÍTICAS:
 
 Devolvés SOLO el JSON traducido, sin texto alrededor y sin bloques de código.`;
 
+// El límite por defecto lo usan los tres informes (Career, Fitness, Life) y
+// sugerir_empleos. Pasa de 4000 a 8000 con la migración a Sonnet 5.5: su
+// tokenizador cuenta un 35-42 % más de tokens para el MISMO texto (medido con
+// la entrada, que es idéntica), y en la comparación real un informe Career se
+// cortó en 4000 → 502. Es un techo, no un objetivo: solo se paga lo que se
+// genera, y la longitud la deciden el prompt y el modelo, no este número.
+// CV Express, traducir y LinkedIn pasan su propio límite y no cambian.
 async function callClaude(
   systemPrompt: string,
   userMessage: string,
   apiKey: string,
-  maxTokens = 4000,
+  maxTokens = 8000,
 ): Promise<string> {
-  const res = await fetch("https://api.anthropic.com/v1/messages", {
-    method: "POST",
-    headers: {
-      "x-api-key": apiKey,
-      "anthropic-version": "2023-06-01",
-      "content-type": "application/json",
-    },
-    body: JSON.stringify({
-      model: CLAUDE_MODEL,
-      max_tokens: maxTokens,
-      system: systemPrompt,
-      messages: [{ role: "user", content: userMessage }],
-    }),
+  return await llamarClaude({
+    system: systemPrompt,
+    messages: [{ role: "user", content: userMessage }],
+    maxTokens,
+    apiKey,
+    origen: "generar-informe",
   });
-
-  if (!res.ok) {
-    const err = await res.text();
-    throw new Error(`Claude API ${res.status}: ${err.slice(0, 300)}`);
-  }
-
-  const data = await res.json();
-  const content = data.content?.[0]?.text || "";
-  return content;
 }
 
 function extractJson(text: string): Record<string, unknown> | null {
