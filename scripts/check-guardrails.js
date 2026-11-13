@@ -279,6 +279,34 @@ const RULES = [
     },
   },
   {
+    name: "portales fitness/life: el cliente puede reseñar a SU COACH y se publica en reviews",
+    bug: "Los portales de nicho solo tenían la tarjeta 'Puntuar Pathway' (valora la " +
+         "plataforma, guarda en candidatos.resena y nunca publica). Los clientes de un " +
+         "coach fitness/life no podían dejarle reseña: 0 reseñas en 4 meses con " +
+         "clientes activos cada semana. pw-review.js replica el contrato de " +
+         "cliente.html: guarda review_rating, publica en `reviews` con coach_slug y " +
+         "registra en client_errors si no hay slug o falla (nunca en silencio).",
+    check() {
+      const m = read("pw-review.js");
+      if (!m) return "pw-review.js no existe → los portales fitness/life dejan de pedir la reseña del coach.";
+      if (!/rest\/v1\/reviews/.test(m) || !/coach_slug\s*:/.test(m))
+        return "pw-review.js: ya no publica en la tabla reviews con coach_slug.";
+      if (!/review_rating\s*:/.test(m))
+        return "pw-review.js: ya no guarda review_rating en candidatos (volvería a pedir la reseña siempre).";
+      if (!/review_sin_slug/.test(m) || !/review_post_failed/.test(m))
+        return "pw-review.js: la reseña sin slug / fallida vuelve a perderse en silencio (falta el log a client_errors).";
+      if (!/coach_view/.test(m))
+        return "pw-review.js: ya no corta en ?coach_view → el coach podría reseñarse a sí mismo desde el preview.";
+      for (const f of ["pathway-fit-cliente.html", "pathway-life-cliente.html"]) {
+        const s = read(f);
+        if (!s) continue;
+        if (!/<script src="pw-review\.js/.test(s)) return f + ": ya no carga pw-review.js.";
+        if (!/PwReview\.maybe\(/.test(s)) return f + ": ya no llama a PwReview.maybe() al cargar el cliente.";
+      }
+      return null;
+    },
+  },
+  {
     name: "panel-v2: los helpers de fetch (_sb/_sbw) no se re-declaran como local",
     bug: "Un `var _sb` local (el buffer de la agenda, ag-save-disp) TAPABA la " +
          "función global _sb() en todo el scope del dispatcher de acciones → " +
