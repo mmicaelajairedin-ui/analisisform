@@ -82,7 +82,7 @@ async function seedTestUsuario(usuarioId: string): Promise<void> {
         id: usuarioId,
         email: testEmail,
         nombre: "Test User",
-        plan: "basic",
+        plan_tipo: "basic",
         auth_id: authUserId // NOW linked to auth.users.id
       });
 

@@ -512,13 +512,13 @@ Deno.serve(async (req) => {
         const plan = productId.includes("pro") ? "pro" : "basic";
         await client
           .from("usuarios")
-          .update({ plan, updated_at: new Date().toISOString() })
+          .update({ plan_tipo: plan, plan_changed_at: new Date().toISOString() })
           .eq("id", existing.usuario_id);
       } else if (newState === "expired" || newState === "revoked") {
         // Reset plan to basic (no access)
         await client
           .from("usuarios")
-          .update({ plan: "basic", updated_at: new Date().toISOString() })
+          .update({ plan_tipo: "basic", plan_changed_at: new Date().toISOString() })
           .eq("id", existing.usuario_id);
       }
     } else {

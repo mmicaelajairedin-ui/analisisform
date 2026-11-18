@@ -509,13 +509,13 @@ Deno.serve(async (req) => {
         });
     }
 
-    // STEP 4: Update usuarios.plan projection
+    // STEP 4: Update usuarios.plan_tipo projection
     if (hasAccess) {
       await serviceClient
         .from("usuarios")
         .update({
-          plan: plan,
-          updated_at: new Date().toISOString(),
+          plan_tipo: plan,
+          plan_changed_at: new Date().toISOString(),
         })
         .eq("id", userId);
     }
